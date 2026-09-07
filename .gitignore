@@ -1,0 +1,19 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Generes a l'execution -- pas versionnes.
+output/*.mp4
+output/results.json
+.cache/
+
+# Videos de test locales
+*.mp4
+*.mov
+*.mkv
+!video/**/*.mp4
+
+.DS_Store

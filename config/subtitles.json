@@ -1,0 +1,51 @@
+{
+  "_comment": "Styles de sous-titres incrustes (video/subtitle_renderer.py genere un fichier .ass a partir de ces parametres + des timestamps mot-par-mot de Whisper). --subtitle-style choisit l'entree utilisee dans 'styles'.",
+
+  "default_style": "progressive",
+
+  "styles": {
+    "progressive": {
+      "description": "Mots/petits groupes qui apparaissent progressivement en grand, un a la fois (ex: CE TRUC / VA / CHANGER).",
+      "mode": "progressive",
+      "words_per_group": 2,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 96,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H0035C3FF",
+      "outline_color": "&H00000000",
+      "outline_width": 6,
+      "shadow": 2,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 380,
+      "min_display_ms": 260,
+      "gap_ms": 30
+    },
+
+    "classic": {
+      "description": "Sous-titres classiques par phrase/segment, mot courant surligne (karaoke).",
+      "mode": "classic",
+      "words_per_group": 9999,
+      "uppercase": false,
+      "font_name": "Arial",
+      "font_size": 58,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H0035C3FF",
+      "outline_color": "&H00000000",
+      "outline_width": 4,
+      "shadow": 1,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 300,
+      "min_display_ms": 0,
+      "gap_ms": 0
+    }
+  },
+
+  "_notes": {
+    "colors": "Format ASS &HAABBGGRR (alpha puis BGR, pas RGB). &H00FFFFFF = blanc opaque.",
+    "alignment": "Numpad ASS: 2 = bas-centre (defaut, laisse de la marge sous margin_v pour eviter l'UI Instagram).",
+    "margin_v": "Marge verticale en pixels depuis le bas du cadre 1080x1920 -- volontairement haute pour rester au-dessus des icones Reels."
+  }
+}

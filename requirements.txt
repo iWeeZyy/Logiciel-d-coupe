@@ -1,0 +1,20 @@
+# Transcription locale (CTranslate2, pas de dependance PyTorch).
+faster-whisper>=1.2.1
+
+# Numpy < 2 par choix defensif : librosa/numba ont un historique de friction
+# avec numpy 2.x via des dependances transitives (voir README, section
+# "Notes de compatibilite").
+numpy<2
+
+scipy>=1.11
+librosa>=0.10.2
+soundfile>=0.12
+
+# opencv-python-headless : pas de fenetre GUI necessaire (aucun cv2.imshow ici),
+# installation plus legere et evite des soucis de libs GUI/Qt manquantes.
+opencv-python-headless>=4.9
+
+tqdm>=4.66
+
+# Tests
+pytest>=8.0

@@ -1,0 +1,30 @@
+{
+  "_comment": "Liste configurable de mots/expressions accrocheurs et de marqueurs de questions utilisés par analysis/text_analyzer.py. Modifiable sans toucher au code. La comparaison se fait sur le texte normalise (minuscules, accents retires) via core.text_utils.normalize.",
+
+  "strong_keywords": [
+    "incroyable", "jamais", "personne", "secret", "erreur", "attention",
+    "impossible", "meilleur", "pire", "enorme", "dangereux", "verite",
+    "probleme", "solution", "choc", "choquant", "stupefiant", "revele",
+    "interdit", "urgent", "gratuit", "facile", "rapide", "simple",
+    "exclusif", "unique", "record", "explose", "explosif", "arnaque",
+    "piege", "regle", "methode", "technique", "astuce", "hack",
+    "10", "100", "1000", "1", "2", "3", "5", "premiere fois",
+    "personne ne", "tout le monde", "la plupart des gens"
+  ],
+
+  "question_starters": [
+    "pourquoi", "comment", "est-ce que", "est ce que", "tu savais que",
+    "saviez-vous que", "savais-tu que", "qui", "quand", "ou", "combien",
+    "que se passe", "et si", "sais-tu", "savez-vous", "quel", "quelle",
+    "vous ne", "tu ne"
+  ],
+
+  "strong_punctuation": ["!", "?", "...", "…"],
+
+  "keyword_weight_overrides": {
+    "secret": 1.4,
+    "personne": 1.2,
+    "jamais": 1.2,
+    "attention": 1.1
+  }
+}
