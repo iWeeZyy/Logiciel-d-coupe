@@ -14,6 +14,11 @@ soundfile>=0.12
 # installation plus legere et evite des soucis de libs GUI/Qt manquantes.
 opencv-python-headless>=4.9
 
+# Composition des miniatures (texte accentue mesure et replie). OpenCV ne sait
+# rendre que les polices Hershey, sans accents ; ffmpeg drawtext ne sait pas
+# mesurer ni replier le texte.
+Pillow>=10.0
+
 tqdm>=4.66
 
 # Interface graphique (gui_main.py). QtMultimedia (inclus) sert a la

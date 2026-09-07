@@ -114,6 +114,30 @@
     }
   },
 
+  "metadata": {
+    "_comment": "Fonctionnalite 5 : titres et description. EXTRACTION, jamais generation -- sans modele de langue (contrainte 100 % local), la seule facon honnete de proposer un titre est de reprendre des mots reellement prononces. Aucun fait, chiffre, citation ou nom n'est ajoute. Une variante impossible a construire honnetement est absente, pas remplie.",
+    "enabled": true,
+    "max_title_words": 11,
+    "punchy_max_words": 6,
+    "min_title_words": 3,
+    "max_description_sentences": 2,
+    "max_hashtags": 5
+  },
+
+  "thumbnails": {
+    "_comment": "Fonctionnalite 6 : trois miniatures 1080x1920. Les images floues et celles prises pendant une transition sont eliminatoires ; si aucune image ne passe, la moins mauvaise est proposee telle quelle plutot que retouchee. Le texte vient des titres extraits et se pose dans la bande la plus eloignee du visage.",
+    "enabled": true,
+    "candidate_frames": 24,
+    "min_sharpness": 40.0,
+    "min_gap_s": 1.0,
+    "confidence_threshold": 0.6,
+    "face_avoid_frac": 0.18,
+    "max_font_size": 96,
+    "min_font_size": 44,
+    "jpeg_quality": 88,
+    "text_max_words": 7
+  },
+
   "narrative_markers": {
     "_comment": "Marqueurs servant a etiqueter le type narratif d'un clip (affiche comme categorie). Compares sur le texte normalise (minuscules, accents retires) via core.text_utils. Aucune categorie n'est attribuee si rien ne ressort -- une categorie inventee serait pire qu'aucune.",
     "revelation": [

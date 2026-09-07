@@ -25,6 +25,18 @@ def _even(n: int) -> int:
 
 
 @dataclass(frozen=True)
+class CenterHint:
+    """Point de visee minimal accepte par compute_crop_rect.
+
+    Le suivi de cadrage et le generateur de miniatures visent un centre calcule
+    eux-memes, sans passer par une detection de visage complete : ce petit
+    adaptateur evite que chacun refabrique un FaceCropHint de circonstance."""
+
+    x_center_frac: float
+    y_center_frac: float
+
+
+@dataclass(frozen=True)
 class CropRect:
     """Zone retenue dans l'image SOURCE, en pixels."""
 

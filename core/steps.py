@@ -15,9 +15,10 @@ STEP_ANALYSIS = "Analyse des hooks"
 STEP_SELECTION = "Sélection des meilleurs passages"
 STEP_CONTEXT = "Détection du contexte"
 STEP_RENDER = "Génération des clips"
+STEP_METADATA = "Titres et miniatures"
 
 
-def build_step_labels(context_detection: bool = False) -> list[str]:
+def build_step_labels(context_detection: bool = False, metadata: bool = False) -> list[str]:
     """Etapes reellement executees pour ce run.
 
     Une etape desactivee n'apparait pas du tout, plutot que d'apparaitre et de
@@ -28,4 +29,6 @@ def build_step_labels(context_detection: bool = False) -> list[str]:
     if context_detection:
         labels.append(STEP_CONTEXT)
     labels.append(STEP_RENDER)
+    if metadata:
+        labels.append(STEP_METADATA)
     return labels

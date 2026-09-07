@@ -26,7 +26,7 @@ hiddenimports = []
 # (VAD interne a faster-whisper), soundfile (lecture wav).
 for pkg in [
     "faster_whisper", "ctranslate2", "av", "librosa", "numba",
-    "cv2", "onnxruntime", "soundfile",
+    "cv2", "onnxruntime", "soundfile", "PIL",
     "requests", "yt_dlp", "tzdata",
 ]:
     d, b, h = collect_all(pkg)

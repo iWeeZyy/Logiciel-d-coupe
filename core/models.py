@@ -220,6 +220,10 @@ class ClipResult:
     # modules sont desactives.
     framing: dict = field(default_factory=dict)
     montage: dict = field(default_factory=dict)
+    # Titres/description extraits du clip et miniatures generees (chemins
+    # relatifs). Vides quand les modules correspondants sont desactives.
+    metadata: dict = field(default_factory=dict)
+    thumbnails: list[str] = field(default_factory=list)
 
     @property
     def category(self) -> str:
@@ -240,4 +244,6 @@ class ClipResult:
             "subtitles": self.subtitles,
             "framing": self.framing,
             "montage": self.montage,
+            "metadata": self.metadata,
+            "thumbnails": self.thumbnails,
         }

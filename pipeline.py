@@ -26,6 +26,7 @@ from core.steps import (
     STEP_ANALYSIS,
     STEP_AUDIO,
     STEP_CONTEXT,
+    STEP_METADATA,
     STEP_RENDER,
     STEP_SELECTION,
     STEP_TRANSCRIPTION,
@@ -34,10 +35,12 @@ from core.steps import (
 from editing.captions import CaptionGroup, build_captions, choose_margin_v, score_emphasis
 from editing.context import ContextResult, adjust_clip_bounds, resolve_overlaps
 from editing.framing import FramingPlan, build_framing_plan
-from editing.sentences import build_sentences
+from editing.metadata import build_metadata
+from editing.sentences import build_sentences, sentences_in_range
 from editing.silence_cut import MontagePlan, build_montage_plan
 from editing.speaker import detect_active_speaker
 from editing.timeline import EditList
+from editing.thumbnail import choose_text
 from editing.zoom import ZoomTrack, build_zoom_track
 from export.exporter import (
     clip_relative_path,
@@ -56,6 +59,7 @@ from video.audio_extractor import extract_audio
 from video.clip_builder import build_clip
 from video.cropper import compute_crop_rect, face_center_in_output
 from video.face_detector import crop_hint_from_track, detect_face_track
+from video.thumbnailer import generate_thumbnails
 
 logger = get_logger()
 
@@ -77,7 +81,12 @@ def run(
     logger.info(f"Video : {video_duration:.1f}s, {src_w}x{src_h}.")
 
     context_enabled = settings.editing_module_enabled("context_detection")
-    progress = StepProgress(build_step_labels(context_detection=context_enabled), on_progress=on_progress)
+    metadata_enabled = (settings.editing_module_enabled("metadata")
+                        or settings.editing_module_enabled("thumbnails"))
+    progress = StepProgress(
+        build_step_labels(context_detection=context_enabled, metadata=metadata_enabled),
+        on_progress=on_progress,
+    )
     tmp_dir = tempfile.mkdtemp(prefix="clip_farming_")
 
     try:
@@ -292,6 +301,14 @@ def run(
             write_clip_metadata(settings.output, clip_result)
             clip_results.append(clip_result)
 
+        if metadata_enabled and clip_results:
+            if cancel_token:
+                cancel_token.check()
+            progress.step(STEP_METADATA)
+            _build_metadata_and_thumbnails(
+                clip_results, clips, settings, sentence_index, str(input_path), progress, cancel_token
+            )
+
         results_path = write_results(settings.output, clip_results)
         logger.info(f"Termine. {len(clip_results)} clip(s) dans '{settings.output}/', details : {results_path}")
 
@@ -302,6 +319,58 @@ def run(
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _build_metadata_and_thumbnails(
+    clip_results: list[ClipResult],
+    clips,
+    settings: Settings,
+    sentence_index,
+    video_path: str,
+    progress: StepProgress,
+    cancel_token: Optional[CancelToken],
+) -> None:
+    """Titres, description et miniatures, apres que les clips existent.
+
+    Cette etape vient en dernier a dessein : elle ne peut pas faire echouer la
+    generation des clips, et un titre ou une miniature manquants laissent un
+    clip parfaitement utilisable."""
+    metadata_cfg = settings.editing_module("metadata")
+    thumbnails_cfg = settings.editing_module("thumbnails")
+
+    for clip_result, (sc, _ctx) in zip(clip_results, clips):
+        if cancel_token:
+            cancel_token.check()
+        progress.substep(
+            f"clip {clip_result.index}/{len(clip_results)} -> titres et miniatures",
+            fraction=(clip_result.index - 1) / max(1, len(clip_results)),
+        )
+
+        clip_sentences = sentences_in_range(sentence_index, sc.candidate.start, sc.candidate.end)
+
+        if metadata_cfg.get("enabled", False) and clip_sentences:
+            meta = build_metadata(
+                clip_sentences,
+                keyword_terms=settings.keywords_config.get("strong_keywords", []),
+                max_title_words=int(metadata_cfg.get("max_title_words", 11)),
+                punchy_max_words=int(metadata_cfg.get("punchy_max_words", 6)),
+                min_title_words=int(metadata_cfg.get("min_title_words", 3)),
+                max_description_sentences=int(metadata_cfg.get("max_description_sentences", 2)),
+                max_hashtags=int(metadata_cfg.get("max_hashtags", 5)),
+            )
+            clip_result.metadata = meta.to_dict()
+
+        if thumbnails_cfg.get("enabled", False):
+            text = choose_text(
+                clip_result.metadata.get("titles", []),
+                max_words=int(thumbnails_cfg.get("text_max_words", 7)),
+            )
+            clip_result.thumbnails = generate_thumbnails(
+                video_path, sc.candidate.start, sc.candidate.end,
+                settings.output, clip_stem(clip_result.index), text=text, cfg=thumbnails_cfg,
+            )
+
+        write_clip_metadata(settings.output, clip_result)
 
 
 def _emphasis_scores(

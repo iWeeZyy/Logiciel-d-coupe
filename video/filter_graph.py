@@ -22,7 +22,7 @@ from __future__ import annotations
 from editing.framing import FramingPlan
 from editing.timeline import EditList
 from editing.zoom import ZoomTrack
-from video.cropper import TARGET_H, TARGET_W, CropRect, compute_crop_rect
+from video.cropper import TARGET_H, TARGET_W, CenterHint, CropRect, compute_crop_rect
 from video.subtitle_renderer import subtitle_filter
 
 _TARGET_ASPECT = TARGET_W / TARGET_H
@@ -116,7 +116,7 @@ def build_video_chain(
         hint = face_hint
         if framing_plan is not None and framing_plan.keyframes:
             kf = framing_plan.keyframes[0]
-            hint = _StaticHint(kf.cx, kf.cy)
+            hint = CenterHint(kf.cx, kf.cy)
         rect: CropRect = compute_crop_rect(src_w, src_h, hint)
         chain = [f"crop={rect.w}:{rect.h}:{rect.x}:{rect.y}"]
 
@@ -141,15 +141,6 @@ def build_video_chain(
         chain.append(subtitle_filter(ass_path))
 
     return ",".join(chain)
-
-
-class _StaticHint:
-    """Adaptateur minimal : compute_crop_rect n'a besoin que de ces deux
-    attributs, inutile de fabriquer un FaceCropHint complet."""
-
-    def __init__(self, x_center_frac: float, y_center_frac: float):
-        self.x_center_frac = x_center_frac
-        self.y_center_frac = y_center_frac
 
 
 def build_audio_chain(audio_cfg: dict | None) -> str:

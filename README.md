@@ -226,6 +226,24 @@ Produit une **EditList** (la liste des segments conserves) sur laquelle sous-tit
 
 Tout est assemble en **un seul encodage ffmpeg** par clip (montage, cadrage, zoom, mise a l'echelle, sous-titres, audio) : aucune perte de qualite due a des passes successives.
 
+### Titres et description (`metadata`)
+
+**Extraction, jamais generation.** Sans modele de langue -- le cahier des charges impose un traitement 100 % local sans LLM -- la seule facon honnete de proposer un titre est de reprendre des mots **reellement prononces**. Le module choisit la meilleure phrase, retire les amorces de discours ("et donc du coup..."), et tronque a une longueur de titre. Aucun fait, chiffre, citation ou nom n'est ajoute.
+
+Trois propositions : **direct** (la phrase la plus claire), **curiosite** (une vraie question du clip si elle existe, sinon la meilleure phrase tronquee avant sa chute), **punchy** (la phrase courte la plus forte, en majuscules). Une variante impossible a construire honnetement est **absente** de la liste plutot que remplie.
+
+Description : une a deux phrases reellement prononcees. Hashtags : uniquement des mots-cles presents dans le clip.
+
+Consequence assumee : un titre est bon quand la personne dit une phrase percutante, et quelconque sinon. C'est le prix du 100 % local -- et c'est preferable a un titre invente qui promettrait ce que le clip ne montre pas.
+
+### Miniatures (`thumbnails`)
+
+Trois variantes 1080x1920 par clip : **a** (visage), **b** (plan de contexte), **c** (meilleure expression).
+
+Les images candidates sont mesurees (nettete par variance du laplacien, luminosite, visage, yeux ouverts, ecart avec l'image precedente). Le flou et les transitions sont **eliminatoires**. Si aucune image ne passe, la moins mauvaise est proposee telle quelle -- jamais "reparee" a coups de filtres.
+
+Le texte vient des titres extraits (jamais d'une phrase fabriquee), se pose dans la bande la plus eloignee du visage, et sa couleur est choisie d'apres la luminosite reelle de cette bande. La taille diminue jusqu'a tenir en deux lignes dans les marges de securite.
+
 ## Recherche YouTube (optionnelle)
 
 Permet de trouver des videos candidates avant de les analyser, plutot que de partir d'un fichier deja en main. **A besoin d'internet a chaque recherche** (voir l'avertissement en tete de ce README) -- contrairement au reste du logiciel.
@@ -279,7 +297,7 @@ Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique 
 ```
 output/
 ├── clips/         clip_01.mp4, clip_02.mp4...
-├── thumbnails/
+├── thumbnails/   clip_01_a.jpg, _b, _c
 ├── subtitles/    clip_01.srt (optionnel)
 ├── metadata/      clip_01.json -- detail complet d'un clip
 ├── project.json   manifeste du projet (interface graphique)
