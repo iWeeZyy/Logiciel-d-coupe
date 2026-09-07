@@ -33,7 +33,12 @@ from core.steps import (
 )
 from editing.captions import CaptionGroup, build_captions, choose_margin_v, score_emphasis
 from editing.context import ContextResult, adjust_clip_bounds, resolve_overlaps
+from editing.framing import FramingPlan, build_framing_plan
 from editing.sentences import build_sentences
+from editing.silence_cut import MontagePlan, build_montage_plan
+from editing.speaker import detect_active_speaker
+from editing.timeline import EditList
+from editing.zoom import ZoomTrack, build_zoom_track
 from export.exporter import (
     clip_relative_path,
     clip_stem,
@@ -50,7 +55,7 @@ from video import ffmpeg_utils
 from video.audio_extractor import extract_audio
 from video.clip_builder import build_clip
 from video.cropper import compute_crop_rect, face_center_in_output
-from video.face_detector import detect_crop_hint
+from video.face_detector import crop_hint_from_track, detect_face_track
 
 logger = get_logger()
 
@@ -176,6 +181,14 @@ def run(
         ensure_output_dir(settings.output)
         subtitle_style = settings.subtitle_style_params()
         face_cfg = settings.face_detection
+        source_fps = ffmpeg_utils.video_fps(str(input_path))
+        # Phrases de toute la video, calculees une seule fois : le montage s'en
+        # sert pour proteger les pauses volontaires (apres une question).
+        sentence_index = build_sentences(
+            transcript.words(),
+            max_gap_s=settings.editing_module("context_detection").get("sentence_gap_s", 0.6),
+            question_starters=settings.keywords_config.get("question_starters", []),
+        )
 
         clip_results: list[ClipResult] = []
         for i, (sc, ctx) in enumerate(clips, start=1):
@@ -189,19 +202,29 @@ def run(
                 fraction=(i - 1) / len(clips),
             )
 
-            face_hint = None
-            if face_cfg.get("enabled", True):
-                face_hint = detect_crop_hint(
-                    str(input_path),
-                    c.start,
-                    c.end,
-                    sample_interval_s=face_cfg.get("sample_interval_s", 1.0),
-                    max_samples=face_cfg.get("max_samples_per_clip", 20),
-                    confidence_threshold=face_cfg.get("confidence_threshold", 0.6),
-                )
+            face_hint, framing_plan = _analyse_framing(
+                settings, str(input_path), c, audio_analyzer, face_cfg
+            )
+
+            emphasis_scores = _emphasis_scores(c, settings, subtitle_style, audio_analyzer)
+            montage_plan, zoom_track = _build_montage(
+                c, settings, audio_analyzer, sentence_index, emphasis_scores
+            )
+            edit_list = montage_plan.edit_list
+
+            # Le montage change la timeline : les mots (et donc les sous-titres)
+            # sont recales dessus avant tout rendu. Cette conversion passe par
+            # l'EditList et nulle part ailleurs.
+            remapped = edit_list.remap_words_with_indices(c.words)
+            render_words = [w for _, w in remapped]
+            render_scores = {
+                new_index: emphasis_scores[old_index]
+                for new_index, (old_index, _) in enumerate(remapped)
+                if old_index in emphasis_scores
+            }
 
             caption_groups, caption_margin_v = _build_captions_for_clip(
-                c, settings, subtitle_style, audio_analyzer, face_hint, src_w, src_h
+                render_words, render_scores, settings, subtitle_style, face_hint, src_w, src_h
             )
 
             out_mp4_path = str(Path(settings.output) / relative_path)
@@ -224,6 +247,11 @@ def run(
                     cancel_token=cancel_token,
                     caption_groups=caption_groups,
                     subtitle_margin_v=caption_margin_v,
+                    edit_list=edit_list,
+                    framing_plan=framing_plan,
+                    zoom_track=zoom_track,
+                    audio_cfg=settings.editing_module("montage").get("audio"),
+                    fps=source_fps,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -249,7 +277,7 @@ def run(
                 file_name=relative_path,
                 start=c.start,
                 end=c.end,
-                duration=c.duration,
+                duration=edit_list.output_duration,
                 score=score,
                 scores=sc.scores.to_dict(),
                 transcript=c.text,
@@ -257,6 +285,9 @@ def run(
                 reasons=sc.reasons,
                 context=ctx.to_dict() if ctx is not None else {},
                 subtitles=subtitle_files,
+                framing=framing_plan.to_dict() if framing_plan is not None else {},
+                montage={**montage_plan.to_dict(), "zoom": zoom_track.to_dict()}
+                if montage_plan.applied or zoom_track.events else {},
             )
             write_clip_metadata(settings.output, clip_result)
             clip_results.append(clip_result)
@@ -273,16 +304,167 @@ def run(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _build_captions_for_clip(
+def _emphasis_scores(
     candidate: Candidate,
     settings: Settings,
     subtitle_style: dict,
     audio_analyzer: AudioAnalyzer,
+) -> dict[int, float]:
+    """Importance de chaque mot du clip (index sur candidate.words).
+
+    Calculee une seule fois et partagee par les trois modules qui en ont
+    besoin : mise en evidence des sous-titres, protection des pauses
+    volontaires au montage, et choix des instants de zoom."""
+    cfg = settings.editing_module("captions")
+    emphasis_cfg = cfg.get("emphasis", {})
+    if not cfg.get("enabled", False) or not emphasis_cfg.get("enabled", False) or not candidate.words:
+        return {}
+
+    loudness = [audio_analyzer.mean_db(w.start, w.end) for w in candidate.words]
+    threshold = None
+    if len(loudness) >= 2:
+        mean = sum(loudness) / len(loudness)
+        variance = sum((x - mean) ** 2 for x in loudness) / len(loudness)
+        threshold = mean + float(emphasis_cfg.get("loudness_threshold_sigma", 0.75)) * (variance ** 0.5)
+
+    return score_emphasis(
+        candidate.words,
+        keyword_terms=settings.keywords_config.get("strong_keywords", []),
+        weight_overrides=settings.keywords_config.get("keyword_weight_overrides", {}),
+        loudness_db=loudness,
+        loud_threshold_db=threshold,
+    )
+
+
+def _analyse_framing(
+    settings: Settings,
+    video_path: str,
+    candidate: Candidate,
+    audio_analyzer: AudioAnalyzer,
+    face_cfg: dict,
+) -> tuple[object, Optional[FramingPlan]]:
+    """Une seule passe de detection de visages, deux usages : le cadrage fixe
+    (repli historique) et la trajectoire de suivi."""
+    framing_cfg = settings.editing_module("framing")
+    tracking = framing_cfg.get("enabled", False)
+
+    if not face_cfg.get("enabled", True) and not tracking:
+        return None, None
+
+    samples = detect_face_track(
+        video_path, candidate.start, candidate.end,
+        sample_interval_s=float(framing_cfg.get("sample_interval_s", 0.5)) if tracking
+        else float(face_cfg.get("sample_interval_s", 1.0)),
+        max_samples=int(framing_cfg.get("max_samples_per_clip", 140)) if tracking
+        else int(face_cfg.get("max_samples_per_clip", 20)),
+        confidence_threshold=float(framing_cfg.get("confidence_threshold", face_cfg.get("confidence_threshold", 0.6))),
+        max_faces=2 if tracking else 1,
+    )
+    face_hint = crop_hint_from_track(samples)
+
+    if not tracking:
+        return face_hint, None
+
+    speaker_decisions = []
+    speaker_cfg = framing_cfg.get("active_speaker", {})
+    if speaker_cfg.get("enabled", False) and samples:
+        energies = [audio_analyzer.mean_db(s.t, s.t + float(framing_cfg.get("sample_interval_s", 0.5)))
+                    for s in samples]
+        speaker_decisions = detect_active_speaker(
+            samples, energies,
+            window_s=float(speaker_cfg.get("window_s", 3.0)),
+            min_correlation=float(speaker_cfg.get("min_correlation", 0.25)),
+            margin=float(speaker_cfg.get("margin", 0.12)),
+            min_hold_s=float(speaker_cfg.get("min_hold_s", 2.0)),
+        )
+
+    plan = build_framing_plan(
+        samples,
+        speaker_decisions=speaker_decisions,
+        min_samples_ratio=float(framing_cfg.get("min_samples_ratio", 0.35)),
+        two_faces_min_distance_frac=float(framing_cfg.get("two_faces_min_distance_frac", 0.18)),
+        vertical_bias=float(framing_cfg.get("vertical_bias", 0.42)),
+        smoothing_alpha=float(framing_cfg.get("smoothing_alpha", 0.25)),
+        max_speed_frac_per_s=float(framing_cfg.get("max_speed_frac_per_s", 0.12)),
+        deadzone_frac=float(framing_cfg.get("deadzone_frac", 0.02)),
+        max_keyframes=int(framing_cfg.get("max_keyframes", 60)),
+        static_movement_threshold=float(framing_cfg.get("static_movement_threshold", 0.03)),
+    )
+    return face_hint, plan
+
+
+def _build_montage(
+    candidate: Candidate,
+    settings: Settings,
+    audio_analyzer: AudioAnalyzer,
+    sentences,
+    emphasis_scores: dict[int, float],
+) -> tuple[MontagePlan, ZoomTrack]:
+    """Montage (silences, hesitations) et zooms dynamiques du clip."""
+    cfg = settings.editing_module("montage")
+    identity = MontagePlan(EditList.identity(candidate.start, candidate.end))
+    if not cfg.get("enabled", False):
+        return identity, ZoomTrack()
+
+    emphasis_times = [candidate.words[i].start for i in emphasis_scores if i < len(candidate.words)]
+
+    silences_cfg = cfg.get("remove_silences", {})
+    fillers_cfg = cfg.get("remove_fillers", {})
+
+    silence_threshold = (
+        settings.scoring_params.get("silence_rms_threshold_db", -35)
+        + float(silences_cfg.get("silence_threshold_offset_db", 6))
+    )
+
+    def _is_silent(start: float, end: float) -> bool:
+        return audio_analyzer.mean_db(start, end) < silence_threshold
+
+    plan = build_montage_plan(
+        candidate.words, candidate.start, candidate.end,
+        sentences=[s for s in sentences if s.start < candidate.end and s.end > candidate.start],
+        emphasis_times=emphasis_times,
+        remove_silences=bool(silences_cfg.get("enabled", False)),
+        remove_fillers=bool(fillers_cfg.get("enabled", False)),
+        min_silence_s=float(silences_cfg.get("min_silence_s", 0.55)),
+        keep_padding_s=float(silences_cfg.get("keep_padding_s", 0.12)),
+        protect_after_question_s=float(silences_cfg.get("protect_after_question_s", 1.2)),
+        protect_before_emphasis_s=float(silences_cfg.get("protect_before_emphasis_s", 0.4)),
+        filler_terms=fillers_cfg.get("words", []),
+        remove_repetitions=bool(fillers_cfg.get("remove_repetitions", True)),
+        max_removed_ratio=float(cfg.get("max_removed_ratio", 0.35)),
+        is_silent=_is_silent,
+    )
+
+    zoom_cfg = cfg.get("dynamic_zoom", {})
+    zoom_track = ZoomTrack()
+    if zoom_cfg.get("enabled", False):
+        zoom_track = build_zoom_track(
+            emphasis_times, candidate.start, candidate.end,
+            max_zoom=float(zoom_cfg.get("max_zoom", 1.08)),
+            attack_s=float(zoom_cfg.get("attack_s", 0.25)),
+            hold_s=float(zoom_cfg.get("hold_s", 0.5)),
+            release_s=float(zoom_cfg.get("release_s", 0.4)),
+            min_gap_s=float(zoom_cfg.get("min_gap_s", 4.0)),
+            max_events=int(zoom_cfg.get("max_events", 4)),
+        )
+
+    return plan, zoom_track
+
+
+def _build_captions_for_clip(
+    words,
+    emphasis_scores: dict[int, float],
+    settings: Settings,
+    subtitle_style: dict,
     face_hint,
     src_w: int,
     src_h: int,
 ) -> tuple[Optional[list[CaptionGroup]], Optional[int]]:
     """Blocs de sous-titres du clip + marge verticale eventuellement corrigee.
+
+    `words` est deja recale sur la timeline de sortie (montage applique), donc
+    les blocs produits sont directement ceux du .ass incruste ET du .srt
+    exporte.
 
     Les blocs sont construits des que le module est actif, meme pour un style
     historique : ils servent alors uniquement a l'export .srt/.vtt, le rendu
@@ -290,31 +472,16 @@ def _build_captions_for_clip(
     eux, ne s'appliquent qu'aux styles "smart".
     """
     cfg = settings.editing_module("captions")
-    if not cfg.get("enabled", False) or not candidate.words:
+    if not cfg.get("enabled", False) or not words:
         return None, None
 
     is_smart = subtitle_style.get("mode") == "smart"
     emphasis_cfg = cfg.get("emphasis", {})
-    scores: dict[int, float] = {}
-
-    if is_smart and emphasis_cfg.get("enabled", False):
-        loudness = [audio_analyzer.mean_db(w.start, w.end) for w in candidate.words]
-        threshold = None
-        if len(loudness) >= 2:
-            mean = sum(loudness) / len(loudness)
-            variance = sum((x - mean) ** 2 for x in loudness) / len(loudness)
-            threshold = mean + float(emphasis_cfg.get("loudness_threshold_sigma", 0.75)) * (variance ** 0.5)
-        scores = score_emphasis(
-            candidate.words,
-            keyword_terms=settings.keywords_config.get("strong_keywords", []),
-            weight_overrides=settings.keywords_config.get("keyword_weight_overrides", {}),
-            loudness_db=loudness,
-            loud_threshold_db=threshold,
-        )
+    scores = emphasis_scores if is_smart else {}
 
     groups = build_captions(
-        candidate.words,
-        clip_start=candidate.start,
+        words,
+        clip_start=0.0,
         max_words_per_group=subtitle_style.get("words_per_group", 4),
         max_chars_per_group=subtitle_style.get("max_chars_per_group", 0) if is_smart else 0,
         sentence_gap_s=0.6,

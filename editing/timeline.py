@@ -167,15 +167,23 @@ class EditList:
     # ---------- Mots ----------
 
     def remap_words(self, words: list[Word]) -> list[Word]:
+        """Mots reecrits en temps de sortie (voir remap_words_with_indices)."""
+        return [w for _, w in self.remap_words_with_indices(words)]
+
+    def remap_words_with_indices(self, words: list[Word]) -> list[tuple[int, Word]]:
         """Reecrit les mots en temps de sortie, en supprimant ceux entierement
         coupes et en rognant ceux qui debordent d'un segment conserve.
+
+        Renvoie aussi l'index d'ORIGINE de chaque mot conserve : tout ce qui est
+        indexe sur la liste de depart (les scores de mise en evidence, par
+        exemple) doit pouvoir suivre quand le montage retire des mots.
 
         Un mot n'est jamais coupe en deux : s'il chevauche une coupe, il garde
         la partie conservee la plus longue -- un sous-titre qui apparait a
         moitie serait pire que pas de sous-titre du tout.
         """
-        out: list[Word] = []
-        for w in words:
+        out: list[tuple[int, Word]] = []
+        for index, w in enumerate(words):
             best: tuple[float, float] | None = None
             for c in self.cuts:
                 overlap_start = max(w.start, c.source_start)
@@ -186,14 +194,15 @@ class EditList:
                     best = (overlap_start, overlap_end)
             if best is None:
                 continue
-            out.append(
+            out.append((
+                index,
                 Word(
                     text=w.text,
                     start=self.to_output_time_clamped(best[0]),
                     end=self.to_output_time_clamped(best[1]),
                     probability=w.probability,
-                )
-            )
+                ),
+            ))
         return out
 
     # ---------- Serialisation ----------

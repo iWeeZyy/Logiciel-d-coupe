@@ -204,6 +204,28 @@ Decoupage adapte au contenu plutot qu'a un simple compteur de mots : la coupe su
 
 **Export** : les sous-titres sont toujours incrustes dans le MP4 ; `export_srt`/`export_vtt` ecrivent en plus `subtitles/clip_XX.srt` / `.vtt`, construits a partir des **memes blocs** que la video -- un fichier exporte ne peut donc pas afficher un decoupage ou des timings differents de ce qu'on voit a l'ecran.
 
+### Cadrage intelligent 9:16 (`framing`)
+
+Le recadrage suit le sujet au lieu de rester fige. La trajectoire est lissee sur trois niveaux, dans cet ordre : **zone morte** (sous un certain deplacement, le cadrage ne bouge pas du tout -- c'est ce qui elimine le tremblement de la detection), **moyenne exponentielle** (inertie), puis **limite de vitesse** (meme sur un saut brutal de detection, le cadrage ne peut pas se deplacer plus vite qu'une fraction d'image par seconde).
+
+Le visage est place aux deux cinquiemes de la hauteur (`vertical_bias`) plutot qu'au centre : un visage exactement centre en 9:16 laisse un vide au-dessus de la tete et coupe le buste.
+
+**Deux personnes** : le locuteur actif est estime en correlant le mouvement de la bouche de chaque visage avec l'energie audio, fenetre par fenetre, avec hysteresis pour ne pas sauter de l'un a l'autre. C'est une heuristique, pas un modele dedie -- sous le seuil de confiance, **les deux visages sont cadres ensemble** plutot que de parier sur le mauvais.
+
+**Replis** : si le visage n'est detecte que sur une minorite des images analysees, ou si le sujet ne bouge pas, le suivi est abandonne au profit d'un cadrage fixe. Aucune detection du tout -> crop centre, comme avant.
+
+### Montage automatique (`montage`)
+
+Produit une **EditList** (la liste des segments conserves) sur laquelle sous-titres, trajectoire de cadrage et zooms se recalent automatiquement -- c'est ce qui garantit qu'une coupe ne desynchronise jamais les sous-titres.
+
+- **Silences** : un silence n'est coupe que s'il est a la fois sans parole ET reellement silencieux cote audio (un rire ou une reaction n'est pas un silence). Les pauses qui suivent une question ou precedent un mot important sont protegees. Les silences de tete et de queue du clip ne sont jamais touches : c'est la marge posee volontairement par la detection de contexte.
+- **Hesitations** : liste configurable ("euh", "hmm"...) et faux departs (repetition immediate d'un mot court). Une repetition volontaire espacee est conservee.
+- **Plafond** : si le montage retirait plus de `max_removed_ratio` du clip, **rien n'est applique** -- a ce niveau ce n'est plus un nettoyage, c'est une reecriture du rythme du locuteur.
+- **Zooms dynamiques** : legers, sur les moments forts deja identifies par les sous-titres intelligents, bornes en amplitude, en nombre par clip et en ecart minimal. Aucun mot marquant -> aucun zoom.
+- **Audio** : normalisation du volume (`loudnorm`) et limitation des pics. La reduction de bruit reste desactivee par defaut : trop agressive, elle degrade la voix plus que le bruit qu'elle retire.
+
+Tout est assemble en **un seul encodage ffmpeg** par clip (montage, cadrage, zoom, mise a l'echelle, sous-titres, audio) : aucune perte de qualite due a des passes successives.
+
 ## Recherche YouTube (optionnelle)
 
 Permet de trouver des videos candidates avant de les analyser, plutot que de partir d'un fichier deja en main. **A besoin d'internet a chaque recherche** (voir l'avertissement en tete de ce README) -- contrairement au reste du logiciel.

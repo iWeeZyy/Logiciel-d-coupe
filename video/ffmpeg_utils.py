@@ -130,3 +130,24 @@ def video_resolution(path: str) -> tuple[int, int]:
         if stream.get("codec_type") == "video":
             return int(stream["width"]), int(stream["height"])
     raise InputFileError(f"Aucune piste video trouvee dans '{path}'.")
+
+
+def video_fps(path: str, default: float = 25.0) -> float:
+    """Cadence de la piste video. Necessaire au zoom dynamique : zoompan impose
+    sa propre cadence de sortie et ramenerait sinon la video a 25 images/s."""
+    info = probe(path)
+    for stream in info.get("streams", []):
+        if stream.get("codec_type") != "video":
+            continue
+        for key in ("avg_frame_rate", "r_frame_rate"):
+            value = stream.get(key)
+            if not value or "/" not in value:
+                continue
+            num, den = value.split("/", 1)
+            try:
+                num, den = float(num), float(den)
+            except ValueError:
+                continue
+            if den > 0 and num > 0:
+                return num / den
+    return default

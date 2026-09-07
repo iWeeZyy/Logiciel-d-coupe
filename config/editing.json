@@ -51,6 +51,69 @@
     "export_vtt": false
   },
 
+  "framing": {
+    "_comment": "Fonctionnalite 2 : cadrage 9:16 qui suit le sujet. Desactive -> cadrage fixe centre sur le visage moyen, exactement comme avant. La trajectoire est lissee (zone morte, moyenne exponentielle, limite de vitesse) ; si le visage n'est detecte que sur une minorite des images analysees, le suivi est abandonne au profit d'un cadrage fixe.",
+    "enabled": true,
+    "sample_interval_s": 0.5,
+    "max_samples_per_clip": 140,
+    "confidence_threshold": 0.6,
+    "min_samples_ratio": 0.35,
+    "smoothing_alpha": 0.25,
+    "max_speed_frac_per_s": 0.12,
+    "deadzone_frac": 0.02,
+    "static_movement_threshold": 0.03,
+    "max_keyframes": 60,
+    "vertical_bias": 0.42,
+    "two_faces_min_distance_frac": 0.18,
+    "active_speaker": {
+      "_comment": "Interview/podcast : correle le mouvement de la bouche de chaque visage avec l'energie audio. Heuristique, pas un modele dedie -- sous le seuil de confiance, les deux visages sont cadres ensemble plutot que de parier sur le mauvais.",
+      "enabled": true,
+      "window_s": 3.0,
+      "min_correlation": 0.25,
+      "margin": 0.12,
+      "min_hold_s": 2.0
+    }
+  },
+
+  "montage": {
+    "_comment": "Fonctionnalite 3 : montage automatique. Produit une EditList (segments conserves) sur laquelle sous-titres, cadrage et zooms se recalent automatiquement.",
+    "enabled": true,
+    "remove_silences": {
+      "_comment": "Un silence n'est coupe que s'il est a la fois sans parole ET reellement silencieux cote audio (un rire ou une reaction n'est pas un silence). Les pauses qui suivent une question ou precedent un mot important sont protegees : ce sont des effets voulus.",
+      "enabled": true,
+      "min_silence_s": 0.55,
+      "keep_padding_s": 0.12,
+      "silence_threshold_offset_db": 6,
+      "protect_after_question_s": 1.2,
+      "protect_before_emphasis_s": 0.4
+    },
+    "remove_fillers": {
+      "_comment": "Hesitations et faux departs. La liste est modifiable ; les repetitions ne sont retirees que si les deux occurrences se suivent immediatement.",
+      "enabled": true,
+      "remove_repetitions": true,
+      "words": ["euh", "euhh", "heu", "hum", "hmm", "mmh", "bah", "ben", "genre", "enfin bref"]
+    },
+    "max_removed_ratio": 0.35,
+    "dynamic_zoom": {
+      "_comment": "Zooms legers sur les moments forts deja identifies par les sous-titres intelligents. Bornes sur tous les axes : amplitude, nombre par clip, ecart minimal. Aucun mot marquant -> aucun zoom.",
+      "enabled": true,
+      "max_zoom": 1.08,
+      "attack_s": 0.25,
+      "hold_s": 0.5,
+      "release_s": 0.4,
+      "min_gap_s": 4.0,
+      "max_events": 4
+    },
+    "audio": {
+      "_comment": "Normalisation du volume et limitation des pics. La reduction de bruit reste desactivee par defaut : trop agressive, elle degrade la voix plus que le bruit qu'elle retire.",
+      "enabled": true,
+      "loudnorm": true,
+      "target_lufs": -14,
+      "limiter": true,
+      "denoise": false
+    }
+  },
+
   "narrative_markers": {
     "_comment": "Marqueurs servant a etiqueter le type narratif d'un clip (affiche comme categorie). Compares sur le texte normalise (minuscules, accents retires) via core.text_utils. Aucune categorie n'est attribuee si rien ne ressort -- une categorie inventee serait pire qu'aucune.",
     "revelation": [

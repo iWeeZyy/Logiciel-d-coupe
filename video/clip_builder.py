@@ -1,13 +1,20 @@
-"""Assemble decoupe + crop 9:16 + incrustation sous-titres en UN SEUL appel
-ffmpeg par clip (un seul encodage, pas trois passes separees)."""
+"""Produit un clip fini en UN SEUL appel ffmpeg : montage, cadrage, zoom,
+mise a l'echelle 9:16 et sous-titres incrustes.
+
+Ce module reste volontairement mince : il ecrit le fichier de sous-titres puis
+delegue la construction de la ligne de commande a video/filter_graph.py, seul
+endroit qui connait la syntaxe des filtres. Un seul encodage, donc aucune perte
+de qualite due a des passes successives.
+"""
 from __future__ import annotations
 
 from typing import Optional
 
 from core.cancellation import CancelToken
-from video.cropper import build_crop_filter
+from editing.timeline import EditList
 from video.ffmpeg_utils import run_ffmpeg
-from video.subtitle_renderer import render_ass_file, subtitle_filter
+from video.filter_graph import build_ffmpeg_args
+from video.subtitle_renderer import render_ass_file
 
 
 def build_clip(
@@ -26,36 +33,34 @@ def build_clip(
     cancel_token: Optional[CancelToken] = None,
     caption_groups=None,
     subtitle_margin_v: Optional[int] = None,
+    edit_list: Optional[EditList] = None,
+    framing_plan=None,
+    zoom_track=None,
+    audio_cfg: Optional[dict] = None,
+    fps: float = 25.0,
 ) -> None:
-    """`caption_groups`/`subtitle_margin_v` viennent des sous-titres
-    intelligents (editing/captions.py) : ce sont exactement les blocs exportes
-    en .srt/.vtt. Absents, le rendu retombe sur le decoupage du style, comme
-    avant leur ajout."""
-    duration = max(0.05, end - start)
+    """`edit_list`, `framing_plan`, `zoom_track` et `audio_cfg` viennent des
+    modules d'edition automatique. Tous absents, le rendu est exactement celui
+    d'avant leur ajout : decoupe simple, cadrage fixe, sous-titres incrustes."""
+    edit_list = edit_list or EditList.identity(start, end)
 
-    crop_filter = build_crop_filter(src_w, src_h, face_hint)
     render_ass_file(
         words, clip_start=start, style=subtitle_style, out_ass_path=ass_path,
         caption_groups=caption_groups, margin_v=subtitle_margin_v,
     )
-    sub_filter = subtitle_filter(ass_path)
 
-    vf = f"{crop_filter},{sub_filter}"
-
-    run_ffmpeg(
-        [
-            "-ss", f"{start:.3f}",
-            "-i", video_path,
-            "-t", f"{duration:.3f}",
-            "-vf", vf,
-            "-c:v", "libx264",
-            "-preset", str(export_settings.get("video_preset", "medium")),
-            "-crf", str(export_settings.get("video_bitrate_crf", 20)),
-            "-c:a", "aac",
-            "-b:a", str(export_settings.get("audio_bitrate", "160k")),
-            "-movflags", "+faststart",
-            out_mp4_path,
-        ],
-        description=f"generation du clip {clip_label}",
-        cancel_token=cancel_token,
+    args = build_ffmpeg_args(
+        video_path=video_path,
+        edit_list=edit_list,
+        framing_plan=framing_plan,
+        zoom_track=zoom_track,
+        src_w=src_w,
+        src_h=src_h,
+        fps=fps,
+        face_hint=face_hint,
+        ass_path=ass_path,
+        audio_cfg=audio_cfg,
+        export_settings=export_settings,
+        out_mp4_path=out_mp4_path,
     )
+    run_ffmpeg(args, description=f"generation du clip {clip_label}", cancel_token=cancel_token)

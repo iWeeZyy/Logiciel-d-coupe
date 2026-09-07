@@ -215,6 +215,11 @@ class ClipResult:
     # *.vtt). Vide quand l'export est desactive -- les sous-titres incrustes
     # dans la video, eux, ne dependent pas de cette liste.
     subtitles: list[str] = field(default_factory=list)
+    # Traces des modules d'edition : cadrage retenu (fixe/suivi/deux visages) et
+    # montage applique (silences et hesitations retires, zooms). Vides quand les
+    # modules sont desactives.
+    framing: dict = field(default_factory=dict)
+    montage: dict = field(default_factory=dict)
 
     @property
     def category(self) -> str:
@@ -233,4 +238,6 @@ class ClipResult:
             "reasons": self.reasons,
             "context": self.context,
             "subtitles": self.subtitles,
+            "framing": self.framing,
+            "montage": self.montage,
         }
