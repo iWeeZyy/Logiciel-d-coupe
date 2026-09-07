@@ -52,6 +52,10 @@ def _keywords_json_path():
     return CONFIG_DIR / "hooks_keywords.json"
 
 
+def _subtitles_json_path():
+    return CONFIG_DIR / "subtitles.json"
+
+
 def _load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -139,10 +143,24 @@ class SettingsPage(QWidget):
 
         grid.addWidget(QLabel("Style de sous-titres par défaut"), row, 0)
         self.subtitle_combo = QComboBox()
-        self.subtitle_combo.addItem("Dynamique (mot par mot)", "progressive")
-        self.subtitle_combo.addItem("Classique", "classic")
-        self.subtitle_combo.addItem("Gros texte", "big_text")
-        self._select(self.subtitle_combo, settings_store.get("default_subtitle_style"))
+        # Liste construite depuis config/subtitles.json plutot qu'ecrite ici :
+        # une liste codee en dur n'aurait jamais montre les styles ajoutes
+        # ensuite, et divergeait deja de la config.
+        subtitles_config = _load_json(_subtitles_json_path())
+        for key, style in subtitles_config.get("styles", {}).items():
+            label = key.replace("_", " ").capitalize()
+            if style.get("mode") == "smart":
+                label += " (intelligent)"
+            self.subtitle_combo.addItem(label, key)
+            self.subtitle_combo.setItemData(
+                self.subtitle_combo.count() - 1, style.get("description", ""), Qt.ItemDataRole.ToolTipRole
+            )
+        # Aucun choix enregistre -> celui de config/subtitles.json, seule source
+        # du style par defaut.
+        self._select(
+            self.subtitle_combo,
+            settings_store.get("default_subtitle_style") or subtitles_config.get("default_style"),
+        )
         self.subtitle_combo.currentIndexChanged.connect(
             lambda: settings_store.save({"default_subtitle_style": self.subtitle_combo.currentData()})
         )

@@ -31,6 +31,7 @@ from core.steps import (
     STEP_TRANSCRIPTION,
     build_step_labels,
 )
+from editing.captions import CaptionGroup, build_captions, choose_margin_v, score_emphasis
 from editing.context import ContextResult, adjust_clip_bounds, resolve_overlaps
 from editing.sentences import build_sentences
 from export.exporter import (
@@ -41,12 +42,14 @@ from export.exporter import (
     write_clip_metadata,
     write_results,
 )
+from export.subtitles_export import write_subtitles
 from transcription import cache as transcript_cache
 from transcription.whisper_engine import transcribe
 from utils.errors import CancelledError, InputFileError
 from video import ffmpeg_utils
 from video.audio_extractor import extract_audio
 from video.clip_builder import build_clip
+from video.cropper import compute_crop_rect, face_center_in_output
 from video.face_detector import detect_crop_hint
 
 logger = get_logger()
@@ -197,6 +200,10 @@ def run(
                     confidence_threshold=face_cfg.get("confidence_threshold", 0.6),
                 )
 
+            caption_groups, caption_margin_v = _build_captions_for_clip(
+                c, settings, subtitle_style, audio_analyzer, face_hint, src_w, src_h
+            )
+
             out_mp4_path = str(Path(settings.output) / relative_path)
             ass_path = str(Path(tmp_dir) / f"{clip_stem(i)}.ass")
 
@@ -215,6 +222,8 @@ def run(
                     export_settings=settings.export,
                     clip_label=clip_stem(i),
                     cancel_token=cancel_token,
+                    caption_groups=caption_groups,
+                    subtitle_margin_v=caption_margin_v,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -222,6 +231,18 @@ def run(
                 # .mp4 casse dans le dossier de sortie.
                 Path(out_mp4_path).unlink(missing_ok=True)
                 raise
+
+            captions_cfg = settings.editing_module("captions")
+            subtitle_files = []
+            if caption_groups and captions_cfg.get("enabled", False):
+                subtitle_files = [
+                    str(Path(p).relative_to(Path(settings.output)).as_posix())
+                    for p in write_subtitles(
+                        settings.output, clip_stem(i), caption_groups,
+                        srt=bool(captions_cfg.get("export_srt", False)),
+                        vtt=bool(captions_cfg.get("export_vtt", False)),
+                    )
+                ]
 
             clip_result = ClipResult(
                 index=i,
@@ -235,6 +256,7 @@ def run(
                 language=transcript.language,
                 reasons=sc.reasons,
                 context=ctx.to_dict() if ctx is not None else {},
+                subtitles=subtitle_files,
             )
             write_clip_metadata(settings.output, clip_result)
             clip_results.append(clip_result)
@@ -249,6 +271,76 @@ def run(
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _build_captions_for_clip(
+    candidate: Candidate,
+    settings: Settings,
+    subtitle_style: dict,
+    audio_analyzer: AudioAnalyzer,
+    face_hint,
+    src_w: int,
+    src_h: int,
+) -> tuple[Optional[list[CaptionGroup]], Optional[int]]:
+    """Blocs de sous-titres du clip + marge verticale eventuellement corrigee.
+
+    Les blocs sont construits des que le module est actif, meme pour un style
+    historique : ils servent alors uniquement a l'export .srt/.vtt, le rendu
+    incruste restant celui du style. La mise en evidence et le repositionnement,
+    eux, ne s'appliquent qu'aux styles "smart".
+    """
+    cfg = settings.editing_module("captions")
+    if not cfg.get("enabled", False) or not candidate.words:
+        return None, None
+
+    is_smart = subtitle_style.get("mode") == "smart"
+    emphasis_cfg = cfg.get("emphasis", {})
+    scores: dict[int, float] = {}
+
+    if is_smart and emphasis_cfg.get("enabled", False):
+        loudness = [audio_analyzer.mean_db(w.start, w.end) for w in candidate.words]
+        threshold = None
+        if len(loudness) >= 2:
+            mean = sum(loudness) / len(loudness)
+            variance = sum((x - mean) ** 2 for x in loudness) / len(loudness)
+            threshold = mean + float(emphasis_cfg.get("loudness_threshold_sigma", 0.75)) * (variance ** 0.5)
+        scores = score_emphasis(
+            candidate.words,
+            keyword_terms=settings.keywords_config.get("strong_keywords", []),
+            weight_overrides=settings.keywords_config.get("keyword_weight_overrides", {}),
+            loudness_db=loudness,
+            loud_threshold_db=threshold,
+        )
+
+    groups = build_captions(
+        candidate.words,
+        clip_start=candidate.start,
+        max_words_per_group=subtitle_style.get("words_per_group", 4),
+        max_chars_per_group=subtitle_style.get("max_chars_per_group", 0) if is_smart else 0,
+        sentence_gap_s=0.6,
+        break_on_sentence_end=is_smart,
+        emphasis_scores=scores,
+        max_emphasis_ratio=float(emphasis_cfg.get("max_ratio", 0.18)),
+        min_emphasis_score=float(emphasis_cfg.get("min_score", 0.5)),
+        min_display_s=subtitle_style.get("min_display_ms", 250) / 1000.0,
+        gap_s=subtitle_style.get("gap_ms", 30) / 1000.0,
+    )
+
+    margin_v = None
+    position_cfg = cfg.get("smart_position", {})
+    if is_smart and position_cfg.get("enabled", False):
+        rect = compute_crop_rect(src_w, src_h, face_hint)
+        face_position = face_center_in_output(face_hint, src_w, src_h, rect)
+        font_size = subtitle_style.get("font_size", 64)
+        margin_v = choose_margin_v(
+            face_position[1] if face_position else None,
+            default_margin_v=subtitle_style.get("margin_v", 300),
+            text_height_px=int(font_size * float(position_cfg.get("text_height_ratio", 2.2))),
+            avoid_half_frac=float(position_cfg.get("avoid_half_frac", 0.16)),
+            min_margin_v=int(position_cfg.get("min_margin_v", 140)),
+        )
+
+    return groups, margin_v
 
 
 def _detect_context(

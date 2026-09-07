@@ -30,6 +30,27 @@
     "min_confidence": 0.45
   },
 
+  "captions": {
+    "_comment": "Fonctionnalite 4 : intelligence des sous-titres. Le LOOK (police, taille, couleurs, mots par groupe, animation) reste dans config/subtitles.json -- ici on ne regle que ce qui releve de l'analyse. Desactive -> les styles 'smart' s'affichent quand meme, mais sans mise en evidence ni repositionnement, et aucun fichier .srt/.vtt n'est ecrit.",
+    "enabled": true,
+    "emphasis": {
+      "_comment": "Mise en evidence des mots importants, a partir des mots-cles de hooks_keywords.json, des chiffres reellement prononces et du niveau audio deja mesure. max_ratio plafonne la proportion de mots mis en avant ; aucun mot au-dessus de min_score -> aucune mise en evidence (jamais un mot choisi par defaut).",
+      "enabled": true,
+      "max_ratio": 0.18,
+      "min_score": 0.5,
+      "loudness_threshold_sigma": 0.75
+    },
+    "smart_position": {
+      "_comment": "Remonte les sous-titres quand un visage occupe le bas du cadre. Sans visage detecte de facon fiable, la marge du style est conservee telle quelle.",
+      "enabled": true,
+      "avoid_half_frac": 0.16,
+      "min_margin_v": 140,
+      "text_height_ratio": 2.2
+    },
+    "export_srt": true,
+    "export_vtt": false
+  },
+
   "narrative_markers": {
     "_comment": "Marqueurs servant a etiqueter le type narratif d'un clip (affiche comme categorie). Compares sur le texte normalise (minuscules, accents retires) via core.text_utils. Aucune categorie n'est attribuee si rien ne ressort -- une categorie inventee serait pire qu'aucune.",
     "revelation": [

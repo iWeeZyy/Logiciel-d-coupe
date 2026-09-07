@@ -15,7 +15,8 @@ GUI_SETTINGS_PATH = app_base_dir() / "config" / "gui_settings.json"
 
 _DEFAULTS = {
     "default_model": "small",
-    "default_subtitle_style": "progressive",
+    # None -> le style par defaut de config/subtitles.json (source unique).
+    "default_subtitle_style": None,
     "default_device": "auto",
     "projects_dir": None,  # None -> projects/store.DEFAULT_PROJECTS_DIR
 }

@@ -63,6 +63,16 @@ class AudioAnalyzer:
         i1 = max(i0, min(i1, len(self.rms_db)))
         return i0, i1
 
+    def mean_db(self, start: float, end: float) -> float:
+        """Niveau moyen (dB) sur un intervalle. Utilise pour reperer les mots
+        prononces plus fort que le reste du clip (mise en evidence des
+        sous-titres) -- reutilise l'enveloppe RMS deja calculee, aucune
+        analyse audio supplementaire."""
+        i0, i1 = self._slice(start, end)
+        if i1 <= i0:
+            return float(self.global_rms_db_mean)
+        return float(np.mean(self.rms_db[i0:i1]))
+
     def _count_peaks(self, db_slice: np.ndarray) -> int:
         if len(db_slice) < 3:
             return 0

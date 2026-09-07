@@ -24,11 +24,20 @@ def build_clip(
     export_settings: dict,
     clip_label: str,
     cancel_token: Optional[CancelToken] = None,
+    caption_groups=None,
+    subtitle_margin_v: Optional[int] = None,
 ) -> None:
+    """`caption_groups`/`subtitle_margin_v` viennent des sous-titres
+    intelligents (editing/captions.py) : ce sont exactement les blocs exportes
+    en .srt/.vtt. Absents, le rendu retombe sur le decoupage du style, comme
+    avant leur ajout."""
     duration = max(0.05, end - start)
 
     crop_filter = build_crop_filter(src_w, src_h, face_hint)
-    render_ass_file(words, clip_start=start, style=subtitle_style, out_ass_path=ass_path)
+    render_ass_file(
+        words, clip_start=start, style=subtitle_style, out_ass_path=ass_path,
+        caption_groups=caption_groups, margin_v=subtitle_margin_v,
+    )
     sub_filter = subtitle_filter(ass_path)
 
     vf = f"{crop_filter},{sub_filter}"

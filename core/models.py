@@ -211,6 +211,10 @@ class ClipResult:
     # confiance, categorie narrative, raisons du recalage. Vide quand le module
     # est desactive -- un lecteur plus ancien de results.json ignore la cle.
     context: dict = field(default_factory=dict)
+    # Chemins relatifs des fichiers de sous-titres exportes (subtitles/*.srt,
+    # *.vtt). Vide quand l'export est desactive -- les sous-titres incrustes
+    # dans la video, eux, ne dependent pas de cette liste.
+    subtitles: list[str] = field(default_factory=list)
 
     @property
     def category(self) -> str:
@@ -228,4 +232,5 @@ class ClipResult:
             "transcript": self.transcript,
             "reasons": self.reasons,
             "context": self.context,
+            "subtitles": self.subtitles,
         }

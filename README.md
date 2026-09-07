@@ -192,6 +192,18 @@ Quand ce module est actif, `--pre-roll`/`--post-roll` ne sont plus appliques : c
 
 Chaque clip recoit aussi une **categorie narrative** (revelation, histoire, conclusion, explication, liste, conseil) deduite des marqueurs de `config/editing.json`. Si aucun marqueur ne ressort, aucune categorie n'est attribuee -- jamais une categorie inventee.
 
+### Sous-titres intelligents (`captions`)
+
+Decoupage adapte au contenu plutot qu'a un simple compteur de mots : la coupe suit la ponctuation, les pauses reelles du locuteur et la longueur de ligne (`max_chars_per_group`), pour des blocs de 2 a 5 mots lisibles d'un coup d'oeil.
+
+**Mise en evidence** des mots importants, a partir de signaux deja disponibles : mots-cles de `config/hooks_keywords.json`, chiffres reellement prononces, et mots nettement plus forts que le reste du clip (niveau audio deja mesure). Au plus un mot par bloc et au plus `max_ratio` du clip. **Si aucun mot ne ressort clairement, aucun n'est mis en avant** -- jamais un mot choisi par defaut.
+
+**Placement vertical** : quand un visage occupe le bas du cadre, les sous-titres remontent au-dessus de lui. Sans visage detecte de facon fiable, la marge du style est conservee telle quelle.
+
+**Six presets** dans `config/subtitles.json` -- `classic` (karaoke par phrase), `bold`, `dynamic` (defaut), `minimal`, `podcast`, `gaming` -- tous personnalisables : police, taille, couleurs, contour, ombre, position, animation (`none`/`fade`/`pop`), mots par groupe, longueur de ligne. Les styles historiques `progressive` et `big_text` sont conserves et produisent exactement le meme decoupage qu'avant.
+
+**Export** : les sous-titres sont toujours incrustes dans le MP4 ; `export_srt`/`export_vtt` ecrivent en plus `subtitles/clip_XX.srt` / `.vtt`, construits a partir des **memes blocs** que la video -- un fichier exporte ne peut donc pas afficher un decoupage ou des timings differents de ce qu'on voit a l'ecran.
+
 ## Recherche YouTube (optionnelle)
 
 Permet de trouver des videos candidates avant de les analyser, plutot que de partir d'un fichier deja en main. **A besoin d'internet a chaque recherche** (voir l'avertissement en tete de ce README) -- contrairement au reste du logiciel.
@@ -246,7 +258,7 @@ Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique 
 output/
 ├── clips/         clip_01.mp4, clip_02.mp4...
 ├── thumbnails/
-├── subtitles/
+├── subtitles/    clip_01.srt (optionnel)
 ├── metadata/      clip_01.json -- detail complet d'un clip
 ├── project.json   manifeste du projet (interface graphique)
 └── results.json   index de tous les clips

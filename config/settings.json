@@ -9,7 +9,7 @@
     "pre_roll": 5,
     "post_roll": 3,
     "min_gap": 20,
-    "subtitle_style": "progressive",
+    "subtitle_style": null,
     "model": "small",
     "device": "auto"
   },
