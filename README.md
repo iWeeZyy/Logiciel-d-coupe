@@ -53,7 +53,7 @@ source .venv/bin/activate        # .venv\Scripts\activate sous Windows
 pip install -r requirements.txt
 ```
 
-L'installation tire `faster-whisper`, `librosa`/`numba` (analyse audio) et `opencv-python-headless` (detection de visage) -- prevoir quelques minutes et ~200-300 Mo.
+L'installation tire `faster-whisper`, `librosa`/`numba` (analyse audio), `opencv-python-headless` (detection de visage) et `PySide6` (interface graphique, `gui_main.py`) -- prevoir quelques minutes et ~400-500 Mo.
 
 ### 4. Premiere execution : telechargement des modeles
 
@@ -68,15 +68,32 @@ Une fois ces telechargements faits, **le programme fonctionne entierement hors l
 
 ### Alternative : version .exe (Windows, sans installer Python)
 
-Un `.exe` autonome (Python + toutes les dependances + ffmpeg deja inclus) est construit automatiquement par GitHub Actions a chaque evolution du code -- voir l'onglet **Actions** du depot, workflow "Build Windows .exe", artifact `clip_farming-windows` (zip).
+Deux `.exe` autonomes (Python + toutes les dependances + ffmpeg deja inclus) sont construits automatiquement par GitHub Actions a chaque evolution du code -- onglet **Actions** du depot :
 
-Important a savoir : packager en `.exe` ne change rien aux besoins materiels (CPU/RAM) pour faire tourner Whisper et encoder la video -- c'est exactement le meme code, ca evite seulement d'installer Python separement. Le modele Whisper doit toujours etre telecharge au premier lancement (connexion internet necessaire une fois, comme en Python).
+- **CLI** -- workflow "Build Windows .exe", artifact `clip_farming-windows` (zip). Dezipper puis, depuis une invite de commandes dans le dossier extrait :
+  ```
+  clip_farming.exe --input video.mp4 --clip-duration 45 --nb-clips 5
+  ```
+- **Interface graphique (ClipFarming)** -- workflow "Build Windows GUI (.exe + installateur)", deux artifacts : `ClipFarming-windows` (dossier zippe, meme principe que la CLI : dezipper puis lancer `ClipFarming.exe`) et **`ClipFarming-Setup`** (`ClipFarming-Setup.exe`, un vrai installateur Windows -- installe dans `Program Files\ClipFarming`, cree les raccourcis Bureau et Menu Demarrer, fournit un desinstalleur). C'est la version a donner a quelqu'un qui ne connait pas la ligne de commande.
 
-Utilisation : dezipper, puis depuis une invite de commandes dans le dossier extrait :
+Important a savoir : packager en `.exe` ne change rien aux besoins materiels (CPU/RAM) pour faire tourner Whisper et encoder la video -- c'est exactement le meme code, ca evite seulement d'installer Python separement. Le modele Whisper doit toujours etre telecharge au premier lancement (connexion internet necessaire une fois, comme en Python) -- y compris pour la version GUI/installateur : le modele n'est pas embarque dans l'installateur (le garder leger l'a emporte sur un fonctionnement 100% hors ligne des l'installation).
+
+`config/`, `assets/` et `ffmpeg.exe` sont deja a cote de l'executable dans les deux cas -- rien d'autre a installer.
+
+## Interface graphique (ClipFarming)
+
+C'est l'interface recommandee pour un usage quotidien -- la CLI (`main.py`) reste disponible et pleinement fonctionnelle pour un usage scriptable/automatise, mais **aucune des deux n'est requise pour utiliser l'autre** : ce sont deux points d'entree independants vers le meme moteur.
+
+Lancement (une fois les dependances installees, voir Installation ci-dessus) :
+```bash
+python gui_main.py
 ```
-clip_farming.exe --input video.mp4 --clip-duration 45 --nb-clips 5
-```
-`config/` et `ffmpeg.exe` sont deja a cote de l'executable -- rien d'autre a installer.
+
+Navigation laterale : **Accueil** (glisser-deposer une video ou la selectionner, regler duree/nombre de clips/modele, lancer), **Recherche** (recherche YouTube, section dediee plus bas), **Projets** (historique des analyses passees, reouvrables a tout moment), **Parametres** (modele par defaut, GPU/CPU, dossier des projets, style de sous-titres, pondération du score et mots-cles -- ces deux derniers modifient directement `config/settings.json`/`config/hooks_keywords.json`, les memes fichiers que lit la CLI).
+
+Pendant une analyse, l'interface **ne se fige jamais** (le traitement tourne dans un thread separe) : progression reelle par etape, temps ecoule/estimation restante, nombre de clips deja trouves, et un bouton **Annuler** qui interrompt reellement le traitement (y compris un encodage ffmpeg en cours) et nettoie les fichiers temporaires.
+
+Les resultats s'affichent en grille (score, miniature, timestamps, transcription, detail du score) avec un lecteur video integre (QtMultimedia -- jamais besoin d'ouvrir VLC) permettant de naviguer d'un clip a l'autre, et des boutons d'export (un clip, tous les clips, ou ouvrir le dossier du projet).
 
 ## Utilisation
 

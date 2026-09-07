@@ -1,0 +1,92 @@
+name: Build Windows GUI (.exe + installateur)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "config/**"
+      - "assets/**"
+      - "requirements.txt"
+      - "build/clip_farming_gui.spec"
+      - "build/installer.iss"
+      - ".github/workflows/build-windows-gui.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download static ffmpeg (Windows, includes libass/libx264)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Voir build-windows-exe.yml pour le contexte : gyan.dev est une URL
+          # stable, BtbN un repli si jamais gyan.dev est injoignable.
+          $urls = @(
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+          )
+          $downloaded = $false
+          foreach ($url in $urls) {
+            try {
+              Write-Host "Telechargement de $url..."
+              Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip -TimeoutSec 90
+              $downloaded = $true
+              break
+            } catch {
+              Write-Warning "Echec depuis $url : $_"
+            }
+          }
+          if (-not $downloaded) {
+            throw "Impossible de telecharger ffmpeg depuis toutes les sources connues."
+          }
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_extracted
+          $binDir = Get-ChildItem -Path ffmpeg_extracted -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1 -ExpandProperty DirectoryName
+          echo "FFMPEG_BIN_DIR=$binDir" >> $env:GITHUB_ENV
+
+      - name: Build with PyInstaller (--onedir, see build/clip_farming_gui.spec)
+        run: pyinstaller build/clip_farming_gui.spec --noconfirm --clean --distpath dist
+
+      - name: Bundle ffmpeg.exe / ffprobe.exe next to ClipFarming.exe
+        shell: pwsh
+        run: |
+          Copy-Item "$env:FFMPEG_BIN_DIR\ffmpeg.exe" "dist\ClipFarming\ffmpeg.exe"
+          Copy-Item "$env:FFMPEG_BIN_DIR\ffprobe.exe" "dist\ClipFarming\ffprobe.exe"
+
+      - name: Zip the distributable (fallback if the installer step fails)
+        shell: pwsh
+        run: Compress-Archive -Path "dist\ClipFarming\*" -DestinationPath "ClipFarming-windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipFarming-windows
+          path: ClipFarming-windows.zip
+          retention-days: 30
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Build the installer (ClipFarming-Setup.exe)
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "build\installer.iss"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipFarming-Setup
+          path: build/installer_output/ClipFarming-Setup.exe
+          retention-days: 30

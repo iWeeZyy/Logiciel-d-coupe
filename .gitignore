@@ -15,11 +15,14 @@ config/gui_settings.json
 # Cle API YouTube -- jamais commitee (voir README, section recherche YouTube).
 youtube_api_key.txt
 
-# Sorties du build .exe (voir .github/workflows/build-windows-exe.yml).
+# Sorties du build .exe (voir .github/workflows/build-windows-exe.yml et
+# build-windows-gui.yml).
 dist/
 build_tmp/
+build/installer_output/
 *.spec.bak
 clip_farming-windows.zip
+ClipFarming-windows.zip
 
 # Videos de test locales
 *.mp4
