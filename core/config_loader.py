@@ -54,9 +54,27 @@ class Settings:
     face_detection: dict = field(default_factory=dict)
     export: dict = field(default_factory=dict)
 
-    # Chargés depuis hooks_keywords.json / subtitles.json
+    # Chargés depuis hooks_keywords.json / subtitles.json / editing.json
     keywords_config: dict = field(default_factory=dict)
     subtitles_config: dict = field(default_factory=dict)
+    editing: dict = field(default_factory=dict)
+
+    def editing_module(self, name: str) -> dict:
+        """Bloc de config d'un module d'edition automatique (editing.json).
+        Renvoie un dict vide si le bloc n'existe pas -- un module dont la
+        config est absente est simplement considere comme desactive."""
+        block = self.editing.get(name, {})
+        return block if isinstance(block, dict) else {}
+
+    def editing_module_enabled(self, name: str) -> bool:
+        return bool(self.editing_module(name).get("enabled", False))
+
+    def max_clip_duration(self) -> float:
+        """Duree maximale autorisee pour un clip, marge de depassement comprise.
+        Une seule definition, reutilisee par selector.py et par la detection de
+        contexte -- deux plafonds concurrents finiraient par diverger."""
+        overshoot = self.hook_detection.get("max_overshoot_ratio", 0.2)
+        return float(self.clip_duration) * (1.0 + float(overshoot))
 
     def subtitle_style_params(self) -> dict:
         styles = self.subtitles_config.get("styles", {})
@@ -78,6 +96,24 @@ def _validate_weights(weights: dict) -> None:
         )
 
 
+def _load_editing_config() -> dict:
+    """config/editing.json -- modules d'edition automatique.
+
+    Absent, le fichier n'est pas une erreur : l'application retombe alors sur
+    le comportement d'avant l'edition automatique (tous les modules eteints),
+    ce qui garde une installation ancienne ou incomplete parfaitement
+    fonctionnelle plutot que de la faire planter au demarrage.
+    """
+    path = CONFIG_DIR / "editing.json"
+    if not path.exists():
+        return {}
+    data = _load_json("editing.json")
+    clip_scores = data.get("clip_scores", {})
+    if clip_scores.get("weights"):
+        _validate_weights(clip_scores["weights"])
+    return data
+
+
 def load_settings(cli_args: Any) -> Settings:
     """cli_args : objet argparse.Namespace. Les valeurs non fournies sur la CLI
     (None) sont completees par config/settings.json -> defaults."""
@@ -88,6 +124,7 @@ def load_settings(cli_args: Any) -> Settings:
 
     keywords_config = _load_json("hooks_keywords.json")
     subtitles_config = _load_json("subtitles.json")
+    editing_config = _load_editing_config()
 
     def pick(cli_value, key):
         return cli_value if cli_value is not None else defaults.get(key)
@@ -116,6 +153,7 @@ def load_settings(cli_args: Any) -> Settings:
         export=settings_json.get("export", {}),
         keywords_config=keywords_config,
         subtitles_config=subtitles_config,
+        editing=editing_config,
     )
 
     if settings.clip_duration <= 0:

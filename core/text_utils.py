@@ -11,6 +11,21 @@ import unicodedata
 _SENTENCE_RE = re.compile(r"[^.!?…]+[.!?…]*")
 _WORD_RE = re.compile(r"[\w'-]+", re.UNICODE)
 
+SENTENCE_END_CHARS = ".!?…"
+# Ponctuation fermante pouvant suivre le point final : (...), «...», "...".
+_TRAILING_CHARS = "\"')]}»”’ \t"
+
+
+def ends_sentence(text: str) -> bool:
+    """True si `text` se termine par une ponctuation forte, y compris derriere
+    une fermeture de citation/parenthese.
+
+    Partage par le decoupage en phrases (editing/sentences.py) et par le
+    Rewatch Score (analysis/scoring.py, "le clip finit-il sur une phrase
+    terminee ?") -- une seule definition, pas deux qui divergent."""
+    stripped = text.rstrip(_TRAILING_CHARS)
+    return bool(stripped) and stripped[-1] in SENTENCE_END_CHARS
+
 
 def normalize(text: str) -> str:
     """Minuscule + accents retires, pour une comparaison mots-cles robuste."""

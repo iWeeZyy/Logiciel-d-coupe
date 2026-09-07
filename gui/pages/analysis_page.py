@@ -93,6 +93,10 @@ class AnalysisPage(QWidget):
         self.remaining_label.value_label.setText("—")
 
     def _on_progress(self, event: ProgressEvent) -> None:
+        # Les etapes viennent du moteur (core/steps.py) : elles varient selon
+        # les modules d'edition actives, voir gui/widgets/step_progress.py.
+        if event.step_labels:
+            self.steps.set_steps(event.step_labels)
         self.steps.set_current_step(event.step_index)
 
         fraction = event.step_fraction or 0.0

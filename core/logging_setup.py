@@ -28,15 +28,20 @@ def get_logger() -> logging.Logger:
 class StepProgress:
     """Affiche "[1/5] Extraction audio..." sur stdout, une ligne par etape.
 
+    Prend la liste ORDONNEE des etapes de ce run (core/steps.py) plutot qu'un
+    simple compte : elle est retransmise dans chaque ProgressEvent, ce qui
+    permet a l'interface d'afficher exactement les etapes reellement executees
+    au lieu d'une copie figee de son cote.
+
     Usage:
-        progress = StepProgress(5)
+        progress = StepProgress(build_step_labels(...))
         progress.step("Extraction audio")
         ...
-        progress.step("Transcription")
     """
 
-    def __init__(self, total_steps: int, on_progress: Optional[Callable[[ProgressEvent], None]] = None):
-        self.total = total_steps
+    def __init__(self, step_labels: list[str], on_progress: Optional[Callable[[ProgressEvent], None]] = None):
+        self.step_labels = list(step_labels)
+        self.total = len(self.step_labels)
         self.current = 0
         self.on_progress = on_progress
         self._start = time.monotonic()
@@ -74,5 +79,6 @@ class StepProgress:
                 elapsed_s=time.monotonic() - self._start,
                 clips_found=self._clips_found,
                 step_fraction=fraction,
+                step_labels=self.step_labels,
             )
         )

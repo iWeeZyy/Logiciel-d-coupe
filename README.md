@@ -152,12 +152,45 @@ Le programme indique toujours dans ses logs quel peripherique (`cpu`/`cuda`) est
 
 ## Configuration
 
-Trois fichiers, modifiables sans toucher au code :
+Fichiers modifiables sans toucher au code :
 
 - `config/settings.json` -- valeurs par defaut des options CLI, poids du score composite (`weights`, doivent sommer a 1.0), parametres internes de scoring.
 - `config/hooks_keywords.json` -- liste des mots/expressions accrocheurs et amorces de question.
 - `config/subtitles.json` -- styles de sous-titres (police, taille, couleur, position, mode `progressive`/`classic`).
 - `config/youtube.json` -- poids du Video Potential Score et limite de quota (recherche YouTube, section dediee plus bas).
+- `config/editing.json` -- modules d'edition automatique (section suivante). Chaque module a son propre `enabled` : le passer a `false` retablit exactement le comportement d'avant son ajout.
+
+## Edition automatique
+
+Modules optionnels appliques apres la selection des passages. Ils reutilisent les donnees deja calculees (mots horodates de Whisper, analyse audio, scores) sans declencher de traitement supplementaire de la video.
+
+Regle commune : **mieux vaut ne rien modifier que mal modifier**. Chaque module produit une confiance interne ; sous le seuil configure, sa proposition est ignoree et l'etat d'origine conserve.
+
+### Scores d'un clip
+
+| Score | Ce qu'il mesure |
+|---|---|
+| **Hook Score** (`total`) | force de l'accroche : audio, mots-cles, questions, densite, silence de mise en tension, intensite |
+| **Content Score** | densite et structure du propos (mots-cles, debit, longueur des phrases, ponctuation forte) |
+| **Rewatch Score** | envie de revoir : part reelle de parole, clip qui se termine sur une phrase finie, variation d'intensite, phrases courtes |
+| **Viral Potential** | combinaison ponderee des trois (`clip_scores.weights` dans `config/editing.json`) -- c'est le score de classement |
+
+Ce sont des heuristiques explicables construites sur les memes mesures que le Hook Score, **pas** une prediction de viralite reelle : aucune donnee de performance ne permettrait de les calibrer.
+
+### Detection du contexte (`context_detection`)
+
+Recale les bornes de chaque clip sur la structure reelle du discours plutot que sur un decoupage arbitraire :
+
+- un debut au milieu d'une phrase remonte au debut de cette phrase ;
+- une fin au milieu d'une phrase va jusqu'a sa fin ;
+- une question suivie de sa reponse inclut la reponse (payoff) ;
+- une marge configurable est ajoutee, sans jamais mordre sur la phrase voisine ;
+- aucune borne ne tombe au milieu d'un mot ;
+- la **duree maximale** (`clip_duration` x `1 + max_overshoot_ratio`) reste prioritaire sur tout le reste.
+
+Quand ce module est actif, `--pre-roll`/`--post-roll` ne sont plus appliques : c'est lui qui fixe les bornes (deux extensions superposees se marcheraient dessus). Le clip est ensuite re-note sur ses bornes definitives, pour que les scores affiches soient ceux du clip reellement exporte.
+
+Chaque clip recoit aussi une **categorie narrative** (revelation, histoire, conclusion, explication, liste, conseil) deduite des marqueurs de `config/editing.json`. Si aucun marqueur ne ressort, aucune categorie n'est attribuee -- jamais une categorie inventee.
 
 ## Recherche YouTube (optionnelle)
 
@@ -211,13 +244,17 @@ Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique 
 
 ```
 output/
-├── clip_01_score_92.mp4
-├── clip_02_score_88.mp4
-├── ...
-└── results.json
+├── clips/         clip_01.mp4, clip_02.mp4...
+├── thumbnails/
+├── subtitles/
+├── metadata/      clip_01.json -- detail complet d'un clip
+├── project.json   manifeste du projet (interface graphique)
+└── results.json   index de tous les clips
 ```
 
-`results.json` contient, pour chaque clip : nom de fichier, timestamps, duree, score total, detail par critere (audio/keywords/questions/densite/silence/intensite), transcription, langue detectee, et les principales raisons du score (`reasons`).
+`results.json` contient, pour chaque clip : chemin relatif du fichier, timestamps, duree, score de classement, detail de tous les scores, transcription, langue detectee, principales raisons du score (`reasons`) et trace de la detection de contexte (`context`). Les fichiers de `metadata/` reprennent la meme information clip par clip.
+
+Le score n'apparait plus dans le nom du fichier : il change des que les poids changent, alors que le nom est reference par `results.json`, les sous-titres et les miniatures. Les projets produits avant cette structure (clips a plat, `clip_01_score_92.mp4`) restent lisibles tels quels.
 
 ## Tests
 
@@ -226,7 +263,7 @@ pip install -r requirements.txt   # inclut pytest
 pytest tests/
 ```
 
-Les tests sont des tests unitaires purs (analyse texte, scoring, selection, analyse audio sur un signal synthetique) -- ils ne necessitent ni ffmpeg, ni modele Whisper, ni GPU.
+Les tests sont des tests unitaires purs (analyse texte, scoring, selection, analyse audio sur un signal synthetique, decoupage en phrases, recalage du contexte, timeline de montage, structure de sortie) -- ils ne necessitent ni ffmpeg, ni modele Whisper, ni GPU.
 
 ## Limites connues (volontaires)
 

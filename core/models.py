@@ -133,6 +133,17 @@ class Candidate:
 
 @dataclass
 class ScoreBreakdown:
+    """Detail du scoring d'un passage.
+
+    `total` reste ce qu'il a toujours ete : la somme ponderee des six
+    sous-scores d'accroche, autrement dit le **Hook Score** (la propriete `hook`
+    en est un simple alias lisible, pas un champ duplique).
+
+    `content`, `rewatch` et `viral` sont venus ensuite : ils recombinent les
+    memes mesures deja extraites, sans aucune extraction supplementaire.
+    `viral` est le score de classement affiche en tete d'un clip.
+    """
+
     audio: float = 0.0
     keywords: float = 0.0
     questions: float = 0.0
@@ -140,6 +151,21 @@ class ScoreBreakdown:
     silence_build_up: float = 0.0
     intensity: float = 0.0
     total: float = 0.0
+    content: float = 0.0
+    rewatch: float = 0.0
+    viral: float = 0.0
+
+    def __post_init__(self) -> None:
+        # Un objet construit avec le seul `total` (code anterieur aux trois
+        # nouveaux scores, ou stub de test) reste classable : faute de calcul
+        # dedie, le potentiel viral vaut le Hook Score.
+        if self.viral == 0.0 and self.total != 0.0:
+            self.viral = self.total
+
+    @property
+    def hook(self) -> float:
+        """Alias lisible de `total` -- meme valeur, aucun champ en double."""
+        return self.total
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -163,6 +189,10 @@ class ProgressEvent:
     elapsed_s: float = 0.0
     clips_found: Optional[int] = None
     step_fraction: Optional[float] = None  # 0..1, avancement DANS l'etape courante si connu
+    # Liste complete et ordonnee des etapes de CE run. Elle varie selon les
+    # modules actives, d'ou son transport dans l'evenement plutot qu'une copie
+    # figee cote interface (qui se desynchroniserait des l'ajout d'une etape).
+    step_labels: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -177,6 +207,14 @@ class ClipResult:
     transcript: str
     language: str
     reasons: list[str] = field(default_factory=list)
+    # Trace de la detection de contexte (editing/context.py) : applique ou non,
+    # confiance, categorie narrative, raisons du recalage. Vide quand le module
+    # est desactive -- un lecteur plus ancien de results.json ignore la cle.
+    context: dict = field(default_factory=dict)
+
+    @property
+    def category(self) -> str:
+        return self.context.get("category", "")
 
     def to_dict(self) -> dict:
         return {
@@ -189,4 +227,5 @@ class ClipResult:
             "language": self.language,
             "transcript": self.transcript,
             "reasons": self.reasons,
+            "context": self.context,
         }

@@ -61,14 +61,22 @@ def select_clips(
     max_overshoot_ratio: float,
     video_duration: float,
     text_analyzer: TextAnalyzer,
+    apply_context: bool = True,
 ) -> list[ScoredCandidate]:
+    """`apply_context=False` laisse les bornes brutes : c'est le cas quand la
+    detection intelligente du contexte (editing/context.py) est active, puisque
+    c'est elle qui decide alors des bornes. Deux mecanismes d'extension
+    superposes se marcheraient dessus."""
     if not scored_candidates:
         raise InsufficientContentError(
             "Aucun passage exploitable n'a ete detecte dans cette video (pas assez "
             "de parole, ou --clip-duration trop long par rapport a la duree totale)."
         )
 
-    ranked = sorted(scored_candidates, key=lambda sc: sc.scores.total, reverse=True)
+    # Classement par potentiel viral : pour un ScoreBreakdown ne portant que
+    # `total` (code anterieur, stub de test), `viral` vaut deja le Hook Score
+    # -- voir ScoreBreakdown.__post_init__ -- donc l'ordre reste inchange.
+    ranked = sorted(scored_candidates, key=lambda sc: sc.scores.viral, reverse=True)
 
     selected: list[ScoredCandidate] = []
     for sc in ranked:
@@ -90,6 +98,9 @@ def select_clips(
             f"Seulement {len(selected)}/{nb_clips} clips distincts trouves "
             f"(video trop courte, ou --min-gap/--clip-duration trop restrictifs pour ce contenu)."
         )
+
+    if not apply_context:
+        return selected
 
     with_context = [
         _apply_context(sc, pre_roll, post_roll, max_overshoot_ratio, video_duration, text_analyzer)

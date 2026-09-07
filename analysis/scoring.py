@@ -12,6 +12,12 @@ Les poids (w_*) viennent de config/settings.json -> weights et somment a 1.0
 from __future__ import annotations
 
 from core.models import Candidate, ScoreBreakdown, ScoredCandidate
+from core.text_utils import ends_sentence
+
+# Utilise quand aucun bloc clip_scores n'est fourni (appel historique a trois
+# arguments) : le potentiel viral vaut alors exactement le Hook Score, donc le
+# comportement d'avant l'ajout des trois scores est preserve a l'identique.
+_DEFAULT_CLIP_WEIGHTS = {"hook": 1.0, "rewatch": 0.0, "content": 0.0}
 
 
 def _clip(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -33,11 +39,16 @@ def _silence_component(silence_s: float, ideal_min: float, ideal_max: float) -> 
 
 
 class Scorer:
-    def __init__(self, weights: dict, scoring_params: dict, audio_stats: dict):
+    def __init__(self, weights: dict, scoring_params: dict, audio_stats: dict,
+                 clip_scores: dict | None = None):
         self.weights = weights
         self.p = scoring_params
         self.audio_mean_db = audio_stats.get("mean_db", -40.0)
         self.audio_p90_db = audio_stats.get("p90_db", -20.0)
+
+        clip_scores = clip_scores or {}
+        self.clip_weights = clip_scores.get("weights") or dict(_DEFAULT_CLIP_WEIGHTS)
+        self.clip_params = clip_scores.get("params", {})
 
     def _audio_score(self, c: Candidate) -> float:
         headroom = max(1.0, self.audio_p90_db - self.audio_mean_db)
@@ -73,6 +84,66 @@ class Scorer:
         variation_component = _clip(c.audio.rms_std / self.p.get("rms_std_scale_db", 8) * 100.0)
         return _clip(0.6 * rise_component + 0.4 * variation_component)
 
+    # ---------- Content / Rewatch / Viral ----------
+    #
+    # Ces trois scores ne declenchent AUCUNE extraction supplementaire : ils
+    # recombinent les mesures deja calculees pour le Hook Score (mots-cles,
+    # densite de parole, structure des phrases, variation d'intensite, mots
+    # horodates). Ce sont des heuristiques explicables, pas une prediction de
+    # viralite reelle -- aucune donnee de performance n'existe pour calibrer ca.
+
+    def _sentence_structure_score(self, c: Candidate) -> float:
+        avg = c.text_features.avg_sentence_length
+        if avg <= 0:
+            return 0.0
+        ideal = self.clip_params.get("ideal_avg_sentence_words", 12)
+        tolerance = max(1.0, self.clip_params.get("sentence_length_tolerance", 8))
+        closeness = max(0.0, 1.0 - abs(avg - ideal) / tolerance)
+        punctuation = _clip(c.text_features.strong_punctuation_count * 25.0)
+        return _clip(70.0 * closeness + 0.30 * punctuation)
+
+    def _content_score(self, c: Candidate) -> float:
+        return _clip(
+            0.40 * self._keyword_score(c)
+            + 0.35 * self._speech_density_score(c)
+            + 0.25 * self._sentence_structure_score(c)
+        )
+
+    def _speech_coverage_score(self, c: Candidate) -> float:
+        """Part du clip reellement occupee par de la parole -- un passage
+        parseme de temps morts se revoit mal."""
+        if not c.words or c.duration <= 0:
+            return 0.0
+        spoken = sum(max(0.0, w.end - w.start) for w in c.words)
+        target = max(0.05, self.clip_params.get("speech_coverage_target", 0.72))
+        return _clip((spoken / c.duration) / target * 100.0)
+
+    @staticmethod
+    def _ending_completeness_score(c: Candidate) -> float:
+        """Un clip qui s'arrete sur une phrase terminee se revoit ; un clip
+        coupe au milieu d'un mot donne surtout envie de fermer."""
+        if not c.words:
+            return 40.0
+        return 100.0 if ends_sentence(c.words[-1].text) else 40.0
+
+    def _rewatch_score(self, c: Candidate) -> float:
+        intensity_scale = max(1e-6, self.clip_params.get("rewatch_intensity_scale_db", 8))
+        accel_scale = max(1e-6, self.clip_params.get("acceleration_scale_wps", 1.5))
+
+        coverage = self._speech_coverage_score(c)
+        ending = self._ending_completeness_score(c)
+        variation = _clip(c.audio.rms_std / intensity_scale * 100.0)
+        short_sentences = _clip(c.text_features.short_sentence_ratio * 100.0)
+        acceleration = _clip(50.0 + c.text_features.speech_rate_acceleration / accel_scale * 50.0)
+
+        return _clip(
+            0.30 * coverage
+            + 0.25 * ending
+            + 0.20 * variation
+            + 0.15 * short_sentences
+            + 0.10 * acceleration
+        )
+
     def score(self, candidate: Candidate) -> ScoredCandidate:
         audio = self._audio_score(candidate)
         keywords = self._keyword_score(candidate)
@@ -90,6 +161,14 @@ class Scorer:
             + intensity * self.weights.get("intensity", 0)
         )
 
+        content = self._content_score(candidate)
+        rewatch = self._rewatch_score(candidate)
+        viral = _clip(
+            total * self.clip_weights.get("hook", 0)
+            + rewatch * self.clip_weights.get("rewatch", 0)
+            + content * self.clip_weights.get("content", 0)
+        )
+
         breakdown = ScoreBreakdown(
             audio=audio,
             keywords=keywords,
@@ -98,6 +177,9 @@ class Scorer:
             silence_build_up=silence_bu,
             intensity=intensity,
             total=total,
+            content=content,
+            rewatch=rewatch,
+            viral=viral,
         )
         reasons = self._explain(candidate, breakdown)
         return ScoredCandidate(candidate=candidate, scores=breakdown, reasons=reasons)
@@ -118,6 +200,10 @@ class Scorer:
             reasons.append(f"silence de {c.audio.silence_before_s:.2f}s avant la phrase")
         if s.intensity >= threshold:
             reasons.append("hausse/variation notable de l'intensite vocale")
+        if s.rewatch >= threshold:
+            reasons.append("bon potentiel de revisionnage (rythme soutenu, fin nette)")
+        if s.content >= threshold:
+            reasons.append("propos dense et structure")
         if not reasons:
             reasons.append("score reparti sans facteur dominant unique")
         return reasons

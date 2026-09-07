@@ -1,0 +1,70 @@
+{
+  "_comment": "Modules d'edition automatique. Chaque module a son propre bloc avec un interrupteur 'enabled' : le desactiver ramene exactement le comportement d'avant son ajout, jamais un comportement degrade. Les modules des phases suivantes (cadrage, montage, sous-titres intelligents, titres, miniatures) ajouteront leur propre bloc ici -- aucun bloc n'est declare a l'avance pour ne pas exposer un reglage qui ne ferait rien.",
+
+  "clip_scores": {
+    "_comment": "Viral Potential = combinaison ponderee du Hook Score (accroche), du Rewatch Score (envie de revoir) et du Content Score (densite/qualite du propos). Ce sont des heuristiques explicables calculees a partir des memes donnees que le Hook Score -- pas une prediction de viralite reelle, qu'aucune donnee de performance ne permettrait de calibrer ici. Les poids doivent sommer a 1.0.",
+    "weights": {
+      "hook": 0.50,
+      "rewatch": 0.30,
+      "content": 0.20
+    },
+    "params": {
+      "speech_coverage_target": 0.72,
+      "ideal_avg_sentence_words": 12,
+      "sentence_length_tolerance": 8,
+      "rewatch_intensity_scale_db": 8,
+      "acceleration_scale_wps": 1.5
+    }
+  },
+
+  "context_detection": {
+    "_comment": "Fonctionnalite 1 : recale les bornes d'un clip sur la structure du discours (debut de phrase, payoff apres une question, marges dans le silence). Desactive -> les bornes restent celles de --pre-roll/--post-roll comme avant. La duree maximale reste toujours prioritaire : clip_duration x (1 + hook_detection.max_overshoot_ratio) de settings.json.",
+    "enabled": true,
+    "sentence_gap_s": 0.6,
+    "padding_before_s": 0.35,
+    "padding_after_s": 0.6,
+    "max_lookback_s": 12.0,
+    "max_lookahead_s": 12.0,
+    "payoff_max_gap_s": 1.5,
+    "min_clip_duration_s": 8.0,
+    "min_confidence": 0.45
+  },
+
+  "narrative_markers": {
+    "_comment": "Marqueurs servant a etiqueter le type narratif d'un clip (affiche comme categorie). Compares sur le texte normalise (minuscules, accents retires) via core.text_utils. Aucune categorie n'est attribuee si rien ne ressort -- une categorie inventee serait pire qu'aucune.",
+    "revelation": [
+      "en fait", "en realite", "la verite", "ce que personne", "personne ne sait",
+      "je vais vous dire", "je vais te dire", "revele", "on m'a cache", "le secret"
+    ],
+    "histoire": [
+      "il etait une fois", "un jour", "quand j'etais", "je me souviens", "l'autre jour",
+      "ca m'est arrive", "cette histoire"
+    ],
+    "conclusion": [
+      "en conclusion", "pour resumer", "au final", "voila pourquoi", "la morale",
+      "retenez", "ce qu'il faut retenir"
+    ],
+    "explication": [
+      "parce que", "c'est pour ca", "la raison", "ca s'explique", "c'est-a-dire",
+      "ce qui veut dire", "concretement"
+    ],
+    "liste": [
+      "premierement", "deuxiemement", "troisiemement", "numero 1", "numero 2",
+      "trois choses", "cinq raisons", "premiere raison"
+    ],
+    "conseil": [
+      "mon conseil", "je vous conseille", "il faut que", "vous devez", "tu dois",
+      "la meilleure facon", "astuce"
+    ]
+  },
+
+  "category_labels": {
+    "_comment": "Libelles affiches pour les categories ci-dessus (interface uniquement).",
+    "revelation": "Revelation",
+    "histoire": "Histoire",
+    "conclusion": "Conclusion",
+    "explication": "Explication",
+    "liste": "Liste",
+    "conseil": "Conseil"
+  }
+}
