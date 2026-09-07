@@ -56,6 +56,17 @@ exe = EXE(
     name="clip_farming",
     console=True,
     disable_windowed_traceback=False,
+    # PyInstaller >= 6.0 range par defaut tout ce qui est collecte (dependances
+    # ET datas, donc config/) dans un sous-dossier "_internal/" plutot qu'a
+    # plat a cote de l'exe. C'est ICI, sur EXE(), que ce comportement se
+    # decide reellement (COLLECT() plus bas se contente de recopier la valeur
+    # depuis cet objet EXE -- lui passer contents_directory separement n'a
+    # aucun effet, verifie dans le code source de PyInstaller,
+    # PyInstaller/building/api.py). "." restaure l'ancienne disposition a
+    # plat (comportement pre-6.0). Sans ca, le programme plante au demarrage
+    # avec un FileNotFoundError sur config/settings.json (bug reel constate
+    # par un utilisateur en test).
+    contents_directory=".",
 )
 
 coll = COLLECT(

@@ -64,6 +64,17 @@ exe = EXE(
     disable_windowed_traceback=False,
     icon=os.path.join(ROOT, "assets", "icons", "clipfarming.ico")
     if os.path.exists(os.path.join(ROOT, "assets", "icons", "clipfarming.ico")) else None,
+    # PyInstaller >= 6.0 range par defaut tout ce qui est collecte (dependances
+    # ET datas, donc config/ et assets/) dans un sous-dossier "_internal/"
+    # plutot qu'a plat a cote de l'exe. C'est ICI, sur EXE(), que ce
+    # comportement se decide reellement (COLLECT() plus bas se contente de
+    # recopier la valeur depuis cet objet EXE -- lui passer contents_directory
+    # separement n'a aucun effet, verifie dans le code source de PyInstaller,
+    # PyInstaller/building/api.py). "." restaure l'ancienne disposition a
+    # plat (comportement pre-6.0). Sans ca, le programme plante au demarrage
+    # avec un FileNotFoundError sur config/settings.json (bug reel constate
+    # par un utilisateur en test).
+    contents_directory=".",
 )
 
 coll = COLLECT(
