@@ -31,7 +31,28 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          # gyan.dev's "release-essentials" URL is a stable, permanent pointer
+          # (not a rotating "latest release asset" like BtbN's, which 404'd once
+          # here mid-republish on their end) -- tried first. BtbN kept as fallback
+          # in case gyan.dev is ever unreachable.
+          $urls = @(
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+          )
+          $downloaded = $false
+          foreach ($url in $urls) {
+            try {
+              Write-Host "Telechargement de $url..."
+              Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip -TimeoutSec 90
+              $downloaded = $true
+              break
+            } catch {
+              Write-Warning "Echec depuis $url : $_"
+            }
+          }
+          if (-not $downloaded) {
+            throw "Impossible de telecharger ffmpeg depuis toutes les sources connues."
+          }
           Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_extracted
           $binDir = Get-ChildItem -Path ffmpeg_extracted -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1 -ExpandProperty DirectoryName
           echo "FFMPEG_BIN_DIR=$binDir" >> $env:GITHUB_ENV
