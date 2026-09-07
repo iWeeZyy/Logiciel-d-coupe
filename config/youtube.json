@@ -1,0 +1,19 @@
+{
+  "_comment": "Poids du Video Potential Score (youtube/ranking.py) -- distinct du Hook Score (config/settings.json). Doivent sommer a 1.0.",
+
+  "weights": {
+    "relevance": 0.30,
+    "popularity": 0.25,
+    "duration_fit": 0.25,
+    "quality_proxy": 0.20
+  },
+
+  "params": {
+    "reference_view_count_log10": 6.0,
+    "duration_fit_points_per_slot": 20.0,
+    "ideal_duration_min_s": 600,
+    "ideal_duration_max_s": 5400
+  },
+
+  "daily_quota_limit": 10000
+}

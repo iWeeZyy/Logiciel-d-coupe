@@ -16,5 +16,14 @@ opencv-python-headless>=4.9
 
 tqdm>=4.66
 
+# Recherche YouTube (optionnelle -- necessite internet, voir README).
+requests>=2.31
+yt-dlp>=2024.8.6
+
+# zoneinfo (stdlib) a besoin de cette base de donnees sur Windows, qui ne
+# l'embarque pas nativement -- necessaire pour le reset de quota YouTube
+# (minuit heure du Pacifique).
+tzdata>=2024.1
+
 # Tests
 pytest>=8.0

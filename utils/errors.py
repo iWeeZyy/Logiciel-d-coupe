@@ -45,3 +45,23 @@ class OutputExistsError(ClipFarmingError):
 
 class InsufficientMemoryError(ClipFarmingError):
     """Echec d'allocation memoire (modele trop gros pour la machine) -- suggere un modele plus petit."""
+
+
+class YouTubeConfigError(ClipFarmingError):
+    """Cle API YouTube absente ou filtre de recherche invalide."""
+
+
+class YouTubeApiError(ClipFarmingError):
+    """La YouTube Data API a renvoye une erreur (cle invalide, requete malformee, etc.)."""
+
+
+class YouTubeQuotaError(ClipFarmingError):
+    """Quota YouTube Data API journalier atteint ou sur le point de l'etre."""
+
+
+class RightsNotConfirmedError(ClipFarmingError):
+    """L'utilisateur n'a pas confirme disposer des droits necessaires avant un telechargement."""
+
+
+class YouTubeDownloadError(ClipFarmingError):
+    """Echec de telechargement d'une video (privee, region-verrouillee, supprimee, live, etc.)."""

@@ -128,3 +128,12 @@ def load_settings(cli_args: Any) -> Settings:
         raise ConfigError("--min-gap doit etre >= 0")
 
     return settings
+
+
+def load_youtube_config() -> dict:
+    """config/youtube.json -- poids du Video Potential Score + parametres de
+    quota. Separe de Settings/settings.json : la recherche est independante
+    du moteur de traitement video (voir youtube/README dans le code)."""
+    data = _load_json("youtube.json")
+    _validate_weights(data.get("weights", {}))
+    return data

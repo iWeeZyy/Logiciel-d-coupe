@@ -2,7 +2,9 @@
 
 Transforme automatiquement une video longue en plusieurs clips courts (9:16, sous-titres incrustes) optimises pour Instagram Reels.
 
-**100 % local.** Aucune API externe, aucune cle API, aucun compte, aucun abonnement. Une connexion internet n'est necessaire qu'une seule fois, pour installer les dependances et telecharger les modeles (Whisper + detecteur de visage). Ensuite, tout fonctionne hors ligne.
+**100 % local pour le traitement.** Aucune API externe, aucune cle API, aucun compte, aucun abonnement pour transcrire/analyser/decouper/exporter. Une connexion internet n'est necessaire qu'une seule fois, pour installer les dependances et telecharger les modeles (Whisper + detecteur de visage). Ensuite, le traitement fonctionne entierement hors ligne.
+
+La **recherche YouTube** (optionnelle, section dediee plus bas) est la seule fonctionnalite qui a besoin d'internet a chaque utilisation -- c'est inherent a la recherche sur une plateforme distante, pas un choix de conception.
 
 ## Comment ca marche
 
@@ -64,6 +66,18 @@ Si le detecteur de visage ne peut pas etre telecharge (pas de connexion), le pro
 
 Une fois ces telechargements faits, **le programme fonctionne entierement hors ligne**.
 
+### Alternative : version .exe (Windows, sans installer Python)
+
+Un `.exe` autonome (Python + toutes les dependances + ffmpeg deja inclus) est construit automatiquement par GitHub Actions a chaque evolution du code -- voir l'onglet **Actions** du depot, workflow "Build Windows .exe", artifact `clip_farming-windows` (zip).
+
+Important a savoir : packager en `.exe` ne change rien aux besoins materiels (CPU/RAM) pour faire tourner Whisper et encoder la video -- c'est exactement le meme code, ca evite seulement d'installer Python separement. Le modele Whisper doit toujours etre telecharge au premier lancement (connexion internet necessaire une fois, comme en Python).
+
+Utilisation : dezipper, puis depuis une invite de commandes dans le dossier extrait :
+```
+clip_farming.exe --input video.mp4 --clip-duration 45 --nb-clips 5
+```
+`config/` et `ffmpeg.exe` sont deja a cote de l'executable -- rien d'autre a installer.
+
 ## Utilisation
 
 ```bash
@@ -85,7 +99,10 @@ python main.py --help
 
 | Option | Defaut | Description |
 |---|---|---|
-| `--input` | *(obligatoire)* | Chemin de la video source |
+| `--input` | — | Chemin de la video source locale (un de `--input`/`--youtube`/`--search` est requis) |
+| `--youtube` | — | ID ou URL YouTube a telecharger puis traiter (voir section recherche YouTube) |
+| `--search` | — | Recherche YouTube seule, n'affiche que des resultats |
+| `--confirm-rights` | off | Confirme disposer des droits necessaires -- obligatoire pour `--youtube` |
 | `--output` | `output` | Dossier de sortie |
 | `--clip-duration` | `45` | Duree cible d'un clip (secondes) |
 | `--nb-clips` | `5` | Nombre de clips a generer |
@@ -123,6 +140,55 @@ Trois fichiers, modifiables sans toucher au code :
 - `config/settings.json` -- valeurs par defaut des options CLI, poids du score composite (`weights`, doivent sommer a 1.0), parametres internes de scoring.
 - `config/hooks_keywords.json` -- liste des mots/expressions accrocheurs et amorces de question.
 - `config/subtitles.json` -- styles de sous-titres (police, taille, couleur, position, mode `progressive`/`classic`).
+- `config/youtube.json` -- poids du Video Potential Score et limite de quota (recherche YouTube, section dediee plus bas).
+
+## Recherche YouTube (optionnelle)
+
+Permet de trouver des videos candidates avant de les analyser, plutot que de partir d'un fichier deja en main. **A besoin d'internet a chaque recherche** (voir l'avertissement en tete de ce README) -- contrairement au reste du logiciel.
+
+### Methode
+
+Utilise exclusivement la **YouTube Data API v3 officielle** (REST direct, pas de scraping des pages de resultats, pas de contournement des protections de YouTube). Deux appels : `search.list` (la recherche) puis `videos.list` groupe (vues/duree/licence pour les resultats affiches).
+
+### Obtenir une cle API (gratuite)
+
+1. [Google Cloud Console](https://console.cloud.google.com/) -> creer un projet (ou en reutiliser un).
+2. "APIs & Services" -> "Library" -> chercher "YouTube Data API v3" -> l'activer.
+3. "APIs & Services" -> "Credentials" -> "Create credentials" -> "API key".
+4. Aucune carte bancaire requise pour le quota gratuit.
+
+**La cle n'est jamais ecrite dans le code ni committee.** Deux facons de la fournir :
+- variable d'environnement `YOUTUBE_API_KEY` ;
+- ou un fichier texte `youtube_api_key.txt` (contenant uniquement la cle) place a cote de `main.py` (ou de `clip_farming.exe` pour la version .exe) -- deja dans `.gitignore`.
+
+### Quotas
+
+Le quota gratuit est de **10 000 unites/jour**, remis a zero a minuit heure du Pacifique. Une recherche (`search.list`) coute 100 unites (~100 recherches/jour max) ; recuperer les details (vues/duree) coute 1 unite pour tout le lot. Le logiciel garde un compteur local (`.cache/youtube_quota.json`) et previent avant de depasser plutot que de laisser l'API renvoyer une erreur brute.
+
+### Utilisation
+
+```bash
+# Recherche seule -- affiche les resultats, ne telecharge rien
+python main.py --search "podcast entrepreneuriat francais" --max-results 10 --sort potential
+
+# Filtres disponibles : --yt-language, --yt-duration {short,medium,long},
+# --yt-min-duration-s, --yt-max-duration-s, --yt-published-after/--yt-published-before
+# (YYYY-MM-DD), --yt-channel, --yt-category, --yt-creative-commons
+
+# Analyser une video trouvee (telecharge puis lance le pipeline normal)
+python main.py --youtube <id_ou_url> --confirm-rights --clip-duration 45 --nb-clips 5
+```
+
+Le tri `--sort potential` utilise le **Video Potential Score** (`youtube/ranking.py`) : pertinence + popularite (vues, echelle log) + duree exploitable (combien de clips tiennent dedans) + un proxy de qualite tres faible base uniquement sur la duree. **Ce n'est pas le Hook Score** (`config/settings.json`) : le premier note une video entiere avant tout telechargement a partir de simples metadonnees, le second note un passage precis apres transcription reelle. Les deux ne sont jamais additionnes.
+
+### ⚠️ Droits d'utilisation -- a lire avant d'utiliser `--youtube`
+
+**Trouver une video ne donne aucun droit de la reutiliser.** Deux points distincts, a ne pas confondre :
+
+- Telecharger une video par un autre moyen que le bouton de telechargement officiel de YouTube **viole les conditions d'utilisation de YouTube** -- y compris pour une video marquee Creative Commons. Une licence Creative Commons porte sur le *contenu* (droit d'auteur), elle ne donne aucun droit vis-a-vis de la *plateforme* YouTube elle-meme.
+- Republier ou monetiser un extrait sans les droits necessaires (accord du createur, licence explicite hors YouTube, contenu dont tu es l'auteur...) est une question de droit d'auteur, separee de ce qui precede.
+
+Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique -- l'information vient de YouTube telle quelle. `--youtube` refuse d'agir sans `--confirm-rights`, qui n'est qu'une confirmation de ta part : le logiciel ne verifie ni ne peut verifier tes droits reels.
 
 ## Sortie
 

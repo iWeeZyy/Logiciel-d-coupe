@@ -27,6 +27,7 @@ hiddenimports = []
 for pkg in [
     "faster_whisper", "ctranslate2", "av", "librosa", "numba",
     "cv2", "onnxruntime", "soundfile",
+    "requests", "yt_dlp", "tzdata",
 ]:
     d, b, h = collect_all(pkg)
     datas += d
