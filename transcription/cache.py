@@ -15,8 +15,9 @@ import os
 from pathlib import Path
 
 from core.models import Transcript
+from core.paths import app_base_dir
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
+CACHE_DIR = app_base_dir() / ".cache"
 
 
 def _cache_key(video_path: str, model_name: str, language: str | None) -> str:

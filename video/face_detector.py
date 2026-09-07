@@ -12,10 +12,11 @@ import urllib.request
 from pathlib import Path
 
 from core.logging_setup import get_logger
+from core.paths import app_base_dir
 
 logger = get_logger()
 
-MODELS_DIR = Path(__file__).resolve().parent.parent / ".cache" / "models"
+MODELS_DIR = app_base_dir() / ".cache" / "models"
 PROTOTXT_URL = "https://raw.githubusercontent.com/opencv/opencv/4.x/samples/dnn/face_detector/deploy.prototxt"
 CAFFEMODEL_URL = (
     "https://raw.githubusercontent.com/opencv/opencv_3rdparty/"

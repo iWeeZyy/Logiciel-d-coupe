@@ -1,0 +1,56 @@
+name: Build Windows .exe
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "config/**"
+      - "requirements.txt"
+      - "build/**"
+      - ".github/workflows/build-windows-exe.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download static ffmpeg (Windows, includes libass/libx264)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_extracted
+          $binDir = Get-ChildItem -Path ffmpeg_extracted -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1 -ExpandProperty DirectoryName
+          echo "FFMPEG_BIN_DIR=$binDir" >> $env:GITHUB_ENV
+
+      - name: Build with PyInstaller (--onedir, see build/clip_farming.spec)
+        run: pyinstaller build/clip_farming.spec --noconfirm --clean --distpath dist
+
+      - name: Bundle ffmpeg.exe / ffprobe.exe next to clip_farming.exe
+        shell: pwsh
+        run: |
+          Copy-Item "$env:FFMPEG_BIN_DIR\ffmpeg.exe" "dist\clip_farming\ffmpeg.exe"
+          Copy-Item "$env:FFMPEG_BIN_DIR\ffprobe.exe" "dist\clip_farming\ffprobe.exe"
+
+      - name: Zip the distributable
+        shell: pwsh
+        run: Compress-Archive -Path "dist\clip_farming\*" -DestinationPath "clip_farming-windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clip_farming-windows
+          path: clip_farming-windows.zip
+          retention-days: 30

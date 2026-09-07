@@ -11,9 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from core.paths import app_base_dir
 from utils.errors import ConfigError
 
-CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
+CONFIG_DIR = app_base_dir() / "config"
 
 
 def _load_json(name: str) -> dict:

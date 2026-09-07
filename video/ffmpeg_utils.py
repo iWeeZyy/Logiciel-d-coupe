@@ -9,30 +9,49 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 
 from core.logging_setup import get_logger
+from core.paths import app_base_dir
 from utils.errors import FfmpegError, InputFileError
 
 logger = get_logger()
 
 _STDERR_TAIL_LINES = 25
 
+_EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
+
+
+def _resolve_binary(name: str) -> str:
+    """Priorite a une copie embarquee a cote de l'executable (build .exe --
+    voir build/build_windows.py), sinon le binaire du PATH systeme."""
+    bundled = app_base_dir() / f"{name}{_EXE_SUFFIX}"
+    if bundled.exists():
+        return str(bundled)
+    found = shutil.which(name)
+    return found or name
+
+
+FFMPEG_BIN = _resolve_binary("ffmpeg")
+FFPROBE_BIN = _resolve_binary("ffprobe")
+
 
 def ensure_ffmpeg_available() -> None:
-    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+    if shutil.which(FFMPEG_BIN) is None or shutil.which(FFPROBE_BIN) is None:
         raise FfmpegError(
-            "ffmpeg (et/ou ffprobe) est introuvable dans le PATH. Installe-le "
-            "(voir README.md, section Installation) puis relance."
+            "ffmpeg (et/ou ffprobe) est introuvable. Installe-le (voir README.md, "
+            "section Installation) puis relance -- ou utilise la version .exe qui "
+            "l'embarque deja."
         )
 
 
 def run_ffmpeg(args: list[str], description: str) -> None:
-    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + args
+    cmd = [FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error"] + args
     logger.debug("ffmpeg: " + " ".join(cmd))
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError as e:
-        raise FfmpegError("ffmpeg introuvable dans le PATH. Voir README.md.") from e
+        raise FfmpegError("ffmpeg introuvable. Voir README.md.") from e
 
     if result.returncode != 0:
         tail = "\n".join(result.stderr.strip().splitlines()[-_STDERR_TAIL_LINES:])
@@ -41,13 +60,13 @@ def run_ffmpeg(args: list[str], description: str) -> None:
 
 def probe(path: str) -> dict:
     cmd = [
-        "ffprobe", "-v", "error", "-print_format", "json",
+        FFPROBE_BIN, "-v", "error", "-print_format", "json",
         "-show_format", "-show_streams", path,
     ]
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError as e:
-        raise FfmpegError("ffprobe introuvable dans le PATH. Voir README.md.") from e
+        raise FfmpegError("ffprobe introuvable. Voir README.md.") from e
 
     if result.returncode != 0:
         raise InputFileError(
