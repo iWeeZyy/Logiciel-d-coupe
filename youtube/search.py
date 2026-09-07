@@ -42,7 +42,14 @@ def load_api_key() -> str:
     if env_key:
         return env_key
     if _API_KEY_FILE.exists():
-        key = _API_KEY_FILE.read_text(encoding="utf-8").strip()
+        # utf-8-sig, pas utf-8 : la "Windows PowerShell" 5.1 (par opposition a
+        # pwsh 7+) ecrit un BOM UTF-8 en tete de fichier avec `-Encoding utf8`
+        # -- ce caractere invisible (﻿) n'est pas retire par .strip() (il
+        # ne compte pas comme un espace) et corrompait silencieusement la cle,
+        # rejetee par Google sans qu'aucun affichage (Notepad, Get-Content) ne
+        # laisse voir de difference. utf-8-sig ignore un BOM eventuel tout en
+        # lisant un fichier sans BOM normalement.
+        key = _API_KEY_FILE.read_text(encoding="utf-8-sig").strip()
         if key:
             return key
     raise YouTubeConfigError(

@@ -1,9 +1,11 @@
+import youtube.search as search
 from youtube.models import SearchFilters, VideoResult
 from youtube.search import (
     _apply_client_side_filters,
     _merge_video_details,
     _parse_duration_iso8601,
     _parse_search_item,
+    load_api_key,
 )
 
 
@@ -119,3 +121,26 @@ def test_min_view_count_filter_excludes_videos_with_unknown_or_low_views():
     result = _apply_client_side_filters([popular, unpopular, unknown], filters)
 
     assert result == [popular]
+
+
+def test_load_api_key_strips_bom_written_by_windows_powershell(monkeypatch, tmp_path):
+    # "Windows PowerShell" 5.1 (pas pwsh 7+) ecrit un BOM UTF-8 en tete de
+    # fichier avec `Set-Content -Encoding utf8` -- ce caractere invisible ne
+    # doit pas finir dans la cle retournee (bug reel constate en test :
+    # Google rejetait la cle comme invalide sans que rien ne le laisse voir
+    # a l'affichage, Notepad et Get-Content masquant le BOM).
+    key_file = tmp_path / "youtube_api_key.txt"
+    key_file.write_bytes(b"\xef\xbb\xbfAIzaSyABCDEF1234567890")
+    monkeypatch.setattr(search, "_API_KEY_FILE", key_file)
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+
+    assert load_api_key() == "AIzaSyABCDEF1234567890"
+
+
+def test_load_api_key_reads_file_without_bom_normally(monkeypatch, tmp_path):
+    key_file = tmp_path / "youtube_api_key.txt"
+    key_file.write_text("AIzaSyABCDEF1234567890\n", encoding="utf-8")
+    monkeypatch.setattr(search, "_API_KEY_FILE", key_file)
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+
+    assert load_api_key() == "AIzaSyABCDEF1234567890"
