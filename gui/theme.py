@@ -18,11 +18,15 @@ generique.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtGui import QFontDatabase
 
-ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+from core.paths import app_base_dir
+
+# app_base_dir(), pas Path(__file__).resolve().parent.parent : en .exe fige
+# (PyInstaller), les modules purs Python sont embarques dans une archive PYZ
+# et __file__ ne pointe plus vers un chemin disque fiable -- app_base_dir()
+# gere deja cette distinction (voir core/paths.py).
+ASSETS_DIR = app_base_dir() / "assets"
 FONTS_DIR = ASSETS_DIR / "fonts"
 
 FONT_FAMILY = "Segoe UI"

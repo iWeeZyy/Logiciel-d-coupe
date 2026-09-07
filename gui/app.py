@@ -3,17 +3,18 @@ polices/le theme, instancie le controller et la fenetre principale."""
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
+from core.paths import app_base_dir
 from gui import theme
 from gui.branding import APP_NAME
 from gui.controller import AppController
 from gui.main_window import MainWindow
 
-_ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "icons" / "clipfarming.ico"
+# app_base_dir(), pas Path(__file__) : voir la note dans gui/theme.py.
+_ICON_PATH = app_base_dir() / "assets" / "icons" / "clipfarming.ico"
 
 
 def main(argv: list[str] | None = None) -> int:
