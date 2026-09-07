@@ -244,6 +244,16 @@ Les images candidates sont mesurees (nettete par variance du laplacien, luminosi
 
 Le texte vient des titres extraits (jamais d'une phrase fabriquee), se pose dans la bande la plus eloignee du visage, et sa couleur est choisie d'apres la luminosite reelle de cette bande. La taille diminue jusqu'a tenir en deux lignes dans les marges de securite.
 
+### Interface
+
+**Accueil** : dépose une vidéo, choisis la durée (« Automatique » ajuste chaque clip sur la structure du discours) et le nombre de clips, coche les modules voulus, puis **✨ CRÉER MES MEILLEURS CLIPS**. Les modules cochés ici ne valent que pour cette analyse ; leurs valeurs par défaut se règlent dans Paramètres.
+
+**Résultats** : pour chaque clip, l'aperçu, les trois scores (Viral / Hook / Rewatch), sa catégorie narrative, son titre et sa description, et quatre actions -- **Lire**, **Modifier** (réécrire les titres et la description, avec copie en un clic), **Miniatures** (choisir parmi les trois variantes), **Exporter**. **Exporter tout** copie les clips, leurs miniatures, leurs sous-titres et un fichier texte contenant titres, description et hashtags.
+
+Les titres modifiés à la main sont réécrits dans `metadata/clip_XX.json` **et** dans `results.json` : rouvrir le projet réaffiche bien le texte modifié.
+
+**Paramètres** : les neuf modules d'édition automatique s'activent ou se désactivent indépendamment, et les états sont enregistrés avec le projet.
+
 ## Recherche YouTube (optionnelle)
 
 Permet de trouver des videos candidates avant de les analyser, plutot que de partir d'un fichier deja en main. **A besoin d'internet a chaque recherche** (voir l'avertissement en tete de ce README) -- contrairement au reste du logiciel.

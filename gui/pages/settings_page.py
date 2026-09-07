@@ -9,6 +9,7 @@ import json
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -56,6 +57,35 @@ def _subtitles_json_path():
     return CONFIG_DIR / "subtitles.json"
 
 
+def _editing_json_path():
+    return CONFIG_DIR / "editing.json"
+
+
+# Les neuf interrupteurs de la section 12, chacun designe par son chemin reel
+# dans config/editing.json. Ecrire ce chemin ici plutot qu'une correspondance
+# dans le code evite d'avoir un jour une case qui ne pilote plus rien.
+_EDITING_MODULES = [
+    (("context_detection", "enabled"), "Détection du contexte",
+     "Recale le début et la fin de chaque clip sur les phrases réellement prononcées."),
+    (("framing", "enabled"), "Cadrage intelligent",
+     "Le recadrage 9:16 suit le sujet au lieu de rester figé."),
+    (("montage", "remove_silences", "enabled"), "Suppression des silences",
+     "Retire les blancs inutiles entre deux phrases, jamais les pauses volontaires."),
+    (("montage", "remove_fillers", "enabled"), "Suppression des hésitations",
+     "Retire les « euh », « hmm » et les faux départs."),
+    (("montage", "dynamic_zoom", "enabled"), "Zoom dynamique",
+     "Léger zoom sur les moments forts, bornés en nombre et en amplitude."),
+    (("captions", "enabled"), "Sous-titres intelligents",
+     "Découpage adapté, mots importants mis en évidence, placement évitant le visage."),
+    (("metadata", "enabled"), "Titres automatiques",
+     "Trois propositions extraites du contenu réel du clip."),
+    (("metadata", "descriptions"), "Descriptions automatiques",
+     "Description et hashtags tirés uniquement de ce qui est dit dans le clip."),
+    (("thumbnails", "enabled"), "Miniatures automatiques",
+     "Trois miniatures 1080×1920 par clip."),
+]
+
+
 def _load_json(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -98,9 +128,64 @@ class SettingsPage(QWidget):
         scroll.setWidget(container)
 
         self._build_general_card()
+        self._build_editing_card()
         self._build_video_card()
         self._build_weights_card()
         self._build_keywords_card()
+
+    # ---------- Modules d'edition automatique ----------
+
+    def _build_editing_card(self) -> None:
+        card = self._card()
+        card.layout().addWidget(_section_title("ÉDITION AUTOMATIQUE"))
+
+        intro = QLabel(
+            "Chaque module peut être désactivé indépendamment. Désactivé, il rend "
+            "exactement le comportement d'avant son ajout — jamais un résultat dégradé."
+        )
+        intro.setProperty("role", "muted")
+        intro.setWordWrap(True)
+        card.layout().addWidget(intro)
+
+        try:
+            config = _load_json(_editing_json_path())
+        except (OSError, json.JSONDecodeError):
+            # config/editing.json absent ou illisible : l'application fonctionne
+            # sans (tous modules eteints), la page ne doit pas planter pour autant.
+            missing = QLabel("config/editing.json introuvable — modules indisponibles.")
+            missing.setProperty("role", "muted")
+            card.layout().addWidget(missing)
+            return
+
+        self._editing_boxes: list[tuple[tuple, QCheckBox]] = []
+        for path, label, hint in _EDITING_MODULES:
+            box = QCheckBox(label)
+            box.setChecked(bool(self._read_path(config, path)))
+            box.setToolTip(hint)
+            box.toggled.connect(self._save_editing_modules)
+            card.layout().addWidget(box)
+            self._editing_boxes.append((path, box))
+
+    @staticmethod
+    def _read_path(config: dict, path: tuple):
+        node = config
+        for key in path:
+            if not isinstance(node, dict) or key not in node:
+                return False
+            node = node[key]
+        return node
+
+    def _save_editing_modules(self) -> None:
+        try:
+            config = _load_json(_editing_json_path())
+        except (OSError, json.JSONDecodeError):
+            return
+        for path, box in self._editing_boxes:
+            node = config
+            for key in path[:-1]:
+                node = node.setdefault(key, {})
+            node[path[-1]] = box.isChecked()
+        _save_json(_editing_json_path(), config)
 
     # ---------- Général (modele/peripherique/dossier/sous-titres) ----------
 

@@ -358,7 +358,14 @@ def _build_metadata_and_thumbnails(
                 max_description_sentences=int(metadata_cfg.get("max_description_sentences", 2)),
                 max_hashtags=int(metadata_cfg.get("max_hashtags", 5)),
             )
-            clip_result.metadata = meta.to_dict()
+            data = meta.to_dict()
+            if not metadata_cfg.get("descriptions", True):
+                # Titres sans description : deux interrupteurs distincts cote
+                # interface, la description est donc retiree apres coup plutot
+                # que via un second chemin de calcul.
+                data["description"] = ""
+                data["hashtags"] = []
+            clip_result.metadata = data
 
         if thumbnails_cfg.get("enabled", False):
             text = choose_text(

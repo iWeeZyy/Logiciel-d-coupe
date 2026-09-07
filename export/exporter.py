@@ -83,6 +83,34 @@ def write_clip_metadata(output_dir: str, clip: ClipResult) -> str:
     return str(path)
 
 
+def update_clip_metadata(output_dir: str, index: int, metadata: dict) -> None:
+    """Enregistre des titres/description modifies a la main.
+
+    Ecrit dans les DEUX endroits qui les portent -- metadata/clip_XX.json et
+    l'entree correspondante de results.json -- sinon la page Resultats
+    reafficherait l'ancien texte au prochain chargement du projet."""
+    base = Path(output_dir)
+    clip_file = base / METADATA_DIR / f"{clip_stem(index)}.json"
+    if clip_file.exists():
+        try:
+            data = json.loads(clip_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+        data["metadata"] = metadata
+        clip_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    results_file = base / "results.json"
+    if not results_file.exists():
+        return
+    try:
+        results = json.loads(results_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    if 1 <= index <= len(results):
+        results[index - 1]["metadata"] = metadata
+        results_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def write_results(output_dir: str, clip_results: list[ClipResult]) -> str:
     path = Path(output_dir) / "results.json"
     data = [c.to_dict() for c in clip_results]

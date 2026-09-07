@@ -139,12 +139,24 @@ class AppController(QObject):
         source_kind: str = "local",
         source_url: Optional[str] = None,
         youtube_source: Optional[str] = None,
+        editing_overrides: Optional[dict] = None,
     ) -> None:
+        """`editing_overrides` : {nom_de_module: actif} choisi pour CE run
+        depuis l'accueil. Les valeurs par defaut restent celles de
+        config/editing.json (page Parametres) -- l'accueil ne fait que les
+        surcharger le temps d'une analyse."""
         project_folder = project_store.create_project_folder(name, projects_dir=settings_store.projects_dir())
         cli_args.output = str(project_folder)
         cli_args.overwrite = True
 
         settings = load_settings(cli_args)
+        if editing_overrides:
+            editing = {k: dict(v) if isinstance(v, dict) else v for k, v in settings.editing.items()}
+            for module, active in editing_overrides.items():
+                if isinstance(editing.get(module), dict):
+                    editing[module]["enabled"] = bool(active)
+            settings.editing = editing
+
         project_store.write_manifest(
             project_folder, name=name, source_label=source_label, source_kind=source_kind,
             settings_used={
@@ -154,6 +166,14 @@ class AppController(QObject):
                 "language": settings.language,
                 "subtitle_style": settings.subtitle_style,
                 "device": settings.device,
+                # Section 12 : les modules actifs sont enregistres avec le
+                # projet, pour qu'on sache plus tard comment un clip a ete
+                # produit.
+                "editing_modules": {
+                    name: bool(block.get("enabled", False))
+                    for name, block in settings.editing.items()
+                    if isinstance(block, dict) and "enabled" in block
+                },
             },
             source_url=source_url,
         )

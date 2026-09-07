@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -18,9 +19,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from export.exporter import update_clip_metadata
 from gui.controller import AppController
 from gui.thumbnails import ThumbnailThread
 from gui.widgets.clip_card import RIGHTS_NOTICE, ClipCard
+from gui.widgets.metadata_dialog import MetadataDialog
+from gui.widgets.thumbnail_picker import ThumbnailPicker
 from gui.widgets.video_player import VideoPlayerDialog
 
 _COLUMNS = 2
@@ -32,6 +36,7 @@ class ResultsPage(QWidget):
         self.controller = controller
         self._thumb_thread: ThumbnailThread | None = None
         self._cards: dict[str, ClipCard] = {}
+        self._cards_by_index: dict[int, ClipCard] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 32, 40, 24)
@@ -43,7 +48,11 @@ class ResultsPage(QWidget):
         header_row.addWidget(self.title_label)
         header_row.addStretch(1)
 
-        self.export_all_btn = QPushButton("Exporter tous les clips")
+        self.export_all_btn = QPushButton("Exporter tout")
+        self.export_all_btn.setProperty("variant", "primary")
+        self.export_all_btn.setToolTip(
+            "Copie les clips, leurs miniatures, leurs sous-titres et leurs métadonnées"
+        )
         self.export_all_btn.clicked.connect(self._export_all)
         header_row.addWidget(self.export_all_btn)
 
@@ -91,12 +100,16 @@ class ResultsPage(QWidget):
         clip_paths: list[str] = []
         for i, clip in enumerate(results):
             clip_dict = clip.to_dict()
+            clip_dict["index"] = clip.index
             clip_path = str(Path(self.controller.current_project_folder or ".") / clip_dict["clip"])
             clip_paths.append(clip_path)
 
             card = ClipCard(clip_path, clip_dict, source_kind=source_kind)
             card.play_requested.connect(lambda path=clip_path: self._play(path))
+            card.metadata_requested.connect(self._edit_metadata)
+            card.thumbnails_requested.connect(self._pick_thumbnail)
             self._cards[clip_path] = card
+            self._cards_by_index[clip.index] = card
             self.grid.addWidget(card, i // _COLUMNS, i % _COLUMNS)
 
         if clip_paths:
@@ -111,6 +124,7 @@ class ResultsPage(QWidget):
             if widget:
                 widget.deleteLater()
         self._cards.clear()
+        self._cards_by_index.clear()
 
     def cleanup(self) -> None:
         """A la fermeture de l'appli -- voir AppController.shutdown() pour le
@@ -141,18 +155,73 @@ class ResultsPage(QWidget):
         )
         return reply == QMessageBox.StandardButton.Ok
 
+    def _edit_metadata(self, clip_index: int) -> None:
+        card = self._cards_by_index.get(clip_index)
+        if card is None:
+            return
+        dialog = MetadataDialog(clip_index, card.clip_dict.get("metadata") or {}, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        edited = dialog.edited_metadata()
+        card.set_metadata(edited)
+        # Ecrit dans metadata/clip_XX.json ET results.json : sans ca, rouvrir le
+        # projet reafficherait le texte d'origine.
+        if self.controller.current_project_folder:
+            update_clip_metadata(str(self.controller.current_project_folder), clip_index, edited)
+        for clip in self.controller.last_results:
+            if clip.index == clip_index:
+                clip.metadata = edited
+
+    def _pick_thumbnail(self, clip_index: int) -> None:
+        card = self._cards_by_index.get(clip_index)
+        if card is None or not self.controller.current_project_folder:
+            return
+        ThumbnailPicker(
+            clip_index, Path(self.controller.current_project_folder),
+            card.clip_dict.get("thumbnails") or [], parent=self,
+        ).exec()
+
     def _export_all(self) -> None:
+        """Exporte tout ce qui a ete produit pour chaque clip : la video, ses
+        miniatures, ses sous-titres et ses metadonnees. Copier les seuls .mp4
+        obligerait a retourner farfouiller dans le dossier du projet pour le
+        reste."""
         if not self._confirm_rights_if_needed():
             return
-        if not self.controller.current_project_folder:
+        project = self.controller.current_project_folder
+        if not project:
             return
-        dest_dir = QFileDialog.getExistingDirectory(self, "Exporter tous les clips")
+        dest_dir = QFileDialog.getExistingDirectory(self, "Exporter tout")
         if not dest_dir:
             return
+
         import shutil
 
-        for clip_path in self._cards.keys():
-            shutil.copy(clip_path, Path(dest_dir) / Path(clip_path).name)
+        destination = Path(dest_dir)
+        copied = 0
+        for card in self._cards_by_index.values():
+            shutil.copy(card.clip_path, destination / Path(card.clip_path).name)
+            copied += 1
+            for relative in (card.clip_dict.get("thumbnails") or []) + (card.clip_dict.get("subtitles") or []):
+                source = Path(project) / relative
+                if source.exists():
+                    shutil.copy(source, destination / source.name)
+                    copied += 1
+
+            metadata = card.clip_dict.get("metadata") or {}
+            titles = metadata.get("titles") or []
+            if titles or metadata.get("description"):
+                lines = [f"[{t.get('kind', '')}] {t.get('text', '')}" for t in titles]
+                if metadata.get("description"):
+                    lines += ["", metadata["description"]]
+                if metadata.get("hashtags"):
+                    lines += ["", " ".join(metadata["hashtags"])]
+                name = f"{Path(card.clip_path).stem}_textes.txt"
+                (destination / name).write_text("\n".join(lines), encoding="utf-8")
+                copied += 1
+
+        QMessageBox.information(self, "Export terminé", f"{copied} fichier(s) exportés dans :\n{dest_dir}")
 
     def _open_folder(self) -> None:
         if self.controller.current_project_folder:

@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -27,6 +28,22 @@ from gui.widgets.drop_zone import DropZone
 from utils.hardware import cuda_device_count
 
 _DURATION_PRESETS = [15, 30, 45, 60]
+
+# Duree "automatique" : la detection de contexte ajuste ensuite chaque clip sur
+# la structure du discours. On part d'une valeur mediane plutot que d'un choix
+# fantaisiste -- et l'etiquette le dit, pour ne pas laisser croire a une magie
+# qui devinerait la duree ideale.
+_AUTO_DURATION = 45
+
+# Modules proposes directement sur l'accueil (section 8). Les autres
+# (contexte, cadrage, silences, hesitations, zoom) se reglent dans Parametres :
+# les mettre tous ici transformerait l'accueil en tableau de bord.
+_QUICK_MODULES = [
+    ("captions", "Sous-titres"),
+    ("montage", "Montage auto"),
+    ("thumbnails", "Miniatures"),
+    ("metadata", "Titres / descriptions"),
+]
 
 _MODEL_CHOICES = [
     ("tiny", "Tiny", "Très rapide • qualité basique • ~1 Go RAM"),
@@ -75,10 +92,11 @@ class HomePage(QWidget):
         card_layout.addWidget(_field_label("Durée des clips"))
         duration_row = QHBoxLayout()
         self.duration_combo = QComboBox()
+        self.duration_combo.addItem(f"Automatique (~{_AUTO_DURATION} s, ajustée au contexte)", 0)
         for seconds in _DURATION_PRESETS:
             self.duration_combo.addItem(f"{seconds} secondes", seconds)
         self.duration_combo.addItem("Personnalisée", -1)
-        self.duration_combo.setCurrentIndex(_DURATION_PRESETS.index(45))
+        self.duration_combo.setCurrentIndex(0)
         self.duration_combo.currentIndexChanged.connect(self._on_duration_changed)
         duration_row.addWidget(self.duration_combo, stretch=1)
 
@@ -120,11 +138,35 @@ class HomePage(QWidget):
         gpu_label.setProperty("role", "muted")
         card_layout.addWidget(gpu_label)
 
+        # --- Format (fixe) + modules rapides ---
+        format_label = QLabel("Format : 9:16 (1080 × 1920) — vertical, prêt à publier")
+        format_label.setProperty("role", "muted")
+        card_layout.addWidget(format_label)
+
+        card_layout.addWidget(_field_label("Édition automatique"))
+        modules_row = QHBoxLayout()
+        modules_row.setSpacing(14)
+        self._module_boxes: dict[str, QCheckBox] = {}
+        for key, label in _QUICK_MODULES:
+            box = QCheckBox(label)
+            box.setChecked(True)
+            self._module_boxes[key] = box
+            modules_row.addWidget(box)
+        modules_row.addStretch(1)
+        card_layout.addLayout(modules_row)
+
+        modules_hint = QLabel(
+            "Cadrage suivi, contexte, silences et zooms se règlent dans Paramètres."
+        )
+        modules_hint.setProperty("role", "muted")
+        card_layout.addWidget(modules_hint)
+
         card_layout.addSpacing(8)
-        self.generate_btn = QPushButton("GÉNÉRER LES CLIPS")
+        self.generate_btn = QPushButton("✨  CRÉER MES MEILLEURS CLIPS")
         self.generate_btn.setProperty("variant", "primary")
         self.generate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.generate_btn.setMinimumHeight(44)
+        self.generate_btn.setMinimumHeight(52)
+        self.generate_btn.setStyleSheet("font-size: 15px; font-weight: 800;")
         self.generate_btn.setEnabled(False)
         self.generate_btn.clicked.connect(self._on_generate_clicked)
         card_layout.addWidget(self.generate_btn)
@@ -144,7 +186,12 @@ class HomePage(QWidget):
 
     def _clip_duration(self) -> int:
         data = self.duration_combo.currentData()
-        return self.custom_duration_spin.value() if data == -1 else int(data)
+        if data == -1:
+            return self.custom_duration_spin.value()
+        return _AUTO_DURATION if data == 0 else int(data)
+
+    def _editing_overrides(self) -> dict:
+        return {key: box.isChecked() for key, box in self._module_boxes.items()}
 
     def _on_generate_clicked(self) -> None:
         if not self.selected_video_path:
@@ -165,7 +212,10 @@ class HomePage(QWidget):
             debug_scores=False,
         )
         name = Path(self.selected_video_path).stem
-        self.controller.start_analysis(cli_args, name=name, source_label=Path(self.selected_video_path).name, source_kind="local")
+        self.controller.start_analysis(
+            cli_args, name=name, source_label=Path(self.selected_video_path).name,
+            source_kind="local", editing_overrides=self._editing_overrides(),
+        )
 
     def on_shown(self) -> None:
         pass
