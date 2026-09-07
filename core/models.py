@@ -153,6 +153,19 @@ class ScoredCandidate:
 
 
 @dataclass
+class ProgressEvent:
+    """Emis par core.logging_setup.StepProgress a chaque etape/sous-etape --
+    consomme par la CLI (affichage inchange) et par gui/controller.py (signal Qt)."""
+    step_index: int
+    total_steps: int
+    label: str
+    sub_label: Optional[str] = None
+    elapsed_s: float = 0.0
+    clips_found: Optional[int] = None
+    step_fraction: Optional[float] = None  # 0..1, avancement DANS l'etape courante si connu
+
+
+@dataclass
 class ClipResult:
     index: int
     file_name: str

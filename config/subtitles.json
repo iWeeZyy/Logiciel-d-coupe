@@ -40,6 +40,25 @@
       "margin_v": 300,
       "min_display_ms": 0,
       "gap_ms": 0
+    },
+
+    "big_text": {
+      "description": "Un seul mot a la fois, tres grand -- variante la plus punchy de 'progressive' (meme mode, words_per_group=1).",
+      "mode": "progressive",
+      "words_per_group": 1,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 128,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H0035C3FF",
+      "outline_color": "&H00000000",
+      "outline_width": 7,
+      "shadow": 2,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 420,
+      "min_display_ms": 220,
+      "gap_ms": 20
     }
   },
 

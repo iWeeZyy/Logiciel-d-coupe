@@ -65,3 +65,7 @@ class RightsNotConfirmedError(ClipFarmingError):
 
 class YouTubeDownloadError(ClipFarmingError):
     """Echec de telechargement d'une video (privee, region-verrouillee, supprimee, live, etc.)."""
+
+
+class CancelledError(ClipFarmingError):
+    """L'utilisateur a annule l'analyse en cours (core/cancellation.py)."""

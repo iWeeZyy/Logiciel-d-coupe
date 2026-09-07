@@ -2,6 +2,9 @@
 ffmpeg par clip (un seul encodage, pas trois passes separees)."""
 from __future__ import annotations
 
+from typing import Optional
+
+from core.cancellation import CancelToken
 from video.cropper import build_crop_filter
 from video.ffmpeg_utils import run_ffmpeg
 from video.subtitle_renderer import render_ass_file, subtitle_filter
@@ -20,6 +23,7 @@ def build_clip(
     ass_path: str,
     export_settings: dict,
     clip_label: str,
+    cancel_token: Optional[CancelToken] = None,
 ) -> None:
     duration = max(0.05, end - start)
 
@@ -44,4 +48,5 @@ def build_clip(
             out_mp4_path,
         ],
         description=f"generation du clip {clip_label}",
+        cancel_token=cancel_token,
     )

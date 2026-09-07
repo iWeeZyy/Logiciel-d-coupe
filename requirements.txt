@@ -16,6 +16,10 @@ opencv-python-headless>=4.9
 
 tqdm>=4.66
 
+# Interface graphique (gui_main.py). QtMultimedia (inclus) sert a la
+# previsualisation video integree -- aucune dependance video supplementaire.
+PySide6>=6.7
+
 # Recherche YouTube (optionnelle -- necessite internet, voir README).
 requests>=2.31
 yt-dlp>=2024.8.6

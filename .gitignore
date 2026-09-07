@@ -9,6 +9,8 @@ __pycache__/
 output/*.mp4
 output/results.json
 .cache/
+/user_projects/
+config/gui_settings.json
 
 # Cle API YouTube -- jamais commitee (voir README, section recherche YouTube).
 youtube_api_key.txt

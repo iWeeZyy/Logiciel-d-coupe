@@ -64,6 +64,7 @@ class SearchFilters:
     video_duration_bucket: Optional[str] = None  # short | medium | long (tel quel cote API)
     min_duration_s: Optional[int] = None   # filtre client, apres coup, precis
     max_duration_s: Optional[int] = None
+    min_view_count: Optional[int] = None   # filtre client -- search.list n'a pas de parametre "vues minimum"
     published_after: Optional[str] = None  # RFC3339
     published_before: Optional[str] = None
     channel_id: Optional[str] = None

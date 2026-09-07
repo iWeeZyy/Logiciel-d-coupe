@@ -10,10 +10,13 @@ import json
 import shutil
 import subprocess
 import sys
+import time
+from typing import Optional
 
+from core.cancellation import CancelToken
 from core.logging_setup import get_logger
 from core.paths import app_base_dir
-from utils.errors import FfmpegError, InputFileError
+from utils.errors import CancelledError, FfmpegError, InputFileError
 
 logger = get_logger()
 
@@ -45,13 +48,39 @@ def ensure_ffmpeg_available() -> None:
         )
 
 
-def run_ffmpeg(args: list[str], description: str) -> None:
+_CANCEL_POLL_S = 0.3
+
+
+def run_ffmpeg(args: list[str], description: str, cancel_token: Optional[CancelToken] = None) -> None:
     cmd = [FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error"] + args
     logger.debug("ffmpeg: " + " ".join(cmd))
-    try:
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    except FileNotFoundError as e:
-        raise FfmpegError("ffmpeg introuvable. Voir README.md.") from e
+
+    if cancel_token is None:
+        try:
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except FileNotFoundError as e:
+            raise FfmpegError("ffmpeg introuvable. Voir README.md.") from e
+    else:
+        # Popen + attente par petits pas plutot qu'un subprocess.run() bloquant :
+        # c'est ce qui permet a la GUI d'interrompre un encodage en cours au lieu
+        # d'attendre qu'il se termine de lui-meme avant de reagir a "Annuler".
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        except FileNotFoundError as e:
+            raise FfmpegError("ffmpeg introuvable. Voir README.md.") from e
+
+        while proc.poll() is None:
+            if cancel_token.is_cancelled:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                raise CancelledError("Analyse annulee pendant un encodage ffmpeg.")
+            time.sleep(_CANCEL_POLL_S)
+
+        stdout, stderr = proc.communicate()
+        result = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
     if result.returncode != 0:
         tail = "\n".join(result.stderr.strip().splitlines()[-_STDERR_TAIL_LINES:])

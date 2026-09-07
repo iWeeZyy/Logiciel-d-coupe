@@ -1,6 +1,6 @@
 from youtube.models import SearchFilters, VideoResult
 from youtube.search import (
-    _apply_client_side_duration_filter,
+    _apply_client_side_filters,
     _merge_video_details,
     _parse_duration_iso8601,
     _parse_search_item,
@@ -94,6 +94,28 @@ def test_duration_filter_excludes_videos_with_unknown_duration():
         duration_seconds=None,
     )
     filters = SearchFilters(min_duration_s=100, max_duration_s=600)
-    result = _apply_client_side_duration_filter([known, unknown], filters)
+    result = _apply_client_side_filters([known, unknown], filters)
 
     assert result == [known]  # jamais suppose conforme sans donnee
+
+
+def test_min_view_count_filter_excludes_videos_with_unknown_or_low_views():
+    popular = VideoResult(
+        video_id="aaaaaaaaaaa", title="t", channel_id="c", channel_title="ct",
+        published_at="2024-01-01T00:00:00Z", description="d", thumbnail_url="",
+        view_count=50000,
+    )
+    unpopular = VideoResult(
+        video_id="bbbbbbbbbbb", title="t", channel_id="c", channel_title="ct",
+        published_at="2024-01-01T00:00:00Z", description="d", thumbnail_url="",
+        view_count=10,
+    )
+    unknown = VideoResult(
+        video_id="ccccccccccc", title="t", channel_id="c", channel_title="ct",
+        published_at="2024-01-01T00:00:00Z", description="d", thumbnail_url="",
+        view_count=None,
+    )
+    filters = SearchFilters(min_view_count=1000)
+    result = _apply_client_side_filters([popular, unpopular, unknown], filters)
+
+    assert result == [popular]

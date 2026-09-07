@@ -117,17 +117,23 @@ def _raise_for_api_error(response: requests.Response) -> None:
     raise YouTubeApiError(f"Erreur YouTube API ({response.status_code}) : {message}")
 
 
-def _apply_client_side_duration_filter(videos: list[VideoResult], filters: SearchFilters) -> list[VideoResult]:
-    if filters.min_duration_s is None and filters.max_duration_s is None:
-        return videos
+def _apply_client_side_filters(videos: list[VideoResult], filters: SearchFilters) -> list[VideoResult]:
+    """search.list n'a ni parametre de duree exacte ni de vues minimum -- ces
+    deux filtres sont appliques ici, apres coup, sur les VideoResult deja
+    completes par videos.list. Une video sans la donnee necessaire est
+    exclue plutot que supposee conforme."""
     out = []
     for v in videos:
-        if v.duration_seconds is None:
-            continue  # ne peut pas etre filtre sans donnee -- exclu plutot que suppose conforme
-        if filters.min_duration_s is not None and v.duration_seconds < filters.min_duration_s:
-            continue
-        if filters.max_duration_s is not None and v.duration_seconds > filters.max_duration_s:
-            continue
+        if filters.min_duration_s is not None or filters.max_duration_s is not None:
+            if v.duration_seconds is None:
+                continue
+            if filters.min_duration_s is not None and v.duration_seconds < filters.min_duration_s:
+                continue
+            if filters.max_duration_s is not None and v.duration_seconds > filters.max_duration_s:
+                continue
+        if filters.min_view_count is not None:
+            if v.view_count is None or v.view_count < filters.min_view_count:
+                continue
         out.append(v)
     return out
 
@@ -188,7 +194,7 @@ def search_videos(
     if videos:
         _fetch_video_details(videos, quota, api_key, timeout)
 
-    return _apply_client_side_duration_filter(videos, filters)
+    return _apply_client_side_filters(videos, filters)
 
 
 def _fetch_video_details(videos: list[VideoResult], quota: QuotaTracker, api_key: str, timeout: int) -> None:

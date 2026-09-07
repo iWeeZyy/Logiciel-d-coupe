@@ -7,6 +7,9 @@ puis reutilise hors ligne.
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
+from core.cancellation import CancelToken
 from core.logging_setup import get_logger
 from core.models import Segment, Transcript, Word
 from utils.errors import ModelDownloadError, NoAudioError
@@ -22,6 +25,8 @@ def transcribe(
     model_name: str,
     language: str | None,
     device_pref: str,
+    cancel_token: Optional[CancelToken] = None,
+    on_segment_progress: Optional[Callable[[float, float], None]] = None,
 ) -> Transcript:
     """Transcrit wav_path (mono 16kHz, produit par video/audio_extractor.py).
 
@@ -70,7 +75,13 @@ def transcribe(
 
     segments: list[Segment] = []
     total_words = 0
+    total_duration = float(info.duration) or 0.0
     for i, seg in enumerate(segments_iter):
+        if cancel_token is not None:
+            cancel_token.check()
+        if on_segment_progress is not None and total_duration > 0:
+            on_segment_progress(float(seg.end), total_duration)
+
         words = []
         if seg.words:
             for w in seg.words:
