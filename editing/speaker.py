@@ -16,6 +16,12 @@ voit immediatement, un cadrage large ne derange personne.
 Les visages sont identifies par leur position horizontale (gauche/droite) et
 non par leur taille : dans un plan fixe d'interview, la gauche reste la gauche,
 alors que l'ordre par taille s'inverse des que quelqu'un se penche.
+
+Le nombre de personnes n'est pas limite a deux : sur un plateau, le locuteur
+doit pouvoir etre le troisieme ou le quatrieme visage. Le gagnant est celui qui
+devance le mieux place des AUTRES d'au moins `margin` -- avec quatre personnes
+il faut donc toujours se detacher du lot, pas seulement d'un voisin choisi
+d'avance.
 """
 from __future__ import annotations
 
@@ -95,24 +101,24 @@ def detect_active_speaker(
             continue
 
         energies = [audio_energy[i] for i in indices]
+
+        # Tous les visages presents d'un bout a l'autre de la fenetre sont
+        # candidats, pas seulement les deux plus a gauche : sur un plateau a
+        # trois ou quatre personnes, celui qui parle n'etait tout simplement
+        # jamais teste. Un visage qui apparait ou disparait en cours de fenetre
+        # est ecarte -- sa serie d'activite serait trouee, donc sa correlation
+        # avec le son n'aurait aucun sens.
+        candidate_count = min(len(samples[i].faces) for i in indices)
         correlations: dict[int, float] = {}
-        for face_index in (0, 1):
-            activity = []
-            usable = True
-            for i in indices:
-                ordered = order_faces_left_to_right(samples[i])
-                if len(ordered) <= face_index:
-                    usable = False
-                    break
-                activity.append(ordered[face_index][1])
-            if usable:
-                correlations[face_index] = _pearson(activity, energies)
+        for face_index in range(candidate_count):
+            activity = [order_faces_left_to_right(samples[i])[face_index][1] for i in indices]
+            correlations[face_index] = _pearson(activity, energies)
 
         choice, confidence = current_choice, 0.0
-        if len(correlations) == 2:
-            best = max(correlations, key=correlations.get)
-            other = 1 - best
-            gap = correlations[best] - correlations[other]
+        if len(correlations) >= 2:
+            ranked = sorted(correlations, key=correlations.get, reverse=True)
+            best, runner_up = ranked[0], ranked[1]
+            gap = correlations[best] - correlations[runner_up]
             if correlations[best] >= min_correlation and gap >= margin:
                 if best != current_choice and (window_start - last_switch_t) < min_hold_s:
                     pass  # changement trop rapproche : on garde le cadrage en place

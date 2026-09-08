@@ -3,8 +3,8 @@
 Transforme une suite de detections de visages (video/face_detector.py) en une
 trajectoire de points de visee, lissee pour que le cadrage ne tremble jamais :
 
-1. cible brute a chaque instant (visage seul, locuteur actif, ou milieu des
-   deux visages) ;
+1. cible brute a chaque instant (visage seul, locuteur actif, ou barycentre
+   du groupe quand personne ne se detache) ;
 2. zone morte : sous un certain deplacement, on ne bouge pas du tout -- c'est
    ce qui elimine le tremblement de la detection, pas le lissage ;
 3. moyenne exponentielle : le cadrage suit le sujet avec un peu d'inertie ;
@@ -83,15 +83,20 @@ def choose_targets(
 
         ordered = order_faces_left_to_right(sample)
         if len(ordered) >= 2:
-            left, right = ordered[0][0], ordered[1][0]
-            distance = abs(right.cx - left.cx)
+            boxes = [face for face, _ in ordered]
+            # Etalement de TOUS les visages, pas seulement des deux premiers :
+            # sur un plateau a trois ou quatre personnes, les deux plus a gauche
+            # peuvent etre cote a cote alors que le groupe occupe tout le cadre.
+            spread = max(b.cx for b in boxes) - min(b.cx for b in boxes)
             focus = speaker_at(speaker_decisions or [], sample.t)
 
-            if distance >= two_faces_min_distance_frac and focus is None:
-                # Deux personnes distinctes, aucun locuteur identifie de facon
-                # sure : on cadre entre les deux plutot que de parier.
-                cx = (left.cx + right.cx) / 2.0
-                cy = (left.cy + right.cy) / 2.0
+            if spread >= two_faces_min_distance_frac and focus is None:
+                # Plusieurs personnes distinctes, aucun locuteur identifie de
+                # facon sure : on cadre le groupe plutot que de parier. Avec
+                # deux visages, ce barycentre est exactement leur milieu --
+                # le comportement d'avant est donc conserve tel quel.
+                cx = sum(b.cx for b in boxes) / len(boxes)
+                cy = sum(b.cy for b in boxes) / len(boxes)
                 modes.append(MODE_BOTH)
             else:
                 chosen = ordered[focus][0] if focus is not None and focus < len(ordered) else ordered[0][0]

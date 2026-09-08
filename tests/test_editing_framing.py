@@ -148,3 +148,86 @@ def test_a_single_face_never_triggers_speaker_detection():
     samples = _samples([[(0.5, 0.4)] for _ in range(20)])
 
     assert detect_active_speaker(samples, [-20.0] * 20) == []
+
+
+# ------------------------------------- plateau : plus de deux personnes
+# Cas reel : un best-of d'evenement, trois ou quatre personnes sur le plateau.
+# L'ancienne version ne testait que les deux visages les plus a gauche -- celui
+# qui parlait n'etait tout simplement jamais candidat.
+
+def test_the_speaker_can_be_the_third_face_from_the_left():
+    energies, mouths = [], []
+    for i in range(24):
+        loud = (i // 3) % 2 == 0
+        energies.append(-15.0 if loud else -40.0)
+        # Seul le TROISIEME visage bouge en meme temps que le son.
+        mouths.append([0.05, 0.04, 0.20 if loud else 0.01, 0.03])
+
+    positions = [[(0.15, 0.4), (0.35, 0.4), (0.62, 0.4), (0.85, 0.4)] for _ in range(24)]
+    decisions = detect_active_speaker(_samples(positions, mouth=mouths), energies,
+                                      window_s=3.0, min_hold_s=0.0)
+
+    assert decisions
+    assert any(d.face_index == 2 for d in decisions), \
+        "le locuteur doit pouvoir etre ailleurs que dans les deux premiers visages"
+    assert all(d.face_index in (None, 2) for d in decisions)
+
+
+def test_on_a_panel_the_winner_must_beat_every_other_face_not_just_a_neighbour():
+    # Deux personnes bougent la bouche en meme temps que le son : personne ne se
+    # detache assez, donc aucun choix -- le cadrage large vaut mieux qu'un pari.
+    energies, mouths = [], []
+    for i in range(24):
+        loud = (i // 3) % 2 == 0
+        energies.append(-15.0 if loud else -40.0)
+        mouths.append([0.03, 0.20 if loud else 0.01, 0.20 if loud else 0.01])
+
+    positions = [[(0.15, 0.4), (0.5, 0.4), (0.85, 0.4)] for _ in range(24)]
+    decisions = detect_active_speaker(_samples(positions, mouth=mouths), energies,
+                                      window_s=3.0, min_hold_s=0.0)
+
+    assert all(d.face_index is None for d in decisions)
+
+
+def test_a_face_appearing_mid_window_is_not_scored_on_a_truncated_series():
+    # Quelqu'un entre dans le champ en cours de fenetre : sa serie d'activite
+    # serait trouee, sa correlation avec le son n'aurait aucun sens.
+    energies, mouths, positions = [], [], []
+    for i in range(24):
+        loud = (i // 3) % 2 == 0
+        energies.append(-15.0 if loud else -40.0)
+        if i < 12:
+            positions.append([(0.25, 0.4), (0.75, 0.4)])
+            mouths.append([0.20 if loud else 0.01, 0.05])
+        else:
+            positions.append([(0.25, 0.4), (0.55, 0.4), (0.75, 0.4)])
+            mouths.append([0.20 if loud else 0.01, 0.05, 0.05])
+
+    decisions = detect_active_speaker(_samples(positions, mouth=mouths), energies,
+                                      window_s=3.0, min_hold_s=0.0)
+
+    assert decisions
+    assert any(d.face_index == 0 for d in decisions)
+
+
+def test_four_people_with_no_clear_speaker_are_framed_as_a_group():
+    # Le barycentre du groupe, pas le milieu des deux premiers visages : ici les
+    # deux plus a gauche sont colles, le groupe occupe tout le cadre.
+    samples = _samples([[(0.10, 0.4), (0.18, 0.4), (0.60, 0.4), (0.92, 0.4)] for _ in range(12)])
+
+    plan = build_framing_plan(samples, static_movement_threshold=0.0)
+
+    assert plan.mode == MODE_BOTH
+    expected_cx = (0.10 + 0.18 + 0.60 + 0.92) / 4
+    assert abs(plan.keyframes[0].cx - expected_cx) < 1e-6, \
+        "le cadrage doit viser le groupe entier, pas les deux premiers visages"
+
+
+def test_two_faces_still_land_exactly_between_them():
+    # Non-regression : avec deux visages, le barycentre EST leur milieu.
+    samples = _samples([[(0.30, 0.4), (0.80, 0.4)] for _ in range(12)])
+
+    plan = build_framing_plan(samples, static_movement_threshold=0.0)
+
+    assert plan.mode == MODE_BOTH
+    assert abs(plan.keyframes[0].cx - 0.55) < 1e-6
