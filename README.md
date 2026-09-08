@@ -55,6 +55,25 @@ pip install -r requirements.txt
 
 L'installation tire `faster-whisper`, `librosa`/`numba` (analyse audio), `opencv-python-headless` (detection de visage) et `PySide6` (interface graphique, `gui_main.py`) -- prevoir quelques minutes et ~400-500 Mo.
 
+### Ou l'application range ses fichiers
+
+Installee en .exe, ClipFarming n'ecrit RIEN dans son dossier d'installation
+(`Program Files`) : Windows le protege en ecriture, et une desinstallation le
+vide. Trois emplacements distincts :
+
+| Quoi | Ou | Survit a une desinstallation |
+|---|---|---|
+| Projets et clips generes | `Documents\ClipFarming` (modifiable dans Parametres) | oui |
+| Caches, reglages, cle YouTube | `%LOCALAPPDATA%\ClipFarming` | oui |
+| Modele Whisper | `%HF_HOME%` si defini, sinon `~/.cache/huggingface` | oui |
+| Application elle-meme | `Program Files\ClipFarming` | non, supprimee |
+
+Les versions anterieures ecrivaient tout dans le dossier d'installation : au
+premier lancement, ce qui s'y trouve encore est recupere automatiquement vers
+les emplacements ci-dessus, sans jamais ecraser un fichier deja present.
+
+En mode script (depot clone), rien ne change : tout reste dans le depot.
+
 ### 4. Premiere execution : telechargement des modeles
 
 Au premier lancement, deux telechargements automatiques ont lieu (uniquement s'ils ne sont pas deja en cache) :

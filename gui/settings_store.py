@@ -1,7 +1,11 @@
-"""Persistance des preferences GUI (config/gui_settings.json) -- distinct de
+"""Persistance des preferences GUI (gui_settings.json) -- distinct de
 config/settings.json (poids/parametres du moteur, partages avec la CLI).
 Ce fichier ne contient que des choix d'interface : modele par defaut, style
 de sous-titres par defaut, peripherique prefere, dossier des projets.
+
+Ecrit sous user_data_dir() (%LOCALAPPDATA% en .exe) et non a cote du binaire :
+Program Files est protege en ecriture, et une desinstallation ne doit pas
+emporter les reglages avec elle.
 """
 from __future__ import annotations
 
@@ -9,9 +13,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.paths import app_base_dir
+from core.paths import user_data_dir
 
-GUI_SETTINGS_PATH = app_base_dir() / "config" / "gui_settings.json"
+GUI_SETTINGS_PATH = user_data_dir() / "gui_settings.json"
 
 _DEFAULTS = {
     "default_model": "small",

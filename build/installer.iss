@@ -36,7 +36,7 @@ Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; GroupDescription: "Icônes supplémentaires :"; Flags: checkedonce
 
 [Files]
-Source: "..\dist\ClipFarming\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+Source: "..\dist\ClipFarming\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -45,3 +45,25 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Le desinstalleur ne supprime que ce que l'installateur a POSE, et un dossier
+; seulement s'il est vide. Tout ce que l'application ecrit ensuite a cote de
+; l'exe -- caches Python, journal de plantage, fichiers restes d'une version
+; precedente -- lui est donc inconnu : il survit, empeche la suppression des
+; dossiers parents, et le dossier d'installation reste debout au complet
+; (constate en usage : ClipFarming.exe et toutes ses DLL encore la apres
+; desinstallation). On nomme donc explicitement ces restes.
+;
+; Rien de tout cela n'est une donnee de l'utilisateur : depuis la version qui
+; accompagne ce script, projets, reglages et caches vivent sous Documents et
+; %LOCALAPPDATA%, hors du dossier d'installation. Ce sont les emplacements que
+; le desinstalleur ne touche PAS, volontairement : desinstaller un logiciel ne
+; doit pas emporter le travail fait avec.
+Type: filesandordirs; Name: "{app}\.cache"
+Type: filesandordirs; Name: "{app}\__pycache__"
+Type: files; Name: "{app}\crash_log.txt"
+Type: files; Name: "{app}\youtube_api_key.txt"
+Type: files; Name: "{app}\config\gui_settings.json"
+Type: dirifempty; Name: "{app}\config"
+Type: dirifempty; Name: "{app}"

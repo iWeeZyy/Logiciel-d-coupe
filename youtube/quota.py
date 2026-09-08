@@ -18,10 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from core.paths import app_base_dir
+from core.paths import user_data_dir
 
 _PACIFIC = ZoneInfo("America/Los_Angeles")
-DEFAULT_QUOTA_PATH = app_base_dir() / ".cache" / "youtube_quota.json"
+DEFAULT_QUOTA_PATH = user_data_dir() / ".cache" / "youtube_quota.json"
 
 
 def _current_pacific_date(now: datetime) -> str:

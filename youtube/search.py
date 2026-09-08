@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 
 from core.logging_setup import get_logger
-from core.paths import app_base_dir
+from core.paths import user_data_dir
 from utils.errors import YouTubeApiError, YouTubeConfigError, YouTubeQuotaError
 from youtube.models import SearchFilters, VideoResult
 from youtube.quota import QuotaTracker
@@ -30,14 +30,14 @@ _API_BASE = "https://www.googleapis.com/youtube/v3"
 SEARCH_COST_UNITS = 100
 VIDEOS_LIST_COST_UNITS = 1
 
-_API_KEY_FILE = app_base_dir() / "youtube_api_key.txt"
+_API_KEY_FILE = user_data_dir() / "youtube_api_key.txt"
 _ISO8601_DURATION_RE = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
 
 
 def load_api_key() -> str:
     """Ordre : variable d'environnement YOUTUBE_API_KEY, puis un fichier texte
-    `youtube_api_key.txt` a cote de l'executable/du depot (jamais compile dans
-    le .exe -- voir README, section recherche YouTube)."""
+    `youtube_api_key.txt` dans le dossier de donnees de l'utilisateur (jamais
+    compile dans le .exe -- voir README, section recherche YouTube)."""
     env_key = os.environ.get("YOUTUBE_API_KEY", "").strip()
     if env_key:
         return env_key
@@ -54,8 +54,11 @@ def load_api_key() -> str:
             return key
     raise YouTubeConfigError(
         "Aucune cle YouTube Data API trouvee. Definis la variable d'environnement "
-        "YOUTUBE_API_KEY, ou cree un fichier 'youtube_api_key.txt' a cote de "
-        "main.py (ou de l'executable) contenant uniquement la cle. "
+        "YOUTUBE_API_KEY, ou cree un fichier texte contenant uniquement la cle a "
+        # Le chemin exact, pas une description : l'emplacement depend du systeme
+        # et du mode (installe ou depot), et le deviner a deja fait perdre du
+        # temps a un utilisateur.
+        f"cet emplacement precis :\n{_API_KEY_FILE}\n"
         "Voir README.md, section recherche YouTube, pour l'obtenir gratuitement."
     )
 

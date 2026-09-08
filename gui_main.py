@@ -18,9 +18,10 @@ import traceback
 
 
 def _write_crash_log(exc: BaseException) -> str:
-    from core.paths import app_base_dir
+    from core.paths import user_data_dir
 
-    log_path = app_base_dir() / "crash_log.txt"
+    log_path = user_data_dir() / "crash_log.txt"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(log_path, "w", encoding="utf-8") as f:
             f.write("ClipFarming a rencontre une erreur au demarrage.\n\n")

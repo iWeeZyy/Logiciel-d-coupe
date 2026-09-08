@@ -15,9 +15,9 @@ import os
 from pathlib import Path
 
 from core.models import Transcript
-from core.paths import app_base_dir
+from core.paths import user_data_dir
 
-CACHE_DIR = app_base_dir() / ".cache"
+CACHE_DIR = user_data_dir() / ".cache"
 
 
 def _cache_key(video_path: str, model_name: str, language: str | None) -> str:
@@ -27,7 +27,7 @@ def _cache_key(video_path: str, model_name: str, language: str | None) -> str:
 
 
 def load(video_path: str, model_name: str, language: str | None) -> Transcript | None:
-    CACHE_DIR.mkdir(exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     key = _cache_key(video_path, model_name, language)
     path = CACHE_DIR / f"{key}.json"
     if not path.exists():
@@ -42,7 +42,7 @@ def load(video_path: str, model_name: str, language: str | None) -> Transcript |
 
 
 def save(video_path: str, model_name: str, language: str | None, transcript: Transcript) -> None:
-    CACHE_DIR.mkdir(exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     key = _cache_key(video_path, model_name, language)
     path = CACHE_DIR / f"{key}.json"
     with open(path, "w", encoding="utf-8") as f:

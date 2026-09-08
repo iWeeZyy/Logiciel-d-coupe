@@ -20,6 +20,7 @@ os.environ.setdefault("QT_DISABLE_HW_TEXTURES_CONVERSION", "1")
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
+from core.migrate_user_data import migrate_legacy_user_data
 from core.paths import app_base_dir
 from gui import theme
 from gui.branding import APP_NAME
@@ -31,6 +32,10 @@ _ICON_PATH = app_base_dir() / "assets" / "icons" / "clipfarming.ico"
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Avant toute lecture de reglages : les versions precedentes ecrivaient
+    # dans Program Files, on recupere ce qui s'y trouve encore.
+    migrate_legacy_user_data()
+
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(APP_NAME)

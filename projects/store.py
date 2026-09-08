@@ -14,14 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from core.paths import app_base_dir
+from core.paths import default_projects_dir
 from projects.models import Project, ProjectSummary
 
 # "user_projects", pas "projects" : ce dernier est le nom du paquet Python
 # lui-meme (projects/models.py, projects/store.py) -- en mode dev (script,
 # pas .exe fige), app_base_dir() pointe sur la racine du depot, donc utiliser
 # "projects" ici creerait les dossiers de projets DANS le paquet source.
-DEFAULT_PROJECTS_DIR = app_base_dir() / "user_projects"
+DEFAULT_PROJECTS_DIR = default_projects_dir()
 _MANIFEST_NAME = "project.json"
 _RESULTS_NAME = "results.json"
 

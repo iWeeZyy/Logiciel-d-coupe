@@ -23,11 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.logging_setup import get_logger
-from core.paths import app_base_dir
+from core.paths import user_data_dir
 
 logger = get_logger()
 
-MODELS_DIR = app_base_dir() / ".cache" / "models"
+MODELS_DIR = user_data_dir() / ".cache" / "models"
 PROTOTXT_URL = "https://raw.githubusercontent.com/opencv/opencv/4.x/samples/dnn/face_detector/deploy.prototxt"
 CAFFEMODEL_URL = (
     "https://raw.githubusercontent.com/opencv/opencv_3rdparty/"

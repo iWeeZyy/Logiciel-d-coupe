@@ -22,6 +22,7 @@ import traceback
 import pipeline
 from core.config_loader import load_settings, load_youtube_config
 from core.logging_setup import get_logger
+from core.migrate_user_data import migrate_legacy_user_data
 from utils.errors import ClipFarmingError
 
 logger = get_logger()
@@ -165,6 +166,10 @@ def run_search(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Les versions precedentes ecrivaient cache et projets dans le dossier
+    # d'installation : on les recupere avant de lire quoi que ce soit.
+    migrate_legacy_user_data()
+
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     youtube_tmp_dir = None
