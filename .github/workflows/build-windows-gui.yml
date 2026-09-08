@@ -13,6 +13,11 @@ on:
       - "build/installer.iss"
       - ".github/workflows/build-windows-gui.yml"
 
+# Necessaire pour publier la Release : le GITHUB_TOKEN par defaut est en
+# lecture seule sur les contenus.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -90,3 +95,44 @@ jobs:
           name: ClipFarming-Setup
           path: build/installer_output/ClipFarming-Setup.exe
           retention-days: 30
+
+      # Les artifacts ci-dessus gardent l'historique build par build, mais leur
+      # URL change a chaque compilation et ils expirent au bout de 30 jours. La
+      # Release, elle, donne une adresse qui ne bouge jamais :
+      #   https://github.com/<owner>/<repo>/releases/latest
+      # C'est celle a partager. Publiee uniquement sur main, et jamais depuis un
+      # workflow_dispatch de test sur une autre branche.
+      - name: Publish the installer as a Release
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "v1.0.0-build.${{ github.run_number }}"
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $date = Get-Date -Format "dd/MM/yyyy HH:mm"
+
+          # Le sujet du commit (premiere ligne seulement) sert de description :
+          # le corps complet des messages de ce depot fait plusieurs paragraphes.
+          # Notes ecrites dans un fichier plutot qu'en here-string PowerShell :
+          # un here-string doit se fermer en colonne 0, ce qui terminerait le
+          # bloc YAML de ce `run`.
+          $lines = @(
+            "Installateur Windows de ClipFarming, compile le $date (commit $sha).",
+            "",
+            (git log -1 --pretty=%s),
+            "",
+            "**ClipFarming-Setup.exe** : l'installateur. Desinstalle la version",
+            "precedente, puis lance-le.",
+            "",
+            "**ClipFarming-windows.zip** : version portable, sans installation."
+          )
+          Set-Content -Path release_notes.md -Value $lines -Encoding utf8
+
+          gh release create $tag `
+            "build/installer_output/ClipFarming-Setup.exe" `
+            "ClipFarming-windows.zip" `
+            --title "ClipFarming $tag" `
+            --notes-file release_notes.md `
+            --latest

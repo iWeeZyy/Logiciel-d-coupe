@@ -55,6 +55,22 @@ pip install -r requirements.txt
 
 L'installation tire `faster-whisper`, `librosa`/`numba` (analyse audio), `opencv-python-headless` (detection de visage) et `PySide6` (interface graphique, `gui_main.py`) -- prevoir quelques minutes et ~400-500 Mo.
 
+### Telecharger l'application
+
+Adresse permanente, toujours la derniere version :
+
+**https://github.com/iWeeZyy/Logiciel-d-coupe/releases/latest**
+
+- `ClipFarming-Setup.exe` -- l'installateur. Desinstalle la version precedente,
+  puis lance-le.
+- `ClipFarming-windows.zip` -- version portable, sans installation.
+
+Chaque compilation sur `main` publie automatiquement une Release ; cette adresse
+pointe toujours vers la plus recente et ne change jamais. Les artifacts de
+GitHub Actions restent disponibles en parallele (historique build par build),
+mais leur URL change a chaque compilation et ils expirent au bout de 30 jours.
+Le depot etant prive, il faut etre connecte a GitHub pour telecharger.
+
 ### Ou l'application range ses fichiers
 
 Installee en .exe, ClipFarming n'ecrit RIEN dans son dossier d'installation
