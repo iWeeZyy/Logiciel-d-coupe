@@ -33,15 +33,92 @@ _INCOMPLETE_CACHE_MARKERS = (
 )
 
 
+# Poids approximatif du telechargement de chaque modele, en mega-octets (depots
+# Systran/faster-whisper-*). Sert uniquement a verifier l'espace disque AVANT de
+# lancer un telechargement de plusieurs gigaoctets : un disque plein en cours de
+# route laisse justement le cache incomplet repare plus bas, et l'utilisateur
+# perd le temps du telechargement pour rien.
+_MODEL_DOWNLOAD_MB = {
+    "tiny": 75,
+    "base": 145,
+    "small": 484,
+    "medium": 1530,
+    "large": 3090,
+    "large-v2": 3090,
+    "large-v3": 3090,
+}
+
+# Marge au-dessus de la taille annoncee : le fichier est telecharge sous
+# ".incomplete" puis DEPLACE dans le cache (pas copie -- verifie dans
+# huggingface_hub/file_download.py), il n'y a donc pas de doublement temporaire,
+# seulement les fichiers annexes (tokenizer, config) et un peu de jeu.
+_DISK_HEADROOM = 1.15
+
+
+def free_disk_mb(path: Path) -> float | None:
+    """Espace libre, en Mo, sur le volume qui contiendra `path`.
+
+    On remonte au premier parent existant : le dossier du cache lui-meme
+    n'existe pas encore au premier telechargement. None si la mesure echoue --
+    auquel cas on n'empeche jamais un telechargement sur un simple doute."""
+    probe = path
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    try:
+        return shutil.disk_usage(probe).free / (1024 * 1024)
+    except OSError:
+        return None
+
+
+def check_disk_space_for(model_name: str, cache_dir: Path) -> None:
+    """Refuse tot un telechargement qui ne tient manifestement pas sur le disque.
+
+    Ne dit rien pour un modele de taille inconnue ou une mesure impossible :
+    bloquer sur une estimation incertaine serait pire que laisser essayer."""
+    needed_mb = _MODEL_DOWNLOAD_MB.get(model_name)
+    if needed_mb is None:
+        return
+    free_mb = free_disk_mb(cache_dir)
+    if free_mb is None or free_mb >= needed_mb * _DISK_HEADROOM:
+        return
+    raise ModelDownloadError(
+        f"Espace disque insuffisant pour telecharger le modele Whisper '{model_name}' : "
+        f"il faut environ {needed_mb / 1024:.1f} Go libres et il en reste "
+        f"{free_mb / 1024:.1f} sur le disque qui heberge\n{cache_dir.parent}\n\n"
+        "Libere de la place, choisis un modele plus petit, ou deplace le cache sur "
+        "un autre disque en definissant la variable d'environnement HF_HOME "
+        "(par exemple HF_HOME=E:\\huggingface)."
+    )
+
+
+def hf_hub_cache_root() -> Path:
+    """Racine du cache Hugging Face reellement utilisee par la bibliotheque.
+
+    On lit la constante de huggingface_hub plutot que de reconstruire
+    ~/.cache/huggingface/hub a la main : le dossier est deplacable par les
+    variables d'environnement HF_HUB_CACHE, HUGGINGFACE_HUB_CACHE, HF_HOME ou
+    XDG_CACHE_HOME (utile quand le disque systeme est trop plein pour un modele
+    de plusieurs gigaoctets). Reconstruire le chemin nous ferait alors chercher,
+    et surtout SUPPRIMER, dans un dossier qui n'est pas celui que la
+    bibliotheque utilise. Le repli ne sert que si l'import echoue.
+    """
+    try:
+        from huggingface_hub import constants as hf_constants
+
+        return Path(hf_constants.HF_HUB_CACHE)
+    except Exception:
+        return Path.home() / ".cache" / "huggingface" / "hub"
+
+
 def hf_cache_dir_for(model_name: str) -> Path:
     """Dossier du cache Hugging Face correspondant a un modele faster-whisper.
 
     faster-whisper resout un nom court ("large-v3") en depot
     "Systran/faster-whisper-large-v3", que huggingface_hub range sous
-    "models--Systran--faster-whisper-large-v3". On reconstruit ce chemin pour
-    pouvoir NOMMER a l'utilisateur le dossier a supprimer, au lieu de le laisser
-    deviner ou se trouve un cache qu'il n'a jamais cree lui-meme."""
-    return Path.home() / ".cache" / "huggingface" / "hub" / f"models--Systran--faster-whisper-{model_name}"
+    "models--Systran--faster-whisper-large-v3". On reconstruit ce nom de dossier
+    pour pouvoir NOMMER a l'utilisateur le dossier a supprimer, au lieu de le
+    laisser deviner ou se trouve un cache qu'il n'a jamais cree lui-meme."""
+    return hf_hub_cache_root() / f"models--Systran--faster-whisper-{model_name}"
 
 
 def _looks_like_incomplete_download(error: Exception) -> bool:
@@ -61,10 +138,13 @@ def _load_model(model_name: str, device: str, compute_type: str):
     """
     from faster_whisper import WhisperModel
 
+    cache_dir = hf_cache_dir_for(model_name)
+    if not cache_dir.exists():
+        check_disk_space_for(model_name, cache_dir)
+
     try:
         return WhisperModel(model_name, device=device, compute_type=compute_type)
     except Exception as first_error:
-        cache_dir = hf_cache_dir_for(model_name)
         if not (_looks_like_incomplete_download(first_error) and cache_dir.exists()):
             raise
 
@@ -81,6 +161,7 @@ def _load_model(model_name: str, device: str, compute_type: str):
                 f"{cache_dir}\nDetail : {cleanup_error}"
             ) from first_error
 
+        check_disk_space_for(model_name, cache_dir)
         try:
             return WhisperModel(model_name, device=device, compute_type=compute_type)
         except Exception as second_error:

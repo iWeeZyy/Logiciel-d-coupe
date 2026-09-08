@@ -115,3 +115,74 @@ def test_no_cache_directory_means_the_original_error_is_raised(monkeypatch, tmp_
 
     with pytest.raises(RuntimeError):
         whisper_engine._load_model("small", "cpu", "int8")
+
+
+def test_the_cache_root_follows_hugging_face_own_setting(monkeypatch):
+    # Le cache est deplacable (HF_HOME / HF_HUB_CACHE) quand le disque systeme
+    # est trop petit. Reconstruire ~/.cache a la main nous ferait supprimer un
+    # dossier qui n'est pas celui que la bibliotheque utilise reellement.
+    from huggingface_hub import constants as hf_constants
+
+    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", r"E:\huggingface\hub", raising=False)
+
+    root = whisper_engine.hf_hub_cache_root()
+
+    assert str(root).replace("\\", "/").endswith("huggingface/hub")
+    assert whisper_engine.hf_cache_dir_for("small").name == "models--Systran--faster-whisper-small"
+
+
+def test_a_download_is_refused_before_starting_when_the_disk_is_too_small(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "models--Systran--faster-whisper-large-v3"  # n'existe pas
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 900.0)
+    calls = _install_fake_faster_whisper(monkeypatch, lambda attempt: "modele charge")
+
+    with pytest.raises(ModelDownloadError) as excinfo:
+        whisper_engine._load_model("large-v3", "cpu", "int8")
+
+    assert calls["count"] == 0, "rien ne doit etre telecharge si la place manque"
+    message = str(excinfo.value)
+    assert "3.0 Go" in message and "0.9" in message
+    assert "HF_HOME" in message
+
+
+def test_enough_space_lets_the_download_proceed(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "models--Systran--faster-whisper-small"
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 5000.0)
+    calls = _install_fake_faster_whisper(monkeypatch, lambda attempt: "modele charge")
+
+    assert whisper_engine._load_model("small", "cpu", "int8") == "modele charge"
+    assert calls["count"] == 1
+
+
+def test_an_unmeasurable_disk_never_blocks_a_download(monkeypatch, tmp_path):
+    # Un doute sur la mesure ne doit pas empecher l'utilisateur d'essayer.
+    cache_dir = tmp_path / "models--Systran--faster-whisper-large-v3"
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: None)
+    calls = _install_fake_faster_whisper(monkeypatch, lambda attempt: "modele charge")
+
+    assert whisper_engine._load_model("large-v3", "cpu", "int8") == "modele charge"
+    assert calls["count"] == 1
+
+
+def test_an_already_downloaded_model_is_never_blocked_by_a_full_disk(monkeypatch, tmp_path):
+    # Le modele est deja la : rien a telecharger, l'espace libre n'a plus
+    # aucune importance et refuser ici serait absurde.
+    cache_dir = tmp_path / "models--Systran--faster-whisper-large-v3"
+    cache_dir.mkdir()
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 10.0)
+    calls = _install_fake_faster_whisper(monkeypatch, lambda attempt: "modele charge")
+
+    assert whisper_engine._load_model("large-v3", "cpu", "int8") == "modele charge"
+    assert calls["count"] == 1
+
+
+def test_free_disk_mb_walks_up_to_an_existing_parent(tmp_path):
+    # Au premier telechargement le dossier du cache n'existe pas encore : la
+    # mesure doit porter sur le volume, pas echouer.
+    missing = tmp_path / "pas" / "encore" / "cree"
+
+    assert whisper_engine.free_disk_mb(missing) is not None
