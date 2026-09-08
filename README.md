@@ -59,7 +59,7 @@ L'installation tire `faster-whisper`, `librosa`/`numba` (analyse audio), `opencv
 
 Au premier lancement, deux telechargements automatiques ont lieu (uniquement s'ils ne sont pas deja en cache) :
 
-- Le **modele Whisper** choisi (`--model`, defaut `small`, ~484 Mo ; `medium` ~1,5 Go, `large-v3` ~3 Go) -- mis en cache dans `~/.cache/huggingface/`. Si ce disque manque de place, deplacez le cache avec la variable d'environnement `HF_HOME` (par exemple `HF_HOME=E:\huggingface`). L'espace libre est verifie **avant** le telechargement, et un telechargement interrompu (dossier de modele present mais sans son fichier de poids) est detecte et retelecharge automatiquement au lancement suivant.
+- Le **modele Whisper** choisi (`--model`, defaut `small`, ~484 Mo ; `medium` ~1,5 Go, `large-v3` ~3 Go) -- mis en cache dans `~/.cache/huggingface/`. Si ce disque manque de place, deplacez le cache avec la variable d'environnement `HF_HOME` (par exemple `HF_HOME=E:\huggingface`). L'espace libre est verifie **avant** le telechargement, et un telechargement interrompu (dossier de modele present mais sans son fichier de poids) est detecte et retelecharge automatiquement au lancement suivant. L'avancement du telechargement s'affiche dans l'etape "Transcription" (par exemple `Telechargement du modele small : 210 / 484 Mo`) : l'application n'est pas figee, et "Annuler" reste utilisable pendant toute la duree.
 - Le **detecteur de visage** OpenCV DNN (~28 Ko + ~10,7 Mo) -- mis en cache dans `.cache/models/` du projet.
 
 Si le detecteur de visage ne peut pas etre telecharge (pas de connexion), le programme **continue normalement** : il utilise un recadrage centre au lieu d'un recadrage centre sur le visage. Ce n'est jamais bloquant.

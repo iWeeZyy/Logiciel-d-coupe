@@ -10,6 +10,8 @@ Tests purs : aucun modele n'est charge, seule la logique de decision est
 exercee (via un faux WhisperModel injecte dans le module).
 """
 import sys
+import threading
+import time
 import types
 
 import pytest
@@ -186,3 +188,159 @@ def test_free_disk_mb_walks_up_to_an_existing_parent(tmp_path):
     missing = tmp_path / "pas" / "encore" / "cree"
 
     assert whisper_engine.free_disk_mb(missing) is not None
+
+
+def _install_fake_faster_whisper_utils(monkeypatch, cached_path, on_download):
+    """Faux faster_whisper.utils : download_model(local_files_only=True) renvoie
+    `cached_path` (ou leve si None), et le telechargement reel delegue a
+    `on_download`."""
+    calls = {"downloads": 0}
+
+    def fake_download_model(name, local_files_only=False, **kwargs):
+        if local_files_only:
+            if cached_path is None:
+                raise FileNotFoundError("modele absent du cache")
+            return str(cached_path)
+        calls["downloads"] += 1
+        return str(on_download())
+
+    utils = types.ModuleType("faster_whisper.utils")
+    utils.download_model = fake_download_model
+    utils._MODELS = {"large": "Systran/faster-whisper-large-v3",
+                     "small": "Systran/faster-whisper-small"}
+    package = types.ModuleType("faster_whisper")
+    package.utils = utils
+    monkeypatch.setitem(sys.modules, "faster_whisper", package)
+    monkeypatch.setitem(sys.modules, "faster_whisper.utils", utils)
+    return calls
+
+
+def test_large_resolves_to_the_v3_repository(monkeypatch):
+    # "large" ne pointe PAS sur un depot "...-large" : deduire le nom du dossier
+    # du nom du modele nous ferait chercher un dossier qui n'existe pas, et la
+    # reparation ne se declencherait jamais pour ce modele.
+    _install_fake_faster_whisper_utils(monkeypatch, None, lambda: "")
+
+    assert whisper_engine.model_repo_id("large") == "Systran/faster-whisper-large-v3"
+    assert whisper_engine.hf_cache_dir_for("large").name == "models--Systran--faster-whisper-large-v3"
+
+
+def test_a_snapshot_without_its_weights_is_not_complete(tmp_path):
+    snapshot = tmp_path / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+
+    assert not whisper_engine.snapshot_is_complete(snapshot)
+
+    (snapshot / "model.bin").write_bytes(b"x")
+    assert whisper_engine.snapshot_is_complete(snapshot)
+
+
+def test_a_complete_cache_downloads_nothing(monkeypatch, tmp_path):
+    snapshot = tmp_path / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "model.bin").write_bytes(b"x")
+    calls = _install_fake_faster_whisper_utils(monkeypatch, snapshot, lambda: snapshot)
+
+    whisper_engine.ensure_model_downloaded("small")
+
+    assert calls["downloads"] == 0
+
+
+def test_an_incomplete_snapshot_is_removed_then_redownloaded(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "models--Systran--faster-whisper-small"
+    snapshot = cache_dir / "snapshots" / "abc"
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")   # pas de model.bin
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 10000.0)
+
+    def redownload():
+        snapshot.mkdir(parents=True, exist_ok=True)
+        (snapshot / "model.bin").write_bytes(b"y" * 1024)
+        return snapshot
+
+    calls = _install_fake_faster_whisper_utils(monkeypatch, snapshot, redownload)
+
+    whisper_engine.ensure_model_downloaded("small")
+
+    assert calls["downloads"] == 1
+    assert (snapshot / "model.bin").is_file()
+
+
+def test_the_download_reports_its_progress(monkeypatch, tmp_path):
+    # Sans compte rendu, l'interface reste figee pendant tout le telechargement
+    # et fermer une application qui semble bloquee laisse le cache incomplet.
+    cache_dir = tmp_path / "models--Systran--faster-whisper-small"
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 10000.0)
+
+    def slow_download():
+        snapshot = cache_dir / "snapshots" / "abc"
+        snapshot.mkdir(parents=True, exist_ok=True)
+        for i in range(3):
+            (snapshot / f"part{i}.bin").write_bytes(b"z" * 400_000)
+            time.sleep(0.6)
+        (snapshot / "model.bin").write_bytes(b"z")
+        return snapshot
+
+    _install_fake_faster_whisper_utils(monkeypatch, None, slow_download)
+
+    seen: list[tuple[float, float | None]] = []
+    whisper_engine.ensure_model_downloaded("small", lambda done, total: seen.append((done, total)))
+
+    assert seen, "au moins un compte rendu doit remonter pendant le telechargement"
+    assert seen[-1][1] == 484.0, "la taille annoncee du modele doit accompagner l'avancement"
+    assert seen[-1][0] > seen[0][0], "l'avancement doit progresser"
+
+
+def test_a_download_failure_is_raised_in_the_calling_thread(monkeypatch, tmp_path):
+    # Une erreur survenue dans le fil de telechargement ne doit pas etre avalee.
+    cache_dir = tmp_path / "models--Systran--faster-whisper-small"
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 10000.0)
+
+    def failing():
+        raise ConnectionError("coupure reseau")
+
+    _install_fake_faster_whisper_utils(monkeypatch, None, failing)
+
+    with pytest.raises(ConnectionError):
+        whisper_engine.ensure_model_downloaded("small")
+
+
+def test_cancelling_during_the_download_returns_control_immediately(monkeypatch, tmp_path):
+    # Sans point de controle pendant le telechargement, "Annuler" restait sans
+    # effet et l'interface finissait par appeler QThread.terminate(), qui coupe
+    # l'ecriture du fichier de poids n'importe ou -- la cause meme du cache
+    # incomplet que ce module repare.
+    from core.cancellation import CancelToken
+    from utils.errors import CancelledError
+
+    cache_dir = tmp_path / "models--Systran--faster-whisper-small"
+    monkeypatch.setattr(whisper_engine, "hf_cache_dir_for", lambda name: cache_dir)
+    monkeypatch.setattr(whisper_engine, "free_disk_mb", lambda path: 10000.0)
+
+    token = CancelToken()
+
+    def endless_download():
+        snapshot = cache_dir / "snapshots" / "abc"
+        snapshot.mkdir(parents=True, exist_ok=True)
+        for _ in range(200):
+            time.sleep(0.05)
+        return snapshot
+
+    _install_fake_faster_whisper_utils(monkeypatch, None, endless_download)
+
+    def cancel_soon():
+        time.sleep(0.6)
+        token.cancel()
+
+    threading.Thread(target=cancel_soon, daemon=True).start()
+
+    started = time.monotonic()
+    with pytest.raises(CancelledError):
+        whisper_engine.ensure_model_downloaded("small", None, token)
+
+    assert time.monotonic() - started < 4.0, "l'annulation doit rendre la main tout de suite"
+    assert cache_dir.exists(), "le cache partiel est conserve : huggingface sait le reprendre"

@@ -110,9 +110,26 @@ def run(
             def _on_segment(elapsed: float, total: float) -> None:
                 progress.report(f"{elapsed:.0f}s / {total:.0f}s transcrites", fraction=elapsed / total)
 
+            # Le premier lancement telecharge le modele (484 Mo pour 'small',
+            # ~3 Go pour 'large'). Sans ce compte rendu, l'interface reste figee
+            # sur "Transcription" pendant tout ce temps et l'application parait
+            # bloquee -- la fermer laisse alors un cache incomplet.
+            def _on_download(done_mb: float, total_mb: float | None) -> None:
+                if total_mb:
+                    progress.report(
+                        f"Téléchargement du modèle {settings.model} : "
+                        f"{done_mb:.0f} / {total_mb:.0f} Mo",
+                        fraction=min(done_mb / total_mb, 0.999),
+                    )
+                else:
+                    progress.report(
+                        f"Téléchargement du modèle {settings.model} : {done_mb:.0f} Mo"
+                    )
+
             transcript = transcribe(
                 wav_path, settings.model, settings.language, settings.device,
                 cancel_token=cancel_token, on_segment_progress=_on_segment,
+                on_download_progress=_on_download,
             )
             if not settings.no_cache:
                 transcript_cache.save(str(input_path), settings.model, settings.language, transcript)

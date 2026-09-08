@@ -8,13 +8,14 @@ puis reutilise hors ligne.
 from __future__ import annotations
 
 import shutil
+import threading
 from pathlib import Path
 from typing import Callable, Optional
 
 from core.cancellation import CancelToken
 from core.logging_setup import get_logger
 from core.models import Segment, Transcript, Word
-from utils.errors import ModelDownloadError, NoAudioError
+from utils.errors import CancelledError, ModelDownloadError, NoAudioError
 from utils.hardware import resolve_device
 
 logger = get_logger()
@@ -110,6 +111,28 @@ def hf_hub_cache_root() -> Path:
         return Path.home() / ".cache" / "huggingface" / "hub"
 
 
+def model_repo_id(model_name: str) -> str:
+    """Depot Hugging Face reellement utilise par faster-whisper pour ce modele.
+
+    La correspondance n'est pas mecanique : "large" pointe sur
+    Systran/faster-whisper-large-v3, pas sur un depot "...-large". Deduire le
+    nom du dossier de cache du nom du modele nous faisait donc chercher un
+    dossier inexistant pour "large" -- et la reparation d'un cache incomplet ne
+    s'y serait jamais declenchee. On lit la table de faster-whisper.
+    """
+    if "/" in model_name:
+        return model_name
+    try:
+        from faster_whisper.utils import _MODELS
+
+        repo = _MODELS.get(model_name)
+        if repo:
+            return repo
+    except Exception:
+        pass
+    return f"Systran/faster-whisper-{model_name}"
+
+
 def hf_cache_dir_for(model_name: str) -> Path:
     """Dossier du cache Hugging Face correspondant a un modele faster-whisper.
 
@@ -118,7 +141,137 @@ def hf_cache_dir_for(model_name: str) -> Path:
     "models--Systran--faster-whisper-large-v3". On reconstruit ce nom de dossier
     pour pouvoir NOMMER a l'utilisateur le dossier a supprimer, au lieu de le
     laisser deviner ou se trouve un cache qu'il n'a jamais cree lui-meme."""
-    return hf_hub_cache_root() / f"models--Systran--faster-whisper-{model_name}"
+    return hf_hub_cache_root() / ("models--" + model_repo_id(model_name).replace("/", "--"))
+
+
+def _cached_snapshot_path(model_name: str) -> Optional[str]:
+    """Chemin du modele deja present dans le cache, ou None s'il n'y est pas."""
+    try:
+        from faster_whisper.utils import download_model
+
+        return download_model(model_name, local_files_only=True)
+    except Exception:
+        return None
+
+
+def snapshot_is_complete(snapshot_path: str | Path) -> bool:
+    """Un instantane sans son fichier de poids est un telechargement interrompu.
+
+    C'est exactement l'etat que laisse une application fermee pendant le
+    telechargement : huggingface_hub voit le dossier, le considere comme deja
+    la, et ne retelecharge plus jamais rien. Le detecter AVANT de charger le
+    modele evite de dependre du texte d'un message d'erreur."""
+    return (Path(snapshot_path) / "model.bin").is_file()
+
+
+def _dir_size_mb(path: Path) -> float:
+    total = 0
+    if not path.exists():
+        return 0.0
+    for entry in path.rglob("*"):
+        try:
+            if entry.is_file():
+                total += entry.stat().st_size
+        except OSError:
+            continue
+    return total / (1024 * 1024)
+
+
+def _download_with_progress(
+    model_name: str,
+    cache_dir: Path,
+    on_download_progress: Optional[Callable[[float, Optional[float]], None]],
+    cancel_token: Optional[CancelToken] = None,
+) -> None:
+    """Telecharge le modele en rendant compte de l'avancement.
+
+    Sans ce compte rendu, l'interface reste figee sur "Transcription" pendant
+    tout le telechargement -- plusieurs minutes pour 484 Mo, beaucoup plus pour
+    3 Go -- et fermer une application qui semble bloquee est la reaction
+    naturelle. C'est precisement ce qui laisse le cache incomplet.
+
+    huggingface_hub n'expose pas de rappel d'avancement exploitable ici : on
+    telecharge donc dans un fil et on mesure la taille reellement ecrite sur le
+    disque. C'est approximatif -- la barre peut avancer par a-coups -- mais
+    honnete : ce sont les octets vraiment arrives.
+
+    Ce meme fil donne a "Annuler" un point de controle pendant le
+    telechargement. Sans lui, le telechargement est un appel tiers bloquant sans
+    aucun point d'arret : le jeton cooperatif restait sans effet et l'interface
+    finissait par recourir a QThread.terminate(), qui coupe l'ecriture du
+    fichier de poids n'importe ou -- exactement le cache incomplet que ce module
+    passe son temps a reparer.
+    """
+    from faster_whisper.utils import download_model
+
+    total_mb = _MODEL_DOWNLOAD_MB.get(model_name)
+    already_mb = _dir_size_mb(cache_dir)
+    outcome: dict[str, BaseException | None] = {"error": None}
+
+    def worker() -> None:
+        try:
+            download_model(model_name)
+        except BaseException as exc:  # remonte tel quel dans le fil principal
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=worker, name="whisper-model-download", daemon=True)
+    thread.start()
+
+    while thread.is_alive():
+        thread.join(timeout=0.5)
+        if cancel_token is not None and cancel_token.is_cancelled:
+            # Le fil de telechargement n'est pas interrompu : huggingface_hub
+            # ecrit dans un fichier ".incomplete" qu'il sait reprendre, et le
+            # tuer en pleine ecriture est precisement ce qu'on cherche a eviter.
+            # On rend simplement la main tout de suite a l'interface.
+            logger.info(
+                "Annulation demandee pendant le telechargement du modele -- "
+                "le telechargement se poursuit en arriere-plan et sera repris "
+                "au prochain lancement."
+            )
+            cancel_token.check()
+        if on_download_progress is None:
+            continue
+        downloaded = max(0.0, _dir_size_mb(cache_dir) - already_mb)
+        on_download_progress(downloaded, float(total_mb) if total_mb else None)
+
+    if outcome["error"] is not None:
+        raise outcome["error"]
+
+
+def ensure_model_downloaded(
+    model_name: str,
+    on_download_progress: Optional[Callable[[float, Optional[float]], None]] = None,
+    cancel_token: Optional[CancelToken] = None,
+) -> None:
+    """Garantit un modele complet dans le cache avant tout chargement.
+
+    Trois cas, dans cet ordre : deja complet -> rien a faire ; present mais sans
+    son fichier de poids -> le dossier est supprime puis retelecharge (sans
+    quoi huggingface_hub le croira eternellement present) ; absent -> verification
+    de l'espace disque puis telechargement avec avancement.
+    """
+    cached = _cached_snapshot_path(model_name)
+    if cached is not None and snapshot_is_complete(cached):
+        return
+
+    cache_dir = hf_cache_dir_for(model_name)
+    if cached is not None:
+        logger.warning(
+            f"Le modele '{model_name}' est present dans le cache mais son fichier de poids "
+            f"manque (telechargement interrompu). Suppression de {cache_dir} et "
+            "nouveau telechargement."
+        )
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+    check_disk_space_for(model_name, cache_dir)
+    size = _MODEL_DOWNLOAD_MB.get(model_name)
+    logger.info(
+        f"Telechargement du modele Whisper '{model_name}'"
+        + (f" (~{size} Mo)" if size else "")
+        + " -- une seule fois, il sera ensuite reutilise hors ligne."
+    )
+    _download_with_progress(model_name, cache_dir, on_download_progress, cancel_token)
 
 
 def _looks_like_incomplete_download(error: Exception) -> bool:
@@ -180,6 +333,7 @@ def transcribe(
     device_pref: str,
     cancel_token: Optional[CancelToken] = None,
     on_segment_progress: Optional[Callable[[float, float], None]] = None,
+    on_download_progress: Optional[Callable[[float, Optional[float]], None]] = None,
 ) -> Transcript:
     """Transcrit wav_path (mono 16kHz, produit par video/audio_extractor.py).
 
@@ -209,8 +363,12 @@ def transcribe(
         )
 
     try:
+        ensure_model_downloaded(model_name, on_download_progress, cancel_token)
         model = _load_model(model_name, device, compute_type)
-    except ModelDownloadError:
+    except (ModelDownloadError, CancelledError):
+        # Une annulation demandee par l'utilisateur n'est pas un echec de
+        # telechargement : la transformer en ModelDownloadError afficherait un
+        # message d'erreur reseau a quelqu'un qui vient d'appuyer sur Annuler.
         raise
     except Exception as e:
         raise ModelDownloadError(
