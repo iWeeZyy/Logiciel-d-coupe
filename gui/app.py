@@ -2,7 +2,20 @@
 polices/le theme, instancie le controller et la fenetre principale."""
 from __future__ import annotations
 
+import os
 import sys
+
+# A definir AVANT toute creation de QApplication : le greffon multimedia de Qt
+# lit ces variables a son initialisation.
+#
+# QT_DISABLE_HW_TEXTURES_CONVERSION force la remontee des images decodees par le
+# GPU en memoire centrale au lieu de les partager sous forme de texture. Sur une
+# partie des pilotes Windows, ce partage de texture echoue silencieusement : le
+# son se joue, la position avance, et l'image reste noire -- exactement le
+# symptome constate. Le decodage materiel lui-meme reste actif ; seul le chemin
+# de remise des images change. Une variable deja definie par l'utilisateur n'est
+# jamais ecrasee, pour que le comportement d'origine reste atteignable.
+os.environ.setdefault("QT_DISABLE_HW_TEXTURES_CONVERSION", "1")
 
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication

@@ -5,7 +5,10 @@ dependance supplementaire, decodage natif sur Windows.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QUrl, Qt
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
@@ -14,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSlider,
+    QStackedWidget,
     QVBoxLayout,
 )
 
@@ -43,9 +47,23 @@ class VideoPlayerDialog(QDialog):
         self.title_label.setStyleSheet("font-weight: 700; font-size: 13.5px;")
         layout.addWidget(self.title_label)
 
+        # Le lecteur et le message d'erreur occupent la meme place : une lecture
+        # qui echoue doit REMPLACER l'image, pas laisser un rectangle noir qui
+        # ne dit rien. C'etait le defaut principal ici -- aucune erreur du
+        # lecteur n'etait remontee, quelle qu'elle soit.
         self.video_widget = QVideoWidget()
         self.video_widget.setMinimumHeight(420)
-        layout.addWidget(self.video_widget, stretch=1)
+
+        self.error_label = QLabel("")
+        self.error_label.setWordWrap(True)
+        self.error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.error_label.setProperty("role", "muted")
+
+        self.stack = QStackedWidget()
+        self.stack.setMinimumHeight(420)
+        self.stack.addWidget(self.video_widget)
+        self.stack.addWidget(self.error_label)
+        layout.addWidget(self.stack, stretch=1)
 
         self.player = QMediaPlayer(self)
         self.audio_output = QAudioOutput(self)
@@ -54,6 +72,7 @@ class VideoPlayerDialog(QDialog):
         self.player.positionChanged.connect(self._on_position_changed)
         self.player.durationChanged.connect(self._on_duration_changed)
         self.player.playbackStateChanged.connect(self._on_playback_state_changed)
+        self.player.errorOccurred.connect(self._on_error)
 
         seek_row = QHBoxLayout()
         self.position_label = QLabel("00:00")
@@ -96,14 +115,50 @@ class VideoPlayerDialog(QDialog):
 
         layout.addLayout(controls_row)
 
+        # Toujours propose, pas seulement en cas d'echec : meme lecteur integre
+        # qui fonctionne, ouvrir le fichier dans son lecteur habituel reste une
+        # demande legitime, et c'est le seul chemin qui ne depende ni de Qt ni
+        # du pilote graphique.
+        self.system_btn = QPushButton("Ouvrir dans le lecteur système")
+        self.system_btn.clicked.connect(self._open_in_system_player)
+        layout.addWidget(self.system_btn)
+
         self._load_current()
+
+    def _open_in_system_player(self) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.clips[self.index][1]))
+
+    def _show_error(self, message: str) -> None:
+        self.error_label.setText(
+            f"{message}\n\nLe fichier est intact : « Ouvrir dans le lecteur système » "
+            "ci-dessous le lit avec le lecteur de Windows."
+        )
+        self.stack.setCurrentWidget(self.error_label)
+        self.play_btn.setEnabled(False)
+
+    def _on_error(self, error, error_string: str = "") -> None:
+        if error == QMediaPlayer.Error.NoError:
+            return
+        self._show_error(
+            error_string or self.player.errorString() or "Lecture impossible dans l'aperçu."
+        )
 
     def _load_current(self) -> None:
         title, path = self.clips[self.index]
         self.title_label.setText(title)
-        self.player.setSource(QUrl.fromLocalFile(path))
         self.prev_btn.setEnabled(self.index > 0)
         self.next_btn.setEnabled(self.index < len(self.clips) - 1)
+
+        # Etat remis a zero a chaque clip : une erreur sur le precedent ne doit
+        # pas condamner le suivant.
+        self.stack.setCurrentWidget(self.video_widget)
+        self.play_btn.setEnabled(True)
+
+        if not Path(path).is_file():
+            self._show_error(f"Fichier introuvable :\n{path}")
+            return
+
+        self.player.setSource(QUrl.fromLocalFile(path))
         self.player.play()
 
     def _toggle_play(self) -> None:
@@ -139,5 +194,13 @@ class VideoPlayerDialog(QDialog):
             self._load_current()
 
     def closeEvent(self, event) -> None:
+        # Detruire un QMediaPlayer encore rattache a son QVideoWidget pendant que
+        # le moteur de decodage tourne fige l'application (elle repasse en "ne
+        # repond pas"). On demonte donc dans l'ordre inverse du montage --
+        # arret, source videe, sorties detachees -- avant que Qt ne detruise le
+        # dialogue et ses enfants.
         self.player.stop()
+        self.player.setSource(QUrl())
+        self.player.setVideoOutput(None)
+        self.player.setAudioOutput(None)
         super().closeEvent(event)
