@@ -26,6 +26,7 @@ from gui.controller import AppController
 from gui.pages.analysis_page import AnalysisPage
 from gui.pages.home_page import HomePage
 from gui.pages.learning_page import LearningPage
+from gui.radar.radar_page import RadarPage
 from gui.pages.projects_page import ProjectsPage
 from gui.pages.results_page import ResultsPage
 from gui.pages.search_page import SearchPage
@@ -34,6 +35,7 @@ from gui.pages.settings_page import SettingsPage
 _NAV_ITEMS = [
     ("home", "🎬  Accueil"),
     ("search", "🔎  Recherche"),
+    ("radar", "📡  Radar"),
     ("projects", "📁  Projets"),
     ("learning", "🧠  Apprentissage"),
     ("settings", "⚙️  Paramètres"),
@@ -106,6 +108,7 @@ class MainWindow(QMainWindow):
         self.pages["analysis"] = AnalysisPage(self.controller)
         self.pages["results"] = ResultsPage(self.controller)
         self.pages["search"] = SearchPage(self.controller)
+        self.pages["radar"] = RadarPage(self.controller)
         self.pages["projects"] = ProjectsPage(self.controller)
         self.pages["learning"] = LearningPage(self.controller)
         self.pages["settings"] = SettingsPage(self.controller)

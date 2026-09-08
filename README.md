@@ -71,6 +71,51 @@ GitHub Actions restent disponibles en parallele (historique build par build),
 mais leur URL change a chaque compilation et ils expirent au bout de 30 jours.
 Le depot etant prive, il faut etre connecte a GitHub pour telecharger.
 
+### Radar YouTube et Twitch
+
+Veille de contenu sur une liste personnalisable de createurs, YouTube et Twitch
+depuis une seule page. Le Radar ne produit rien : il SELECTIONNE des
+opportunites et les transmet au pipeline existant.
+
+**Ce qui exige Internet** : resoudre une chaine, lancer un scan, lire des
+statistiques. **Ce qui reste local** : scores, tendances, historique, favoris,
+et evidemment tout le traitement video.
+
+**Conformite.** Uniquement les APIs officielles -- YouTube Data API v3 et
+Twitch Helix (flux applicatif "client credentials"). Aucun scraping, aucun
+contournement, aucun telechargement automatique. Le Radar lit des metadonnees
+publiques ; cela ne constitue jamais une cession de droits, et rien dans
+l'interface ne le laisse entendre.
+
+**Quota YouTube.** `search.list` coute 100 unites sur les 10 000 quotidiennes.
+Le Radar passe par la playlist d'uploads (mise en cache) puis
+`playlistItems.list` et `videos.list`, soit 2 unites par createur et par scan :
+27 createurs reviennent a 54 unites, donc environ 185 scans par jour au lieu de
+3. `search.list` n'est utilise que pour resoudre un nom approximatif, a l'ajout.
+
+**Identifiants.** YouTube : la meme cle que la recherche (voir plus haut).
+Twitch : creer une application sur https://dev.twitch.tv/console/apps, puis
+definir `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET`, ou renseigner
+`twitch_credentials.txt` dans le dossier de donnees (Client ID en premiere
+ligne, Client Secret en seconde). Sans identifiants, la plateforme se declare
+indisponible avec la marche a suivre et l'autre continue de fonctionner.
+
+**Trois limites assumees, ecrites plutot que masquees :**
+
+- Aucune API ne dit si une video est un **Short** : la detection se fait sur la
+  duree et se presente comme une heuristique.
+- Aucune API ne renvoie une **vitesse de progression** : elles donnent un
+  compteur a l'instant present. Les tendances sont calculees sur les releves
+  successifs du Radar, donc le premier scan d'un contenu ne peut rien dire --
+  et l'affiche ainsi, au lieu d'annoncer 0 %.
+- Le **nombre de followers Twitch** demande une autorisation utilisateur que la
+  surveillance ne justifie pas : il reste inconnu plutot qu'affiche a zero.
+
+**Twitch et le Content Factory.** Twitch ne fournit aucun moyen officiel de
+telecharger un stream, une VOD ou un clip. Le Radar le dit et propose de
+selectionner un fichier local dont vous disposez legalement, qui sera alors
+traite comme n'importe quelle autre video.
+
 ### Content Factory et apprentissage par les performances
 
 **Content Factory** produit plusieurs clips d'une video longue en une passe. La
