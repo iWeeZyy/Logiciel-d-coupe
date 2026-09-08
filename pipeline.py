@@ -18,6 +18,7 @@ from analysis.hook_detector import generate_candidates
 from analysis.scoring import Scorer
 from analysis.selector import select_clips
 from content_factory.selection import DiverseRanker
+from performance.profile import build_profile
 from performance.store import PerformanceStore
 from performance.tracker import record_production
 from analysis.text_analyzer import TextAnalyzer
@@ -482,6 +483,15 @@ def _build_ranker(settings, sentences, audio_analyzer, video_duration):
 
     priority_cfg = cfg.get("priority", {}) or {}
     diversity_cfg = cfg.get("diversity", {}) or {}
+    # Profil personnel : lu une fois, et seulement s'il existe. Une erreur de
+    # lecture ne doit pas empecher de produire -- on repart alors sur l'analyse
+    # generale seule, qui est le comportement par defaut.
+    try:
+        profile = build_profile(PerformanceStore().records())
+    except Exception as error:  # noqa: BLE001
+        logger.warning(f"Profil de performance ignore ({error}) -- analyse generale seule.")
+        profile = None
+
     return DiverseRanker(
         sentences=sentences,
         audio_stats={
@@ -497,6 +507,7 @@ def _build_ranker(settings, sentences, audio_analyzer, video_duration):
         temporal_weight=float(diversity_cfg.get("temporal_weight", 0.5)),
         horizon_s=diversity_cfg.get("horizon_s"),
         funnel_thresholds=cfg.get("funnel", {}) or {},
+        profile=profile,
     )
 
 

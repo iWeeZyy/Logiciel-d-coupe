@@ -24,6 +24,7 @@ from content_factory import diversity
 from content_factory.priority import PriorityBreakdown, compute_priority
 from core.models import ScoredCandidate
 from editing.sentences import SentenceSpan
+from performance import profile as personal_profile
 
 # Paliers de l'entonnoir affiche a l'utilisateur (section 3). Ce sont des
 # seuils de LISIBILITE : ils ne filtrent rien, ils racontent ce que le moteur a
@@ -98,6 +99,10 @@ class DiverseRanker:
     temporal_weight: float = DEFAULT_TEMPORAL_WEIGHT
     horizon_s: float | None = None
     funnel_thresholds: dict = field(default_factory=dict)
+    # Profil de performance personnel (section 25). Absent -> selection
+    # fondee uniquement sur l'analyse generale, ce qui est le cas tant que
+    # l'utilisateur n'a pas saisi assez de performances.
+    profile: object | None = None
 
     # Rempli pendant pick(), lu ensuite par le pipeline pour l'affichage et
     # pour results.json.
@@ -149,6 +154,16 @@ class DiverseRanker:
                     self.topic_weight, self.temporal_weight,
                 )
                 value = breakdown.total * (1.0 - strength * penalty)
+                # L'historique personnel MODULE le score general, il ne le
+                # remplace pas : son influence est plafonnee dans
+                # performance/profile.py. Un utilisateur qui change de format
+                # ne doit pas rester enferme dans ce qu'il faisait avant.
+                if self.profile is not None and getattr(self.profile, "usable", False):
+                    value = personal_profile.blend(
+                        value,
+                        personal_profile.affinity(self.profile, sc.candidate.duration),
+                        self.profile.influence,
+                    )
                 # Departage stable : a valeur egale, le meilleur potentiel viral
                 # puis le passage le plus tot dans la video. Sans cela, l'ordre
                 # dependrait de l'ordre d'iteration et deux analyses de la meme

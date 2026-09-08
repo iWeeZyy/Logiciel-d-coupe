@@ -1,4 +1,4 @@
-"""Fenetre principale : barre laterale (Accueil/Recherche/Projets/Parametres)
+"""Fenetre principale : barre laterale (Accueil/Recherche/Projets/Apprentissage/Parametres)
 + zone de contenu empilee (QStackedWidget). Les pages "Analyse en cours" et
 "Resultats" ne sont PAS des destinations de la barre laterale -- ce sont des
 vues transitoires poussees depuis Accueil, exactement comme le flux decrit
@@ -25,6 +25,7 @@ from gui.branding import APP_NAME, APP_TAGLINE
 from gui.controller import AppController
 from gui.pages.analysis_page import AnalysisPage
 from gui.pages.home_page import HomePage
+from gui.pages.learning_page import LearningPage
 from gui.pages.projects_page import ProjectsPage
 from gui.pages.results_page import ResultsPage
 from gui.pages.search_page import SearchPage
@@ -34,6 +35,7 @@ _NAV_ITEMS = [
     ("home", "🎬  Accueil"),
     ("search", "🔎  Recherche"),
     ("projects", "📁  Projets"),
+    ("learning", "🧠  Apprentissage"),
     ("settings", "⚙️  Paramètres"),
 ]
 
@@ -105,6 +107,7 @@ class MainWindow(QMainWindow):
         self.pages["results"] = ResultsPage(self.controller)
         self.pages["search"] = SearchPage(self.controller)
         self.pages["projects"] = ProjectsPage(self.controller)
+        self.pages["learning"] = LearningPage(self.controller)
         self.pages["settings"] = SettingsPage(self.controller)
 
         for page in self.pages.values():

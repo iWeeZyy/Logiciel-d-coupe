@@ -71,6 +71,39 @@ GitHub Actions restent disponibles en parallele (historique build par build),
 mais leur URL change a chaque compilation et ils expirent au bout de 30 jours.
 Le depot etant prive, il faut etre connecte a GitHub pour telecharger.
 
+### Content Factory et apprentissage par les performances
+
+**Content Factory** produit plusieurs clips d'une video longue en une passe. La
+chaine de production est celle du pipeline habituel ; ce qui change est la
+FACON de choisir les passages : au lieu du seul classement par potentiel viral,
+un Content Factory Priority Score (potentiel, qualite du contexte, qualite
+audio, publiabilite) assorti d'une penalite de redondance, temporelle et
+thematique. Sans elle, les dix meilleurs scores d'une video de deux heures
+viennent souvent du meme quart d'heure.
+
+**Apprentissage.** Le logiciel enregistre les caracteristiques de chaque clip
+produit (valeurs deja calculees, photographiees a la production), et
+l'utilisateur peut saisir a la main les statistiques obtenues apres publication.
+La page « Ce que le logiciel apprend » confronte alors le potentiel ESTIME a la
+performance CONSTATEE.
+
+Ce qui est volontairement absent :
+
+- aucun modele d'apprentissage automatique. C'est un ajustement de ponderations
+  guide par des correlations observees, et le code ne pretend pas autre chose ;
+- aucune affirmation de causalite : « correlation », jamais « cause » ;
+- aucune modification silencieuse d'un reglage. Toute proposition est affichee,
+  acceptable, refusable, et annulable ;
+- rien n'est affiche sous 10 clips saisis, et la confiance affichee ne depasse
+  jamais 85 % -- aucune quantite de donnees saisies a la main ne justifie
+  d'annoncer une certitude ;
+- l'historique personnel pese au maximum 25 % du classement : il module
+  l'analyse generale, il ne la remplace pas.
+
+Toutes ces donnees restent sur la machine (`%LOCALAPPDATA%\ClipFarming\
+performance`), exportables et effacables depuis l'application. Rien n'est
+envoye nulle part.
+
 ### Ou l'application range ses fichiers
 
 Installee en .exe, ClipFarming n'ecrit RIEN dans son dossier d'installation
