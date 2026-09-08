@@ -17,6 +17,7 @@ from analysis.audio_analyzer import AudioAnalyzer
 from analysis.hook_detector import generate_candidates
 from analysis.scoring import Scorer
 from analysis.selector import select_clips
+from content_factory.selection import DiverseRanker
 from analysis.text_analyzer import TextAnalyzer
 from core.cancellation import CancelToken
 from core.config_loader import Settings
@@ -171,6 +172,17 @@ def run(
         if cancel_token:
             cancel_token.check()
         progress.step(STEP_SELECTION)
+
+        # Phrases de toute la video, calculees une seule fois et partagees :
+        # la qualite de contexte du Priority Score en a besoin des la selection,
+        # le montage s'en sert ensuite pour proteger les pauses volontaires.
+        sentence_index = build_sentences(
+            transcript.words(),
+            max_gap_s=settings.editing_module("context_detection").get("sentence_gap_s", 0.6),
+            question_starters=settings.keywords_config.get("question_starters", []),
+        )
+
+        ranker = _build_ranker(settings, sentence_index, audio_analyzer, video_duration)
         selected = select_clips(
             scored,
             nb_clips=settings.nb_clips,
@@ -184,8 +196,13 @@ def run(
             # bornes : appliquer en plus --pre-roll/--post-roll ferait deux
             # extensions superposees.
             apply_context=not context_enabled,
+            ranker=ranker,
         )
         progress.set_clips_found(len(selected))
+        if ranker is not None:
+            for line in ranker.funnel.lines():
+                logger.info(line)
+            progress.report(" -> ".join(ranker.funnel.lines()))
 
         # [5] Detection du contexte (optionnelle)
         clips: list[tuple[ScoredCandidate, Optional[ContextResult]]]
@@ -208,14 +225,6 @@ def run(
         subtitle_style = settings.subtitle_style_params()
         face_cfg = settings.face_detection
         source_fps = ffmpeg_utils.video_fps(str(input_path))
-        # Phrases de toute la video, calculees une seule fois : le montage s'en
-        # sert pour proteger les pauses volontaires (apres une question).
-        sentence_index = build_sentences(
-            transcript.words(),
-            max_gap_s=settings.editing_module("context_detection").get("sentence_gap_s", 0.6),
-            question_starters=settings.keywords_config.get("question_starters", []),
-        )
-
         clip_results: list[ClipResult] = []
         for i, (sc, ctx) in enumerate(clips, start=1):
             if cancel_token:
@@ -426,6 +435,38 @@ def _emphasis_scores(
         weight_overrides=settings.keywords_config.get("keyword_weight_overrides", {}),
         loudness_db=loudness,
         loud_threshold_db=threshold,
+    )
+
+
+def _build_ranker(settings, sentences, audio_analyzer, video_duration):
+    """Classeur diversifie du Content Factory, ou None pour le comportement
+    historique.
+
+    Desactive aussi quand un seul clip est demande : la diversite d'un
+    ensemble d'un element n'a pas de sens, et la penalite de redondance ne
+    s'appliquerait a rien.
+    """
+    cfg = settings.editing_module("content_factory")
+    if not cfg.get("enabled", False) or settings.nb_clips <= 1:
+        return None
+
+    priority_cfg = cfg.get("priority", {}) or {}
+    diversity_cfg = cfg.get("diversity", {}) or {}
+    return DiverseRanker(
+        sentences=sentences,
+        audio_stats={
+            "mean_db": audio_analyzer.global_rms_db_mean,
+            "p90_db": audio_analyzer.global_rms_db_p90,
+        },
+        video_duration=video_duration,
+        nb_clips=settings.nb_clips,
+        weights=priority_cfg.get("weights", {}) or {},
+        params=priority_cfg.get("params", {}) or {},
+        diversity_strength=float(diversity_cfg.get("strength", 0.55)),
+        topic_weight=float(diversity_cfg.get("topic_weight", 0.5)),
+        temporal_weight=float(diversity_cfg.get("temporal_weight", 0.5)),
+        horizon_s=diversity_cfg.get("horizon_s"),
+        funnel_thresholds=cfg.get("funnel", {}) or {},
     )
 
 

@@ -62,30 +62,46 @@ def select_clips(
     video_duration: float,
     text_analyzer: TextAnalyzer,
     apply_context: bool = True,
+    ranker=None,
 ) -> list[ScoredCandidate]:
     """`apply_context=False` laisse les bornes brutes : c'est le cas quand la
     detection intelligente du contexte (editing/context.py) est active, puisque
     c'est elle qui decide alors des bornes. Deux mecanismes d'extension
-    superposes se marcheraient dessus."""
+    superposes se marcheraient dessus.
+
+    `ranker` remplace le seul classement par potentiel viral quand on produit
+    plusieurs clips d'un coup (content_factory.selection.DiverseRanker) : il
+    choisit l'ordre, mais la regle de chevauchement et l'extension de contexte
+    restent ici. Absent -> comportement historique, a l'identique."""
     if not scored_candidates:
         raise InsufficientContentError(
             "Aucun passage exploitable n'a ete detecte dans cette video (pas assez "
             "de parole, ou --clip-duration trop long par rapport a la duree totale)."
         )
 
-    # Classement par potentiel viral : pour un ScoreBreakdown ne portant que
-    # `total` (code anterieur, stub de test), `viral` vaut deja le Hook Score
-    # -- voir ScoreBreakdown.__post_init__ -- donc l'ordre reste inchange.
-    ranked = sorted(scored_candidates, key=lambda sc: sc.scores.viral, reverse=True)
+    def _is_compatible(candidate, already_selected) -> bool:
+        """Regle de chevauchement (--min-gap), unique et partagee : le classeur
+        du Content Factory s'en sert aussi, plutot que d'en avoir une copie."""
+        return not any(
+            _conflicts(candidate.start, candidate.end, s.candidate.start, s.candidate.end, min_gap)
+            for s in already_selected
+        )
 
-    selected: list[ScoredCandidate] = []
-    for sc in ranked:
-        c = sc.candidate
-        if any(_conflicts(c.start, c.end, s.candidate.start, s.candidate.end, min_gap) for s in selected):
-            continue
-        selected.append(sc)
-        if len(selected) >= nb_clips:
-            break
+    if ranker is not None:
+        selected = ranker.pick(scored_candidates, nb_clips, _is_compatible)
+    else:
+        # Classement par potentiel viral : pour un ScoreBreakdown ne portant que
+        # `total` (code anterieur, stub de test), `viral` vaut deja le Hook Score
+        # -- voir ScoreBreakdown.__post_init__ -- donc l'ordre reste inchange.
+        ranked = sorted(scored_candidates, key=lambda sc: sc.scores.viral, reverse=True)
+
+        selected = []
+        for sc in ranked:
+            if not _is_compatible(sc.candidate, selected):
+                continue
+            selected.append(sc)
+            if len(selected) >= nb_clips:
+                break
 
     if not selected:
         raise InsufficientContentError(

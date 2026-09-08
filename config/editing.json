@@ -1,12 +1,11 @@
 {
   "_comment": "Modules d'edition automatique. Chaque module a son propre bloc avec un interrupteur 'enabled' : le desactiver ramene exactement le comportement d'avant son ajout, jamais un comportement degrade. Les modules des phases suivantes (cadrage, montage, sous-titres intelligents, titres, miniatures) ajouteront leur propre bloc ici -- aucun bloc n'est declare a l'avance pour ne pas exposer un reglage qui ne ferait rien.",
-
   "clip_scores": {
     "_comment": "Viral Potential = combinaison ponderee du Hook Score (accroche), du Rewatch Score (envie de revoir) et du Content Score (densite/qualite du propos). Ce sont des heuristiques explicables calculees a partir des memes donnees que le Hook Score -- pas une prediction de viralite reelle, qu'aucune donnee de performance ne permettrait de calibrer ici. Les poids doivent sommer a 1.0.",
     "weights": {
-      "hook": 0.50,
-      "rewatch": 0.30,
-      "content": 0.20
+      "hook": 0.5,
+      "rewatch": 0.3,
+      "content": 0.2
     },
     "params": {
       "speech_coverage_target": 0.72,
@@ -16,7 +15,38 @@
       "acceleration_scale_wps": 1.5
     }
   },
-
+  "content_factory": {
+    "_comment": "Mode Content Factory : facon de choisir les passages quand on produit plusieurs clips d'un coup. Desactive -> la selection historique reprend la main (classement par potentiel viral, puis suppression des chevauchements), exactement comme avant. Ne change RIEN a la chaine de production elle-meme, qui est la meme dans les deux cas.",
+    "enabled": true,
+    "priority": {
+      "_comment": "Content Factory Priority Score : recombinaison de mesures deja calculees pour repondre a 'lesquels produire en premier'. Les poids sont renormalises, une somme differente de 1 ne change donc pas l'echelle. visual_quality vaut 0 a dessein : aucune image n'est decodee au moment de la selection (voir content_factory/priority.py), la place est prete mais la mesure n'est pas inventee. La diversite n'est pas ici : elle n'existe qu'entre candidats, et est appliquee pendant la selection.",
+      "weights": {
+        "viral": 0.55,
+        "context_quality": 0.2,
+        "audio_quality": 0.15,
+        "publishability": 0.1,
+        "visual_quality": 0.0
+      },
+      "params": {
+        "publishable_min_s": 15.0,
+        "publishable_max_s": 90.0,
+        "duration_tolerance_s": 30.0
+      }
+    },
+    "diversity": {
+      "_comment": "Penalite appliquee a un candidat qui ressemble a ceux deja retenus. strength=0 revient a classer par priorite pure ; 1 annule un candidat parfaitement redondant. horizon_s null -> deduit de la video et du nombre de clips (duree / nb_clips, plancher 30 s) : cinq minutes separent deux sujets dans un podcast de deux heures mais couvrent la moitie d'une video de dix.",
+      "strength": 0.55,
+      "topic_weight": 0.5,
+      "temporal_weight": 0.5,
+      "horizon_s": null
+    },
+    "funnel": {
+      "_comment": "Paliers de l'entonnoir affiche (section 3). Seuils de LISIBILITE uniquement : ils ne filtrent rien, ils racontent ce que le moteur a traverse.",
+      "interesting": 55.0,
+      "strong": 70.0,
+      "best": 80.0
+    }
+  },
   "context_detection": {
     "_comment": "Fonctionnalite 1 : recale les bornes d'un clip sur la structure du discours (debut de phrase, payoff apres une question, marges dans le silence). Desactive -> les bornes restent celles de --pre-roll/--post-roll comme avant. La duree maximale reste toujours prioritaire : clip_duration x (1 + hook_detection.max_overshoot_ratio) de settings.json.",
     "enabled": true,
@@ -29,7 +59,6 @@
     "min_clip_duration_s": 8.0,
     "min_confidence": 0.45
   },
-
   "captions": {
     "_comment": "Fonctionnalite 4 : intelligence des sous-titres. Le LOOK (police, taille, couleurs, mots par groupe, animation) reste dans config/subtitles.json -- ici on ne regle que ce qui releve de l'analyse. Desactive -> les styles 'smart' s'affichent quand meme, mais sans mise en evidence ni repositionnement, et aucun fichier .srt/.vtt n'est ecrit.",
     "enabled": true,
@@ -50,7 +79,6 @@
     "export_srt": true,
     "export_vtt": false
   },
-
   "framing": {
     "_comment": "Fonctionnalite 2 : cadrage 9:16 qui suit le sujet. Desactive -> cadrage fixe centre sur le visage moyen, exactement comme avant. La trajectoire est lissee (zone morte, moyenne exponentielle, limite de vitesse) ; si le visage n'est detecte que sur une minorite des images analysees, le suivi est abandonne au profit d'un cadrage fixe.",
     "enabled": true,
@@ -74,7 +102,6 @@
       "min_hold_s": 2.0
     }
   },
-
   "montage": {
     "_comment": "Fonctionnalite 3 : montage automatique. Produit une EditList (segments conserves) sur laquelle sous-titres, cadrage et zooms se recalent automatiquement.",
     "enabled": true,
@@ -91,7 +118,18 @@
       "_comment": "Hesitations et faux departs. La liste est modifiable ; les repetitions ne sont retirees que si les deux occurrences se suivent immediatement.",
       "enabled": true,
       "remove_repetitions": true,
-      "words": ["euh", "euhh", "heu", "hum", "hmm", "mmh", "bah", "ben", "genre", "enfin bref"]
+      "words": [
+        "euh",
+        "euhh",
+        "heu",
+        "hum",
+        "hmm",
+        "mmh",
+        "bah",
+        "ben",
+        "genre",
+        "enfin bref"
+      ]
     },
     "max_removed_ratio": 0.35,
     "dynamic_zoom": {
@@ -113,7 +151,6 @@
       "denoise": false
     }
   },
-
   "metadata": {
     "_comment": "Fonctionnalite 5 : titres et description. EXTRACTION, jamais generation -- sans modele de langue (contrainte 100 % local), la seule facon honnete de proposer un titre est de reprendre des mots reellement prononces. Aucun fait, chiffre, citation ou nom n'est ajoute. Une variante impossible a construire honnetement est absente, pas remplie.",
     "enabled": true,
@@ -123,7 +160,6 @@
     "max_description_sentences": 2,
     "max_hashtags": 5
   },
-
   "thumbnails": {
     "_comment": "Fonctionnalite 6 : trois miniatures 1080x1920. Les images floues et celles prises pendant une transition sont eliminatoires ; si aucune image ne passe, la moins mauvaise est proposee telle quelle plutot que retouchee. Le texte vient des titres extraits et se pose dans la bande la plus eloignee du visage.",
     "enabled": true,
@@ -137,35 +173,67 @@
     "jpeg_quality": 88,
     "text_max_words": 7
   },
-
   "narrative_markers": {
     "_comment": "Marqueurs servant a etiqueter le type narratif d'un clip (affiche comme categorie). Compares sur le texte normalise (minuscules, accents retires) via core.text_utils. Aucune categorie n'est attribuee si rien ne ressort -- une categorie inventee serait pire qu'aucune.",
     "revelation": [
-      "en fait", "en realite", "la verite", "ce que personne", "personne ne sait",
-      "je vais vous dire", "je vais te dire", "revele", "on m'a cache", "le secret"
+      "en fait",
+      "en realite",
+      "la verite",
+      "ce que personne",
+      "personne ne sait",
+      "je vais vous dire",
+      "je vais te dire",
+      "revele",
+      "on m'a cache",
+      "le secret"
     ],
     "histoire": [
-      "il etait une fois", "un jour", "quand j'etais", "je me souviens", "l'autre jour",
-      "ca m'est arrive", "cette histoire"
+      "il etait une fois",
+      "un jour",
+      "quand j'etais",
+      "je me souviens",
+      "l'autre jour",
+      "ca m'est arrive",
+      "cette histoire"
     ],
     "conclusion": [
-      "en conclusion", "pour resumer", "au final", "voila pourquoi", "la morale",
-      "retenez", "ce qu'il faut retenir"
+      "en conclusion",
+      "pour resumer",
+      "au final",
+      "voila pourquoi",
+      "la morale",
+      "retenez",
+      "ce qu'il faut retenir"
     ],
     "explication": [
-      "parce que", "c'est pour ca", "la raison", "ca s'explique", "c'est-a-dire",
-      "ce qui veut dire", "concretement"
+      "parce que",
+      "c'est pour ca",
+      "la raison",
+      "ca s'explique",
+      "c'est-a-dire",
+      "ce qui veut dire",
+      "concretement"
     ],
     "liste": [
-      "premierement", "deuxiemement", "troisiemement", "numero 1", "numero 2",
-      "trois choses", "cinq raisons", "premiere raison"
+      "premierement",
+      "deuxiemement",
+      "troisiemement",
+      "numero 1",
+      "numero 2",
+      "trois choses",
+      "cinq raisons",
+      "premiere raison"
     ],
     "conseil": [
-      "mon conseil", "je vous conseille", "il faut que", "vous devez", "tu dois",
-      "la meilleure facon", "astuce"
+      "mon conseil",
+      "je vous conseille",
+      "il faut que",
+      "vous devez",
+      "tu dois",
+      "la meilleure facon",
+      "astuce"
     ]
   },
-
   "category_labels": {
     "_comment": "Libelles affiches pour les categories ci-dessus (interface uniquement).",
     "revelation": "Revelation",
