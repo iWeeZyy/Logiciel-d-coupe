@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QMessageBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -48,10 +49,15 @@ _QUICK_MODULES = [
 _MODEL_CHOICES = [
     ("tiny", "Tiny", "Très rapide • qualité basique • ~1 Go RAM"),
     ("base", "Base", "Rapide • qualité correcte • ~1 Go RAM"),
-    ("small", "Small", "Bon compromis vitesse/qualité • ~2 Go RAM"),
-    ("medium", "Medium", "Lent sur CPU • bonne qualité • ~5 Go RAM"),
-    ("large-v3", "Large", "Très lent sur CPU • meilleure qualité • ~10 Go RAM"),
+    ("small", "Small", "Bon compromis vitesse/qualité • ~2 Go RAM • recommandé sans GPU"),
+    ("medium", "Medium", "Lent sur CPU • bonne qualité • ~5 Go RAM • ~1,5 Go à télécharger"),
+    ("large-v3", "Large", "Très lent sur CPU • meilleure qualité • ~10 Go RAM • ~3 Go à télécharger"),
 ]
+
+# Modeles dont le cout sur processeur justifie une confirmation explicite : sans
+# GPU, ils transcrivent souvent plus lentement que la duree de la video, et
+# l'utilisateur lancerait des heures de calcul sans l'avoir voulu.
+_HEAVY_MODELS = {"medium", "large", "large-v2", "large-v3"}
 
 
 def _field_label(text: str) -> QLabel:
@@ -193,8 +199,32 @@ class HomePage(QWidget):
     def _editing_overrides(self) -> dict:
         return {key: box.isChecked() for key, box in self._module_boxes.items()}
 
+    def _confirm_heavy_model(self) -> bool:
+        """Sans GPU, un gros modele peut transcrire plus lentement que la duree
+        de la video. Mieux vaut le dire avant de lancer que de laisser
+        l'utilisateur decouvrir au bout d'une heure que ce n'est pas fini."""
+        model = self.model_combo.currentData()
+        if model not in _HEAVY_MODELS or cuda_device_count() > 0:
+            return True
+
+        reply = QMessageBox.warning(
+            self,
+            "Modèle lourd sans GPU",
+            f"Aucun GPU n'a été détecté sur cette machine.\n\n"
+            f"Sur processeur, le modèle « {self.model_combo.currentText()} » transcrit souvent "
+            f"plus lentement que la durée de la vidéo elle-même, et doit d'abord être "
+            f"téléchargé (plusieurs Go au premier lancement).\n\n"
+            f"Le modèle « Small » donne une très bonne qualité en une fraction du temps.\n\n"
+            f"Lancer quand même avec ce modèle ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
     def _on_generate_clicked(self) -> None:
         if not self.selected_video_path:
+            return
+        if not self._confirm_heavy_model():
             return
 
         cli_args = SimpleNamespace(

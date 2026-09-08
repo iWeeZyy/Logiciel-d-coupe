@@ -7,6 +7,8 @@ puis reutilise hors ligne.
 """
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import Callable, Optional
 
 from core.cancellation import CancelToken
@@ -18,6 +20,76 @@ from utils.hardware import resolve_device
 logger = get_logger()
 
 _VALID_MODELS = {"tiny", "base", "small", "medium", "large-v2", "large-v3", "large"}
+
+# Signes d'un cache Hugging Face incomplet plutot que d'un vrai probleme reseau :
+# le dossier du modele existe, mais le poids lui-meme n'y est pas. C'est ce que
+# laisse un telechargement interrompu (coupure reseau, fenetre fermee, disque
+# plein) -- large-v3 pese environ 3 Go, la fenetre pour etre coupe est large.
+_INCOMPLETE_CACHE_MARKERS = (
+    "unable to open file",
+    "no such file",
+    "model.bin",
+    "does not exist",
+)
+
+
+def hf_cache_dir_for(model_name: str) -> Path:
+    """Dossier du cache Hugging Face correspondant a un modele faster-whisper.
+
+    faster-whisper resout un nom court ("large-v3") en depot
+    "Systran/faster-whisper-large-v3", que huggingface_hub range sous
+    "models--Systran--faster-whisper-large-v3". On reconstruit ce chemin pour
+    pouvoir NOMMER a l'utilisateur le dossier a supprimer, au lieu de le laisser
+    deviner ou se trouve un cache qu'il n'a jamais cree lui-meme."""
+    return Path.home() / ".cache" / "huggingface" / "hub" / f"models--Systran--faster-whisper-{model_name}"
+
+
+def _looks_like_incomplete_download(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in _INCOMPLETE_CACHE_MARKERS)
+
+
+def _load_model(model_name: str, device: str, compute_type: str):
+    """Charge le modele, en reparant une seule fois un cache incomplet.
+
+    Un telechargement interrompu laisse un dossier de modele sans son fichier de
+    poids, et huggingface_hub le considere alors comme deja present : il ne
+    retelecharge jamais rien et l'application echoue a chaque lancement. Le seul
+    moyen d'en sortir est de supprimer ce dossier -- on le fait donc nous-memes,
+    une fois, plutot que de demander a l'utilisateur d'aller fouiller dans un
+    cache qu'il n'a jamais cree.
+    """
+    from faster_whisper import WhisperModel
+
+    try:
+        return WhisperModel(model_name, device=device, compute_type=compute_type)
+    except Exception as first_error:
+        cache_dir = hf_cache_dir_for(model_name)
+        if not (_looks_like_incomplete_download(first_error) and cache_dir.exists()):
+            raise
+
+        logger.warning(
+            f"Le modele '{model_name}' est present dans le cache mais incomplet "
+            f"(telechargement interrompu). Suppression de {cache_dir} et nouvelle tentative."
+        )
+        try:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        except OSError as cleanup_error:
+            raise ModelDownloadError(
+                f"Le modele Whisper '{model_name}' est incomplet dans le cache et n'a pas pu "
+                f"etre supprime automatiquement. Supprime ce dossier a la main puis relance :\n"
+                f"{cache_dir}\nDetail : {cleanup_error}"
+            ) from first_error
+
+        try:
+            return WhisperModel(model_name, device=device, compute_type=compute_type)
+        except Exception as second_error:
+            raise ModelDownloadError(
+                f"Le modele Whisper '{model_name}' n'a pas pu etre telecharge, meme apres "
+                f"nettoyage du cache. Verifie ta connexion internet et l'espace disque "
+                f"disponible ({'environ 3 Go' if 'large' in model_name else 'quelques centaines de Mo'} "
+                f"necessaires), ou choisis un modele plus petit.\nDetail : {second_error}"
+            ) from second_error
 
 
 def transcribe(
@@ -48,8 +120,17 @@ def transcribe(
             "faster-whisper n'est pas installe. Lance : pip install -r requirements.txt"
         ) from e
 
+    if device == "cpu" and ("large" in model_name or model_name == "medium"):
+        logger.warning(
+            f"Modele '{model_name}' sur processeur : la transcription peut durer plus longtemps "
+            "que la video elle-meme. Le modele 'small' est nettement plus rapide pour une "
+            "qualite tres correcte."
+        )
+
     try:
-        model = WhisperModel(model_name, device=device, compute_type=compute_type)
+        model = _load_model(model_name, device, compute_type)
+    except ModelDownloadError:
+        raise
     except Exception as e:
         raise ModelDownloadError(
             f"Impossible de charger/telecharger le modele Whisper '{model_name}'. "

@@ -134,6 +134,21 @@ python main.py --help
 | `--no-cache` | off | Ignore/n'ecrit pas le cache de transcription (`.cache/`) |
 | `--debug-scores` | off | Affiche le detail des scores de chaque clip retenu |
 
+### Choix du modèle Whisper
+
+Sans GPU, le modèle est le premier facteur de temps de traitement, loin devant tout le reste :
+
+| Modèle | Téléchargement | Sur processeur |
+|---|---|---|
+| `tiny` / `base` | ~75 / 145 Mo | très rapide, qualité limitée |
+| `small` | ~480 Mo | **recommandé sans GPU** -- bonne qualité, temps raisonnable |
+| `medium` | ~1,5 Go | lent |
+| `large-v3` | ~3 Go | souvent plus lent que la durée de la vidéo elle-même |
+
+L'interface demande confirmation avant de lancer `medium` ou `large` quand aucun GPU n'est détecté : sur une vidéo d'une demi-heure, la différence se compte en heures.
+
+**Téléchargement interrompu** : un modèle coupé en cours de téléchargement laisse un dossier de cache sans son fichier de poids, que Hugging Face considère ensuite comme déjà présent -- il ne retélécharge plus rien et l'application échoue à chaque lancement. Le logiciel détecte ce cas, supprime lui-même le dossier fautif et relance le téléchargement une fois. En cas de second échec, le message nomme le dossier exact à supprimer.
+
 ### CPU vs GPU
 
 **CPU** (par defaut, aucune configuration requise) : `--device cpu` ou laisser `auto` sans GPU disponible. Le modele `small` en `int8` est un bon compromis vitesse/qualite sur CPU.
