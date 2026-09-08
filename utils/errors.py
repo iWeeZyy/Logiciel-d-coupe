@@ -69,3 +69,11 @@ class YouTubeDownloadError(ClipFarmingError):
 
 class CancelledError(ClipFarmingError):
     """L'utilisateur a annule l'analyse en cours (core/cancellation.py)."""
+
+
+class TwitchConfigError(ClipFarmingError):
+    """Identifiants Twitch absents ou invalides (Client ID / Client Secret)."""
+
+
+class TwitchApiError(ClipFarmingError):
+    """L'API Twitch a repondu une erreur, ou est injoignable."""
