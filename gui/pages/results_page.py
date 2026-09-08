@@ -21,6 +21,9 @@ from PySide6.QtWidgets import (
 
 from export.exporter import update_clip_metadata
 from content_factory.report import build_report
+from gui.widgets.performance_dialog import PerformanceDialog
+from performance.store import PerformanceStore
+from performance.tracker import clip_identifier
 from gui.controller import AppController
 from gui.thumbnails import ThumbnailThread
 from gui.widgets.clip_card import RIGHTS_NOTICE, ClipCard
@@ -38,6 +41,7 @@ class ResultsPage(QWidget):
         self._thumb_thread: ThumbnailThread | None = None
         self._cards: dict[str, ClipCard] = {}
         self._cards_by_index: dict[int, ClipCard] = {}
+        self._performances: dict = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 32, 40, 24)
@@ -92,6 +96,8 @@ class ResultsPage(QWidget):
         self._clear_grid()
 
         results = self.controller.last_results
+        # Une seule lecture du magasin par affichage, partagee par les cartes.
+        self._performances = PerformanceStore().load_performances()
         name = self.controller.current_project_name or ""
         source_kind = self.controller.last_source_kind
 
@@ -114,6 +120,8 @@ class ResultsPage(QWidget):
             card.play_requested.connect(lambda path=clip_path: self._play(path))
             card.metadata_requested.connect(self._edit_metadata)
             card.thumbnails_requested.connect(self._pick_thumbnail)
+            card.performance_requested.connect(self._enter_performance)
+            self._refresh_performance_button(card, clip)
             self._cards[clip_path] = card
             self._cards_by_index[clip.index] = card
             self.grid.addWidget(card, i // _COLUMNS, i % _COLUMNS)
@@ -145,6 +153,47 @@ class ResultsPage(QWidget):
         card = self._cards.get(clip_path)
         if card:
             card.set_thumbnail(thumb_path)
+
+    # ------------------------------------------------- performances reelles
+
+    def _clip_identifier(self, clip) -> str:
+        return clip_identifier(self.controller.current_project_name or "", clip.file_name)
+
+    def _refresh_performance_button(self, card, clip) -> None:
+        """Etat du bouton : deja saisi ou non, avec le chiffre principal.
+
+        Une lecture par carte serait une lecture de fichier par clip : le
+        magasin est lu une fois par affichage et garde le temps de la page.
+        """
+        performance = self._performances.get(self._clip_identifier(clip))
+        if performance is None:
+            card.set_performance_recorded(False)
+            return
+        summary = f"{performance.views:,} vues".replace(",", " ") if performance.views is not None else "saisies"
+        card.set_performance_recorded(True, summary)
+
+    def _enter_performance(self, clip_index: int) -> None:
+        clip = next((c for c in self.controller.last_results if c.index == clip_index), None)
+        if clip is None:
+            return
+        clip_id = self._clip_identifier(clip)
+        dialog = PerformanceDialog(
+            clip_id, Path(clip.file_name).name,
+            existing=self._performances.get(clip_id), parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        performance = dialog.result_performance()
+        store = PerformanceStore()
+        store.save_performance(performance)
+        # Relecture plutot que mise a jour locale : une fiche entierement vidée
+        # supprime l'entree cote magasin, l'ecran doit refleter ce qui est
+        # reellement enregistre.
+        self._performances = store.load_performances()
+        card = self._cards_by_index.get(clip_index)
+        if card is not None:
+            self._refresh_performance_button(card, clip)
 
     def _play(self, clip_path: str) -> None:
         clips = [(Path(p).name, p) for p in self._cards.keys()]

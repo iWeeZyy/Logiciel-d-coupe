@@ -18,6 +18,8 @@ from analysis.hook_detector import generate_candidates
 from analysis.scoring import Scorer
 from analysis.selector import select_clips
 from content_factory.selection import DiverseRanker
+from performance.store import PerformanceStore
+from performance.tracker import record_production
 from analysis.text_analyzer import TextAnalyzer
 from core.cancellation import CancelToken
 from core.config_loader import Settings
@@ -226,6 +228,10 @@ def run(
         face_cfg = settings.face_detection
         source_fps = ffmpeg_utils.video_fps(str(input_path))
         clip_results: list[ClipResult] = []
+        # Temps de parole et priorite par clip : connus ici seulement, et
+        # necessaires a la fiche technique enregistree en fin de production.
+        spoken_seconds: dict[int, float] = {}
+        clip_priorities: dict[int, float] = {}
         for i, (sc, ctx) in enumerate(clips, start=1):
             if cancel_token:
                 cancel_token.check()
@@ -307,6 +313,12 @@ def run(
                     )
                 ]
 
+            spoken_seconds[i] = sum(max(0.0, w.end - w.start) for w in c.words)
+            if ranker is not None:
+                breakdown = ranker.priority_of(sc)
+                if breakdown is not None:
+                    clip_priorities[i] = round(breakdown.total, 1)
+
             clip_result = ClipResult(
                 index=i,
                 file_name=relative_path,
@@ -337,6 +349,24 @@ def run(
 
         results_path = write_results(settings.output, clip_results)
         logger.info(f"Termine. {len(clip_results)} clip(s) dans '{settings.output}/', details : {results_path}")
+
+        # Fiche technique de chaque clip, pour pouvoir plus tard confronter ce
+        # qui a ete estime a ce qui a ete constate (section 11). Rien n'est
+        # mesure de plus ici : ce sont les valeurs deja calculees, photographiees
+        # au moment de la production. Une erreur d'ecriture ne doit jamais faire
+        # echouer une production reussie -- les clips existent, c'est eux le
+        # resultat attendu.
+        try:
+            record_production(
+                PerformanceStore(),
+                clip_results,
+                project_name=Path(settings.output).name,
+                priorities=clip_priorities,
+                spoken_seconds=spoken_seconds,
+                subtitle_style=settings.subtitle_style,
+            )
+        except Exception as error:  # noqa: BLE001
+            logger.warning(f"Caracteristiques des clips non enregistrees : {error}")
 
         if settings.debug_scores:
             _print_debug_summary(clip_results)

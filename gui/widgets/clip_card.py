@@ -52,6 +52,7 @@ class ClipCard(QFrame):
     play_requested = Signal(str)          # chemin du clip
     metadata_requested = Signal(int)      # index du clip
     thumbnails_requested = Signal(int)
+    performance_requested = Signal(int)  # index du clip -- saisie des stats reelles
 
     def __init__(self, clip_path: str, clip_dict: dict, source_kind: str = "local", parent=None):
         super().__init__(parent)
@@ -161,7 +162,28 @@ class ClipCard(QFrame):
         export_btn.clicked.connect(self._export)
         actions.addWidget(export_btn)
 
+        # Saisie des performances reelles (section 12). Sur une deuxieme ligne :
+        # cette action ne s'utilise pas au moment de la production mais en
+        # revenant dans le projet, une fois le clip publie.
         layout.addLayout(actions)
+
+        self.performance_btn = QPushButton("📊 Ajouter les performances")
+        self.performance_btn.setToolTip(
+            "Saisir les statistiques obtenues sur la plateforme où ce clip a été publié"
+        )
+        self.performance_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.performance_btn.clicked.connect(
+            lambda: self.performance_requested.emit(self.clip_index)
+        )
+        layout.addWidget(self.performance_btn)
+
+    def set_performance_recorded(self, recorded: bool, summary: str = "") -> None:
+        """Le bouton dit si des performances existent deja, pour qu'on n'ait pas
+        a ouvrir la fenetre pour le savoir."""
+        self.performance_btn.setText(
+            f"📊 Performances — {summary}" if recorded and summary
+            else ("📊 Modifier les performances" if recorded else "📊 Ajouter les performances")
+        )
 
     def set_metadata(self, metadata: dict) -> None:
         """Rafraichit titre et description apres une modification manuelle."""
