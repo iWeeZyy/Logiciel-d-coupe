@@ -5,6 +5,8 @@ depuis le thread GUI.
 """
 from __future__ import annotations
 
+import time
+
 import shutil
 import tempfile
 from pathlib import Path
@@ -124,6 +126,11 @@ class AppController(QObject):
         self._orphaned_threads: list[QThread] = []
 
         self.last_results: list[ClipResult] = []
+        # Duree reelle de la derniere production, pour le bilan de fin
+        # (section 8). Mesuree ici et non deduite des clips : c'est le temps
+        # passe par l'utilisateur a attendre, pas la somme des durees produites.
+        self.last_elapsed_s: float = 0.0
+        self._analysis_started_at: float = 0.0
         self.last_settings: Optional[Settings] = None
         self.current_project_folder: Optional[Path] = None
         self.current_project_name: str = ""
@@ -184,6 +191,7 @@ class AppController(QObject):
         self.last_settings = settings
 
         self._cancel_token = CancelToken()
+        self._analysis_started_at = time.monotonic()
         self._analysis_thread = AnalysisThread(settings, self._cancel_token, youtube_source=youtube_source)
         self._analysis_thread.progress.connect(self.progress_updated)
         self._analysis_thread.finished_ok.connect(self._on_analysis_finished)
@@ -237,6 +245,9 @@ class AppController(QObject):
             self._orphaned_threads.remove(thread)
 
     def _on_analysis_finished(self, results: list[ClipResult]) -> None:
+        self.last_elapsed_s = (
+            time.monotonic() - self._analysis_started_at if self._analysis_started_at else 0.0
+        )
         self.last_results = results
         self.analysis_finished.emit(results)
         self.navigate_requested.emit("results")

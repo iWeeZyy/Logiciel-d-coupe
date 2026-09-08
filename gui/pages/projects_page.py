@@ -89,7 +89,11 @@ class ProjectsPage(QWidget):
         name_label.setStyleSheet("font-size: 14.5px; font-weight: 700;")
         info.addWidget(name_label)
 
-        meta = QLabel(f"{summary.clip_count} clip(s)  •  {_format_date(summary.created_at)}")
+        parts = [f"{summary.clip_count} clip(s)"]
+        if summary.average_score is not None:
+            parts.append(f"score moyen {summary.average_score:.0f}")
+        parts.append(_format_date(summary.created_at))
+        meta = QLabel("  •  ".join(parts))
         meta.setProperty("role", "muted")
         info.addWidget(meta)
         layout.addLayout(info, stretch=1)

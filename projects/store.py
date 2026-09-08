@@ -82,6 +82,17 @@ def _read_json(path: Path) -> Optional[dict | list]:
         return None
 
 
+def average_score(results: list[dict]) -> float | None:
+    """Moyenne des potentiels viraux d'un projet, ou None s'il n'y a rien a
+    moyenner. results.json est deja lu par l'appelant : aucune lecture de plus.
+
+    On prend `score` (le potentiel viral, deja le champ de tete d'un clip) et
+    non une recombinaison locale -- deux definitions du meme chiffre finiraient
+    par diverger."""
+    values = [r.get("score") for r in results if isinstance(r.get("score"), (int, float))]
+    return round(sum(values) / len(values), 1) if values else None
+
+
 def list_projects(projects_dir: Path = DEFAULT_PROJECTS_DIR) -> list[ProjectSummary]:
     if not projects_dir.exists():
         return []
@@ -98,6 +109,7 @@ def list_projects(projects_dir: Path = DEFAULT_PROJECTS_DIR) -> list[ProjectSumm
 
         summaries.append(
             ProjectSummary(
+                average_score=average_score(results),
                 folder=str(folder),
                 name=manifest.get("name", folder.name),
                 source_label=manifest.get("source_label", ""),

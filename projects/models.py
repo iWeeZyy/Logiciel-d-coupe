@@ -21,6 +21,10 @@ class ProjectSummary:
     created_at: str  # ISO 8601
     clip_count: int
     language: Optional[str] = None
+    # Moyenne des potentiels viraux des clips du projet (section 9 : le tableau
+    # de bord doit situer une production d'un coup d'oeil). None quand le projet
+    # ne contient aucun clip -- une moyenne de rien n'est pas 0.
+    average_score: Optional[float] = None
 
 
 @dataclass

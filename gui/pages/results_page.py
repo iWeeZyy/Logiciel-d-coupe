@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from export.exporter import update_clip_metadata
+from content_factory.report import build_report
 from gui.controller import AppController
 from gui.thumbnails import ThumbnailThread
 from gui.widgets.clip_card import RIGHTS_NOTICE, ClipCard
@@ -94,7 +95,12 @@ class ResultsPage(QWidget):
         name = self.controller.current_project_name or ""
         source_kind = self.controller.last_source_kind
 
-        self.summary_label.setText(f"{len(results)} clip(s) générés — {name}")
+        # Bilan de ce qui a REELLEMENT ete produit (section 8), pas du nombre
+        # demande : un module desactive doit se voir ici.
+        report = build_report(results, elapsed_s=self.controller.last_elapsed_s)
+        headline = "🎉  " + "  •  ".join(report.lines())
+        self.summary_label.setText(f"{headline}\n{name}" if name else headline)
+        self.summary_label.setWordWrap(True)
         self.rights_banner.setVisible(source_kind == "youtube")
 
         clip_paths: list[str] = []

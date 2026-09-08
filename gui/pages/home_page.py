@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
 
 from gui import settings_store
 from gui.branding import APP_TAGLINE
+from content_factory import planning
+from video import ffmpeg_utils
 from gui.controller import AppController
 from gui.widgets.drop_zone import DropZone
 from utils.hardware import cuda_device_count
@@ -40,10 +42,16 @@ _AUTO_DURATION = 45
 # (contexte, cadrage, silences, hesitations, zoom) se reglent dans Parametres :
 # les mettre tous ici transformerait l'accueil en tableau de bord.
 _QUICK_MODULES = [
-    ("captions", "Sous-titres"),
+    ("context_detection", "Contexte"),
+    ("framing", "Cadrage intelligent"),
     ("montage", "Montage auto"),
+    ("captions", "Sous-titres"),
+    # "Titres" et "Descriptions" sont deux cases distinctes dans la demande,
+    # mais un seul module ici : editing/metadata.py les extrait ensemble, du
+    # meme texte et du meme classement de phrases. Deux interrupteurs pour un
+    # seul mecanisme donneraient une case sans effet propre.
+    ("metadata", "Titres et descriptions"),
     ("thumbnails", "Miniatures"),
-    ("metadata", "Titres / descriptions"),
 ]
 
 _MODEL_CHOICES = [
@@ -71,6 +79,7 @@ class HomePage(QWidget):
         super().__init__()
         self.controller = controller
         self.selected_video_path: str | None = None
+        self.video_duration_s: float | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 36, 40, 36)
@@ -116,10 +125,23 @@ class HomePage(QWidget):
 
         # --- Nombre de clips ---
         card_layout.addWidget(_field_label("Nombre de clips"))
+        nb_row = QHBoxLayout()
+        self.nb_clips_auto = QCheckBox("Automatique")
+        self.nb_clips_auto.setChecked(True)
+        self.nb_clips_auto.toggled.connect(self._on_nb_clips_mode_changed)
+        nb_row.addWidget(self.nb_clips_auto)
+
         self.nb_clips_spin = QSpinBox()
         self.nb_clips_spin.setRange(1, 50)
-        self.nb_clips_spin.setValue(5)
-        card_layout.addWidget(self.nb_clips_spin)
+        self.nb_clips_spin.setValue(planning.MIN_CLIPS)
+        self.nb_clips_spin.setEnabled(False)
+        nb_row.addWidget(self.nb_clips_spin, stretch=1)
+        card_layout.addLayout(nb_row)
+
+        # Le chiffre propose ne doit pas tomber du ciel : on dit d'ou il vient.
+        self.nb_clips_hint = QLabel("Déduit de la durée de la vidéo une fois celle-ci choisie.")
+        self.nb_clips_hint.setProperty("role", "muted")
+        card_layout.addWidget(self.nb_clips_hint)
 
         # --- Modele Whisper ---
         card_layout.addWidget(_field_label("Modèle Whisper"))
@@ -168,7 +190,7 @@ class HomePage(QWidget):
         card_layout.addWidget(modules_hint)
 
         card_layout.addSpacing(8)
-        self.generate_btn = QPushButton("✨  CRÉER MES MEILLEURS CLIPS")
+        self.generate_btn = QPushButton("🚀  CRÉER LES CONTENUS")
         self.generate_btn.setProperty("variant", "primary")
         self.generate_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.generate_btn.setMinimumHeight(52)
@@ -186,9 +208,33 @@ class HomePage(QWidget):
         hint = next((h for k, _, h in _MODEL_CHOICES if k == key), "")
         self.model_hint.setText(hint)
 
+    def _on_nb_clips_mode_changed(self, automatic: bool) -> None:
+        self.nb_clips_spin.setEnabled(not automatic)
+        self._refresh_nb_clips_hint()
+
+    def _refresh_nb_clips_hint(self) -> None:
+        if not self.nb_clips_auto.isChecked():
+            self.nb_clips_hint.setText("Nombre fixé manuellement.")
+            return
+        if self.video_duration_s is None:
+            self.nb_clips_hint.setText("Déduit de la durée de la vidéo une fois celle-ci choisie.")
+            return
+        self.nb_clips_hint.setText(planning.describe(self.video_duration_s))
+
     def _on_file_selected(self, path: str) -> None:
         self.selected_video_path = path
         self.generate_btn.setEnabled(True)
+
+        # Duree lue tout de suite : c'est elle qui permet de proposer un nombre
+        # de clips. Une video illisible par ffprobe ne doit pas empecher de
+        # lancer -- le pipeline le signalera bien mieux que l'accueil.
+        try:
+            self.video_duration_s = ffmpeg_utils.video_duration(path)
+        except Exception:
+            self.video_duration_s = None
+        if self.video_duration_s:
+            self.nb_clips_spin.setValue(planning.suggested_clip_count(self.video_duration_s))
+        self._refresh_nb_clips_hint()
 
     def _clip_duration(self) -> int:
         data = self.duration_combo.currentData()
