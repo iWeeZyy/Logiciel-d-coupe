@@ -96,6 +96,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
                             help="Desactive le montage automatique (coupe des silences, zooms).")
     production.add_argument("--no-watermark", dest="no_watermark", action="store_true",
                             help="Ne pas poser le logo en filigrane sur les clips.")
+    production.add_argument("--whole-source", dest="whole_source", action="store_true",
+                            help="La source est deja un clip : la traiter en entier, "
+                                 "sans y chercher ni y recadrer un passage.")
 
     yt = parser.add_argument_group("Filtres de recherche YouTube (--search uniquement)")
     yt.add_argument("--max-results", dest="max_results", type=int, default=10,

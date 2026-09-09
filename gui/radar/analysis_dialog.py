@@ -586,6 +586,10 @@ class ClipAnalysisDialog(QDialog):
             # quand elle est connue.
             clip_duration=max(5, int(duration)) if duration else 45,
             nb_clips=1,
+            # Le clip est deja decoupe : on le prend EN ENTIER. Sans cela le
+            # moteur y cherchait un passage et pouvait rendre un clip ampute de
+            # son debut, alors qu'il n'y avait rien a chercher.
+            whole_source=True,
             model=settings_store.get("default_model") or "small",
             language=None,
             pre_roll=None,

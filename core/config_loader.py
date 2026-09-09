@@ -65,6 +65,9 @@ class Settings:
     smart_framing: bool = True
     auto_montage: bool = True
     watermark_enabled: bool = True
+    # La source est deja un clip : on la traite en entier, sans y chercher un
+    # passage. Mis par le Radar, ou par --whole-source en ligne de commande.
+    whole_source: bool = False
 
     # Chargés depuis settings.json
     weights: dict = field(default_factory=dict)
@@ -189,6 +192,7 @@ def load_settings(cli_args: Any) -> Settings:
         smart_framing=not bool(getattr(cli_args, "no_smart_framing", False)),
         auto_montage=not bool(getattr(cli_args, "no_auto_montage", False)),
         watermark_enabled=not bool(getattr(cli_args, "no_watermark", False)),
+        whole_source=bool(getattr(cli_args, "whole_source", False)),
         weights=weights,
         scoring_params=settings_json.get("scoring_params", {}),
         hook_detection=settings_json.get("hook_detection", {}),

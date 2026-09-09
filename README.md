@@ -547,6 +547,19 @@ trouve. Le meme composant sert aux deux, donc les choix y sont identiques.
   cinq morceaux de quelques secondes n'aurait pas de sens. L'analyse du
   contenu, elle, ne produit que du texte -- ce sont deux actions distinctes
   dans la meme fenetre.
+- **Le clip du Radar est traite EN ENTIER** (`--whole-source` en ligne de
+  commande). Il a deja ete decoupe par quelqu'un : y chercher un "meilleur
+  passage" revient a defaire ce choix. Trois etapes disparaissent donc dans ce
+  cas -- analyse des hooks, selection des meilleurs passages, detection du
+  contexte -- et l'ecran d'avancement ne les affiche plus, puisqu'elles ne
+  decideraient rien. Le passage reste NOTE (les notes Viral / Hook / Rewatch
+  de la fiche en viennent), mais il n'est plus compare a un autre. Deux
+  defauts reels que cela corrige, mesures sur un clip de 24 s : le moteur
+  ouvrait une seconde fenetre au tiers du clip et en retenait une qui perdait
+  les six premieres secondes ; et un clip de reaction, ou personne ne parle
+  vraiment, echouait avec "aucun passage exploitable" parce qu'une fenetre de
+  moins de huit mots est ecartee -- filtre utile pour choisir un passage,
+  absurde quand il n'y a rien a choisir.
 - Ces interrupteurs ne peuvent que DESACTIVER. Un module coupe dans
   `config/editing.json` (page Parametres) ne se rallume pas en cochant une
   case : la configuration reste la source, la case est un interrupteur

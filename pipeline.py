@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from analysis.audio_analyzer import AudioAnalyzer
-from analysis.hook_detector import generate_candidates
+from analysis.hook_detector import generate_candidates, whole_video_candidate
 from analysis.scoring import Scorer
 from analysis.selector import select_clips
 from content_factory.selection import DiverseRanker
@@ -29,6 +29,7 @@ from core.models import Candidate, ClipResult, ProgressEvent, ScoredCandidate
 from core.steps import (
     STEP_ANALYSIS,
     STEP_AUDIO,
+    STEP_CLIP_ANALYSIS,
     STEP_CONTEXT,
     STEP_METADATA,
     STEP_RENDER,
@@ -88,11 +89,17 @@ def run(
 
     watermark = (watermark_from_config(settings.editing_module("watermark"))
                  if settings.editing_module_enabled("watermark") else None)
-    context_enabled = settings.editing_module_enabled("context_detection")
+    # La source EST deja le clip (Radar) : il n'y a pas de passage a chercher
+    # dedans, donc pas de recadrage temporel non plus. La detection du contexte
+    # deplacerait des bornes choisies par la personne qui a decoupe le clip.
+    whole_source = bool(getattr(settings, "whole_source", False))
+    context_enabled = (settings.editing_module_enabled("context_detection")
+                       and not whole_source)
     metadata_enabled = (settings.editing_module_enabled("metadata")
                         or settings.editing_module_enabled("thumbnails"))
     progress = StepProgress(
-        build_step_labels(context_detection=context_enabled, metadata=metadata_enabled),
+        build_step_labels(context_detection=context_enabled, metadata=metadata_enabled,
+                          whole_source=whole_source),
         on_progress=on_progress,
     )
     tmp_dir = tempfile.mkdtemp(prefix="clip_farming_")
@@ -145,7 +152,7 @@ def run(
         # [3] Analyse des hooks
         if cancel_token:
             cancel_token.check()
-        progress.step(STEP_ANALYSIS)
+        progress.step(STEP_CLIP_ANALYSIS if whole_source else STEP_ANALYSIS)
         audio_analyzer = AudioAnalyzer(
             wav_path,
             hop_length_ms=settings.audio_analysis.get("hop_length_ms", 20),
@@ -155,14 +162,19 @@ def run(
         )
         text_analyzer = TextAnalyzer(transcript, settings.keywords_config, settings.scoring_params)
 
-        candidates = generate_candidates(
-            audio_analyzer,
-            text_analyzer,
-            video_duration=video_duration,
-            clip_duration=settings.clip_duration,
-            stride_ratio=settings.hook_detection.get("stride_ratio", 0.33),
-            min_words_in_window=settings.scoring_params.get("min_words_in_window", 8),
-        )
+        if whole_source:
+            # Une seule fenetre : le clip entier. Rien n'est compare, donc rien
+            # ne peut etre rogne.
+            candidates = [whole_video_candidate(audio_analyzer, text_analyzer, video_duration)]
+        else:
+            candidates = generate_candidates(
+                audio_analyzer,
+                text_analyzer,
+                video_duration=video_duration,
+                clip_duration=settings.clip_duration,
+                stride_ratio=settings.hook_detection.get("stride_ratio", 0.33),
+                min_words_in_window=settings.scoring_params.get("min_words_in_window", 8),
+            )
 
         scorer = Scorer(
             weights=settings.weights,
@@ -176,40 +188,50 @@ def run(
         scored = [scorer.score(c) for c in candidates]
 
         # [4] Selection des meilleurs passages
-        if cancel_token:
-            cancel_token.check()
-        progress.step(STEP_SELECTION)
-
         # Phrases de toute la video, calculees une seule fois et partagees :
         # la qualite de contexte du Priority Score en a besoin des la selection,
         # le montage s'en sert ensuite pour proteger les pauses volontaires.
+        # Elles servent dans les deux cas : le montage en a besoin meme quand il
+        # n'y a rien a selectionner.
         sentence_index = build_sentences(
             transcript.words(),
             max_gap_s=settings.editing_module("context_detection").get("sentence_gap_s", 0.6),
             question_starters=settings.keywords_config.get("question_starters", []),
         )
 
-        ranker = _build_ranker(settings, sentence_index, audio_analyzer, video_duration)
-        selected = select_clips(
-            scored,
-            nb_clips=settings.nb_clips,
-            min_gap=settings.min_gap,
-            pre_roll=settings.pre_roll,
-            post_roll=settings.post_roll,
-            max_overshoot_ratio=settings.hook_detection.get("max_overshoot_ratio", 0.2),
-            video_duration=video_duration,
-            text_analyzer=text_analyzer,
-            # Quand la detection du contexte est active, c'est elle qui fixe les
-            # bornes : appliquer en plus --pre-roll/--post-roll ferait deux
-            # extensions superposees.
-            apply_context=not context_enabled,
-            ranker=ranker,
-        )
-        progress.set_clips_found(len(selected))
-        if ranker is not None:
-            for line in ranker.funnel.lines():
-                logger.info(line)
-            progress.report(" -> ".join(ranker.funnel.lines()))
+        if whole_source:
+            # Choisir le meilleur parmi un seul, c'est le prendre. Pas d'etape
+            # affichee pour une decision qui n'en est pas une, et surtout pas de
+            # --pre-roll/--post-roll : les bornes du clip sont deja les bonnes.
+            ranker = None
+            selected = scored
+            progress.set_clips_found(len(selected))
+        else:
+            if cancel_token:
+                cancel_token.check()
+            progress.step(STEP_SELECTION)
+
+            ranker = _build_ranker(settings, sentence_index, audio_analyzer, video_duration)
+            selected = select_clips(
+                scored,
+                nb_clips=settings.nb_clips,
+                min_gap=settings.min_gap,
+                pre_roll=settings.pre_roll,
+                post_roll=settings.post_roll,
+                max_overshoot_ratio=settings.hook_detection.get("max_overshoot_ratio", 0.2),
+                video_duration=video_duration,
+                text_analyzer=text_analyzer,
+                # Quand la detection du contexte est active, c'est elle qui fixe
+                # les bornes : appliquer en plus --pre-roll/--post-roll ferait
+                # deux extensions superposees.
+                apply_context=not context_enabled,
+                ranker=ranker,
+            )
+            progress.set_clips_found(len(selected))
+            if ranker is not None:
+                for line in ranker.funnel.lines():
+                    logger.info(line)
+                progress.report(" -> ".join(ranker.funnel.lines()))
 
         # [5] Detection du contexte (optionnelle)
         clips: list[tuple[ScoredCandidate, Optional[ContextResult]]]

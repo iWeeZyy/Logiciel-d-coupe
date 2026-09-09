@@ -69,3 +69,35 @@ def generate_candidates(
 
     logger.info(f"{len(candidates)} fenetres candidates generees (pas={stride:.1f}s).")
     return candidates
+
+
+def whole_video_candidate(
+    audio_analyzer: AudioAnalyzer,
+    text_analyzer: TextAnalyzer,
+    video_duration: float,
+) -> Candidate:
+    """La source entiere, en UNE fenetre, sans condition.
+
+    Utilise quand la source EST deja un clip (un clip Twitch recupere par le
+    Radar). Deux differences volontaires avec generate_candidates :
+
+    - une seule fenetre, donc aucune comparaison : le clip garde ses bornes
+      d'origine, celles choisies par la personne qui l'a decoupe ;
+    - AUCUN filtre sur le nombre de mots. Le filtre a un sens quand il s'agit
+      de choisir un passage parmi d'autres -- il ecarte un blanc. Ici il ferait
+      echouer la production d'un clip de reaction, ou personne ne parle
+      vraiment, alors qu'il n'y a rien a choisir.
+
+    Le passage est quand meme score : les notes affichees sur la fiche du clip
+    en viennent, et le montage se sert des memes mesures.
+    """
+    end = max(0.05, float(video_duration))
+    text, text_features = text_analyzer.analyze_window(0.0, end)
+    return Candidate(
+        start=0.0,
+        end=end,
+        text=text,
+        words=text_analyzer.words_in_window(0.0, end),
+        audio=audio_analyzer.analyze_window(0.0, end),
+        text_features=text_features,
+    )
