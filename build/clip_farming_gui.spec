@@ -32,7 +32,15 @@ binaries = []
 # jour ou on le branche, l'application compilee planterait sur un import
 # manquant alors que tout marche depuis les sources. Le declarer ici coute un
 # fichier de 3 ko et supprime ce piege.
-hiddenimports = ["radar.analysis.handoff"]
+hiddenimports = [
+    "radar.analysis.handoff",
+    # keyring choisit son coffre a l'execution : l'analyse statique ne voit donc
+    # pas le backend Windows, et un exe compile sans lui refuserait toute
+    # connexion de compte en annoncant, a tort, que le coffre est indisponible.
+    "keyring.backends.Windows",
+    "keyring.backends.SecretService",
+    "keyring.backends.fail",
+]
 
 for pkg in [
     "faster_whisper", "ctranslate2", "av", "librosa", "numba",

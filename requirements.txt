@@ -36,3 +36,9 @@ tzdata>=2024.1
 
 # Tests
 pytest>=8.0
+
+# Coffre de mots de passe du systeme (Gestionnaire d'identifiants sous Windows).
+# Sert UNIQUEMENT a ranger les jetons de connexion aux reseaux sociaux. Sans
+# lui, l'application refuse d'enregistrer un jeton -- elle ne l'ecrit jamais en
+# clair ailleurs -- et l'export manuel reste disponible.
+keyring>=25.0
