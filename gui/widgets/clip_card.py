@@ -34,6 +34,21 @@ def _format_timestamp(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _clip_resolution(clip_path: str):
+    """Definition reelle du fichier, ou None si elle n'est pas lisible.
+
+    Ne leve jamais : un fichier absent, deplace ou en cours d'ecriture ne doit
+    pas empecher la carte de s'afficher -- l'information est utile, pas vitale.
+    """
+    try:
+        from video.ffmpeg_utils import video_resolution
+
+        width, height = video_resolution(clip_path)
+        return (width, height) if width and height else None
+    except Exception:
+        return None
+
+
 def _score_emoji(score: float) -> str:
     return "🔥" if score >= 85 else ("⭐" if score >= 70 else "")
 
@@ -107,7 +122,15 @@ class ClipCard(QFrame):
         start = clip_dict.get("start", 0.0)
         end = clip_dict.get("end", 0.0)
         duration = clip_dict.get("duration", end - start)
-        timing = QLabel(f"{_format_timestamp(start)} → {_format_timestamp(end)}  •  {duration:.0f}s")
+        # La definition est LUE DANS LE FICHIER produit, pas deduite du format
+        # demande. C'est la difference entre "on a demande du 9:16" et "le
+        # fichier fait 1080x1920" : quand un doute existe sur le format obtenu,
+        # seule la seconde reponse tranche.
+        timing_text = f"{_format_timestamp(start)} → {_format_timestamp(end)}  •  {duration:.0f}s"
+        size = _clip_resolution(clip_path)
+        if size:
+            timing_text += f"  •  {size[0]} × {size[1]}"
+        timing = QLabel(timing_text)
         timing.setProperty("role", "mono")
         timing.setStyleSheet("font-size: 12.5px;")
         layout.addWidget(timing)

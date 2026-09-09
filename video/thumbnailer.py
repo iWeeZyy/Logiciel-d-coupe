@@ -92,19 +92,26 @@ def _eyes_open(cascade, gray, face: FaceBox) -> bool | None:
     return True if len(eyes) >= 1 else None
 
 
-def _compose(frame, face: FaceBox | None, text: str, out_path: Path, cfg: dict) -> bool:
+def _compose(frame, face: FaceBox | None, text: str, out_path: Path, cfg: dict,
+             target_size: tuple = (TARGET_W, TARGET_H)) -> bool:
     import cv2
     import numpy as np
     from PIL import Image, ImageDraw
 
     h, w = frame.shape[:2]
-    hint = CenterHint(face.cx, max(0.0, min(1.0, face.cy + 0.05))) if face else None
-    rect = compute_crop_rect(w, h, hint)
-    cropped = frame[rect.y:rect.y + rect.h, rect.x:rect.x + rect.w]
+    out_w, out_h = target_size
+    if out_w >= out_h:
+        # Paysage : aucun recadrage, comme pour la video. Une miniature verticale
+        # sur un clip horizontal annoncerait un format que le fichier n'a pas.
+        cropped = frame
+    else:
+        hint = CenterHint(face.cx, max(0.0, min(1.0, face.cy + 0.05))) if face else None
+        rect = compute_crop_rect(w, h, hint)
+        cropped = frame[rect.y:rect.y + rect.h, rect.x:rect.x + rect.w]
     if cropped.size == 0:
         return False
 
-    resized = cv2.resize(cropped, (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)
+    resized = cv2.resize(cropped, (out_w, out_h), interpolation=cv2.INTER_AREA)
     image = Image.fromarray(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB))
 
     if text:
@@ -187,6 +194,7 @@ def generate_thumbnails(
     clip_stem: str,
     text: str = "",
     cfg: dict | None = None,
+    target_size: tuple = (TARGET_W, TARGET_H),
 ) -> list[str]:
     """Ecrit thumbnails/<clip_stem>_a.jpg (et _b, _c). Renvoie les chemins
     ecrits, relatifs au dossier du projet."""
@@ -272,7 +280,7 @@ def generate_thumbnails(
         variant_text = text if key != "b" else " ".join(text.split()[:4])
         path = base / "thumbnails" / f"{clip_stem}_{key}.jpg"
         try:
-            if _compose(frame, choice.metrics.face, variant_text, path, cfg):
+            if _compose(frame, choice.metrics.face, variant_text, path, cfg, target_size):
                 written.append(f"thumbnails/{path.name}")
         except Exception as e:  # noqa: BLE001 -- une miniature ratee ne casse pas un clip
             logger.warning(f"Miniature {path.name} non generee : {e}")

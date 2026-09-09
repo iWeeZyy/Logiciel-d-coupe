@@ -202,3 +202,43 @@ class TestCaseSousTitresDeLAccueil:
 
         source = Path("pipeline.py").read_text(encoding="utf-8")
         assert 'if settings.editing_module_enabled("captions") else None' in source
+
+
+class TestMiniatures:
+    """La miniature doit annoncer le format du clip, pas un autre."""
+
+    def _frame(self, width: int, height: int):
+        import numpy as np
+
+        return np.zeros((height, width, 3), dtype=np.uint8)
+
+    def test_la_miniature_suit_le_format_portrait(self, tmp_path):
+        from video import thumbnailer
+
+        out = tmp_path / "a.jpg"
+        assert thumbnailer._compose(self._frame(1920, 1080), None, "", out, {},
+                                    target_size=PORTRAIT_SIZE)
+        from PIL import Image
+
+        assert Image.open(out).size == PORTRAIT_SIZE
+
+    def test_la_miniature_suit_le_format_paysage(self, tmp_path):
+        """Une miniature verticale sur un clip horizontal annoncerait un format
+        que le fichier n'a pas."""
+        from video import thumbnailer
+
+        out = tmp_path / "b.jpg"
+        assert thumbnailer._compose(self._frame(1920, 1080), None, "", out, {},
+                                    target_size=LANDSCAPE_SIZE)
+        from PIL import Image
+
+        assert Image.open(out).size == LANDSCAPE_SIZE
+
+    def test_le_portrait_reste_le_defaut_sans_argument(self, tmp_path):
+        from video import thumbnailer
+
+        out = tmp_path / "c.jpg"
+        assert thumbnailer._compose(self._frame(1920, 1080), None, "", out, {})
+        from PIL import Image
+
+        assert Image.open(out).size == PORTRAIT_SIZE

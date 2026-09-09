@@ -442,6 +442,7 @@ def _build_metadata_and_thumbnails(
             clip_result.thumbnails = generate_thumbnails(
                 video_path, sc.candidate.start, sc.candidate.end,
                 settings.output, clip_stem(clip_result.index), text=text, cfg=thumbnails_cfg,
+                target_size=settings.target_size(),
             )
 
         write_clip_metadata(settings.output, clip_result)
