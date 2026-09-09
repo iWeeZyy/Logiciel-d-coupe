@@ -1,0 +1,35 @@
+{
+  "_comment": "Marqueurs de l'analyse de contenu (Radar -> Analyser). Tout est local : aucune de ces listes n'est envoyee nulle part. Un fichier absent ou illisible ne desactive pas la fonctionnalite -- radar/analysis/lexicon.py embarque les memes valeurs par defaut. Ce fichier sert a les ajuster sans recompiler.",
+
+  "emotions": {
+    "_comment": "Marqueurs textuels par emotion. Une emotion n'est JAMAIS affirmee sur un seul marqueur faible : radar/analysis/transcript_analysis.py exige des indices convergents et publie la phrase qui a declenche la detection, pour que l'utilisateur juge lui-meme.",
+    "rire": ["ahah", "haha", "hahaha", "mdr", "ptdr", "lol", "j'ai ri", "je rigole", "trop drole", "mort de rire", "explose de rire"],
+    "surprise": ["quoi", "hein", "attends", "attendez", "serieux", "serieusement", "c'est quoi ca", "nan mais", "pas possible", "j'y crois pas", "incroyable", "wtf", "oh mon dieu"],
+    "excitation": ["allez", "let's go", "on y va", "trop bien", "enorme", "magnifique", "parfait", "genial", "c'est parti"],
+    "colere": ["putain", "merde", "n'importe quoi", "ras le bol", "enerve", "insupportable", "c'est honteux"],
+    "incomprehension": ["je comprends pas", "j'ai pas compris", "comment ca", "pourquoi", "ca veut dire quoi", "attends quoi"],
+    "tension": ["doucement", "fais attention", "attention", "on va perdre", "c'est chaud", "ca passe pas", "dernier", "plus qu'une"],
+    "revelation": ["en fait", "en realite", "je viens de comprendre", "j'ai compris", "c'etait ca", "voila pourquoi", "du coup c'est"]
+  },
+
+  "superlatives": ["jamais", "toujours", "meilleur", "meilleure", "pire", "plus grand", "plus gros", "incroyable", "enorme", "dingue", "fou", "folle", "record", "historique", "premier", "premiere", "unique"],
+
+  "negations": ["ne", "pas", "jamais", "rien", "aucun", "aucune", "personne", "plus jamais", "impossible"],
+
+  "strong_expressions": ["c'est pas possible", "je n'en reviens pas", "regardez ca", "attendez de voir", "vous allez voir", "il s'est passe", "ce qui vient de se passer", "je vous jure"],
+
+  "thresholds": {
+    "_comment": "Reglages numeriques de l'analyse. 'short_sentence_words' : au-dessous, une phrase est comptee comme courte (rythme rapide). 'long_sentence_words' : au-dessus, comme longue. 'silence_gap_s' : ecart entre deux mots a partir duquel on parle de silence. 'rhythm_change_ratio' : variation de debit entre deux moities du clip a partir de laquelle on signale un changement de rythme. 'repetition_min_occurrences' : nombre de repetitions d'un meme mot significatif avant de le signaler.",
+    "short_sentence_words": 5,
+    "long_sentence_words": 18,
+    "silence_gap_s": 1.0,
+    "rhythm_change_ratio": 0.35,
+    "repetition_min_occurrences": 3
+  },
+
+  "hashtags": {
+    "_comment": "Hashtags de contexte ajoutes a ceux tires du contenu, uniquement pour un clip Twitch : ils decrivent la PROVENANCE du clip, ce qui est verifiable, et non son contenu, qui lui n'est jamais invente. La liste est volontairement courte -- une longue serie de hashtags generiques n'apporte rien.",
+    "twitch_context": ["#Twitch", "#Clip"],
+    "max_total": 6
+  }
+}

@@ -193,3 +193,21 @@ def load_radar_config() -> dict:
         return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def load_clip_analysis_config() -> dict:
+    """Marqueurs de l'analyse de contenu (config/clip_analysis.json).
+
+    Meme regle que load_radar_config : absent ou illisible -> dict vide, et
+    radar/analysis/lexicon.py retombe sur ses valeurs par defaut. Une analyse
+    doit rester possible sur une installation dont la config a ete abimee.
+    """
+    path = CONFIG_DIR / "clip_analysis.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}

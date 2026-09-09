@@ -98,6 +98,17 @@ def _capitalize(text: str) -> str:
     return text[:1].upper() + text[1:] if text else text
 
 
+def _terminate(text: str) -> str:
+    """Termine une phrase reprise telle quelle.
+
+    strip_leading_fillers retire la ponctuation aux DEUX extremites ; sans cette
+    fonction, deux phrases mises bout a bout se collaient sans point ("...sur le
+    plateau Il ne reste plus...") et se lisaient comme une seule phrase fausse.
+    """
+    text = (text or "").strip()
+    return text if not text or ends_sentence(text) else text + "."
+
+
 def score_sentence(
     sentence: SentenceSpan,
     keyword_terms: set[str],
@@ -214,7 +225,7 @@ def _build_description(sentences: list[SentenceSpan], ranked, max_sentences: int
     for sentence in sentences:
         cleaned = strip_leading_fillers(sentence.text)
         if len(_words_of(cleaned)) >= 4:
-            chosen.append(_capitalize(cleaned))
+            chosen.append(_terminate(_capitalize(cleaned)))
             seen.add(normalize(cleaned))
             break
 
@@ -224,7 +235,7 @@ def _build_description(sentences: list[SentenceSpan], ranked, max_sentences: int
         key = normalize(cleaned)
         if key in seen or len(_words_of(cleaned)) < 4:
             continue
-        chosen.append(_capitalize(cleaned))
+        chosen.append(_terminate(_capitalize(cleaned)))
         seen.add(key)
 
     text = " ".join(chosen).strip()
