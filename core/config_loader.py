@@ -33,6 +33,7 @@ _MODULE_SWITCHES = {
     "framing": "smart_framing",
     "montage": "auto_montage",
     "captions": "subtitles_enabled",
+    "watermark": "watermark_enabled",
 }
 
 
@@ -63,6 +64,7 @@ class Settings:
     aspect_ratio: str = "9:16"
     smart_framing: bool = True
     auto_montage: bool = True
+    watermark_enabled: bool = True
 
     # Chargés depuis settings.json
     weights: dict = field(default_factory=dict)
@@ -186,6 +188,7 @@ def load_settings(cli_args: Any) -> Settings:
                       or defaults.get("aspect_ratio") or "9:16"),
         smart_framing=not bool(getattr(cli_args, "no_smart_framing", False)),
         auto_montage=not bool(getattr(cli_args, "no_auto_montage", False)),
+        watermark_enabled=not bool(getattr(cli_args, "no_watermark", False)),
         weights=weights,
         scoring_params=settings_json.get("scoring_params", {}),
         hook_detection=settings_json.get("hook_detection", {}),

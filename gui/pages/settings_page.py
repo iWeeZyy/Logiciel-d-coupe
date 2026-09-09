@@ -61,7 +61,7 @@ def _editing_json_path():
     return CONFIG_DIR / "editing.json"
 
 
-# Les neuf interrupteurs de la section 12, chacun designe par son chemin reel
+# Les interrupteurs de la section 12, chacun designe par son chemin reel
 # dans config/editing.json. Ecrire ce chemin ici plutot qu'une correspondance
 # dans le code evite d'avoir un jour une case qui ne pilote plus rien.
 _EDITING_MODULES = [
@@ -83,6 +83,8 @@ _EDITING_MODULES = [
      "Description et hashtags tirés uniquement de ce qui est dit dans le clip."),
     (("thumbnails", "enabled"), "Miniatures automatiques",
      "Trois miniatures 1080×1920 par clip."),
+    (("watermark", "enabled"), "Filigrane",
+     "Pose le logo en transparence en haut à droite de chaque clip."),
 ]
 
 

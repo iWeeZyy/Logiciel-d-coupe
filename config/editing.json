@@ -102,6 +102,15 @@
       "min_hold_s": 2.0
     }
   },
+  "watermark": {
+    "_comment": "Filigrane pose sur chaque clip. L'image par defaut est assets/branding/watermark.png, livree avec l'application ; 'image' permet d'en designer une autre. La taille est un POURCENTAGE de la largeur de sortie et non un nombre de pixels, pour que le logo pese pareil a l'oeil en 9:16 et en 16:9. En haut par defaut : le bas du cadre porte deja les sous-titres, et les plateformes y posent leur propre interface. Positions : haut-gauche, haut-droite, bas-gauche, bas-droite.",
+    "enabled": true,
+    "image": "",
+    "position": "haut-droite",
+    "size_percent": 14,
+    "opacity": 0.70,
+    "margin_percent": 4
+  },
   "montage": {
     "_comment": "Fonctionnalite 3 : montage automatique. Produit une EditList (segments conserves) sur laquelle sous-titres, cadrage et zooms se recalent automatiquement.",
     "enabled": true,

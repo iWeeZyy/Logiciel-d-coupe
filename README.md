@@ -429,6 +429,25 @@ Les images candidates sont mesurees (nettete par variance du laplacien, luminosi
 
 Le texte vient des titres extraits (jamais d'une phrase fabriquee), se pose dans la bande la plus eloignee du visage, et sa couleur est choisie d'apres la luminosite reelle de cette bande. La taille diminue jusqu'a tenir en deux lignes dans les marges de securite.
 
+### Filigrane (`watermark`)
+
+Pose le logo livre avec l'application (`assets/branding/watermark.png`) en
+semi-transparence sur chaque clip, dans le meme encodage que le reste -- pas de
+passe supplementaire.
+
+- **La taille est un pourcentage de la largeur de sortie** (14 % par defaut),
+  jamais un nombre de pixels : le logo pese pareil a l'oeil en 1080x1920 et en
+  1920x1080. Une taille fixe serait deux fois trop grosse sur l'un des deux.
+- **En haut a droite par defaut.** Le bas du cadre est deja pris : les
+  sous-titres y sont incrustes et les plateformes y posent leur propre
+  interface. `position` accepte `haut-gauche`, `haut-droite`, `bas-gauche`,
+  `bas-droite`.
+- **L'opacite multiplie l'alpha existant** (`colorchannelmixer=aa=`) au lieu de
+  le remplacer : le bord adouci du disque est conserve, sinon le logo
+  ressortirait dans un carre net.
+- `image` permet d'en designer un autre. Une image absente **desactive le
+  filigrane** au lieu de faire echouer le rendu.
+
 ### Interface
 
 **Accueil** : dépose une vidéo, choisis la durée (« Automatique » ajuste chaque clip sur la structure du discours) et le nombre de clips, coche les modules voulus, puis **✨ CRÉER MES MEILLEURS CLIPS**. Les modules cochés ici ne valent que pour cette analyse ; leurs valeurs par défaut se règlent dans Paramètres.
@@ -437,7 +456,7 @@ Le texte vient des titres extraits (jamais d'une phrase fabriquee), se pose dans
 
 Les titres modifiés à la main sont réécrits dans `metadata/clip_XX.json` **et** dans `results.json` : rouvrir le projet réaffiche bien le texte modifié.
 
-**Paramètres** : les neuf modules d'édition automatique s'activent ou se désactivent indépendamment, et les états sont enregistrés avec le projet.
+**Paramètres** : les dix modules d’édition automatique s'activent ou se désactivent indépendamment, et les états sont enregistrés avec le projet.
 
 ## Recherche YouTube (optionnelle)
 
@@ -498,7 +517,7 @@ Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique 
 
 ## Options de production
 
-Quatre choix, faits AVANT de lancer un traitement -- sur la page Accueil, ou en
+Ces choix se font AVANT de lancer un traitement -- sur la page Accueil, ou en
 ligne de commande.
 
 Elles se choisissent a deux endroits : sur la page **Accueil** pour une video de
@@ -511,6 +530,7 @@ trouve. Le meme composant sert aux deux, donc les choix y sont identiques.
 | Format | menu "Format" | `--aspect 9:16` / `--aspect 16:9` |
 | Cadrage intelligent | case "Cadrage intelligent" | `--no-smart-framing` |
 | Montage auto | case "Montage auto" | `--no-auto-montage` |
+| Filigrane | case "Filigrane" | `--no-watermark` |
 
 - **Sous-titres decoches** : aucun fichier de sous-titres n'est produit, aucun
   n'est incruste. Jusqu'a la version qui introduit ce tableau, la case coupait

@@ -94,6 +94,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                             help="Desactive le cadrage intelligent (suivi du visage) : recadrage centre.")
     production.add_argument("--no-auto-montage", dest="no_auto_montage", action="store_true",
                             help="Desactive le montage automatique (coupe des silences, zooms).")
+    production.add_argument("--no-watermark", dest="no_watermark", action="store_true",
+                            help="Ne pas poser le logo en filigrane sur les clips.")
 
     yt = parser.add_argument_group("Filtres de recherche YouTube (--search uniquement)")
     yt.add_argument("--max-results", dest="max_results", type=int, default=10,

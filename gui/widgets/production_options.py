@@ -35,6 +35,7 @@ QUICK_MODULES = [
     # seul mecanisme donneraient une case sans effet propre.
     ("metadata", "Titres et descriptions"),
     ("thumbnails", "Miniatures"),
+    ("watermark", "Filigrane"),
 ]
 
 LANDSCAPE_HINT = ("L'image d'origine est conservée : aucun recadrage, "

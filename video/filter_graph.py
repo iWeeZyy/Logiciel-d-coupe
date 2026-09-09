@@ -200,6 +200,7 @@ def build_ffmpeg_args(
     export_settings: dict,
     out_mp4_path: str,
     target_size: tuple[int, int] = (TARGET_W, TARGET_H),
+    watermark=None,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -215,9 +216,36 @@ def build_ffmpeg_args(
     # -ss avant -i : recherche rapide, indispensable pour un clip situe loin
     # dans une longue video. Les temps du montage deviennent donc relatifs a ce
     # point d'entree.
-    args = ["-ss", f"{offset:.3f}", "-i", video_path, "-t", f"{span:.3f}"]
+    args = ["-ss", f"{offset:.3f}", "-i", video_path]
 
-    if edit_list.is_identity:
+    # Le filigrane est une SECONDE ENTREE : il impose donc filter_complex, meme
+    # quand le reste tiendrait dans un simple -vf. Une image fixe convient telle
+    # quelle -- overlay repete sa derniere image par defaut, il n'y a rien a
+    # boucler.
+    #
+    # Il est declare AVANT le -t, et non apres : une option placee juste devant
+    # une entree s'applique a cette entree. Un -t glisse entre les deux
+    # limiterait la lecture du logo au lieu de limiter la duree de sortie, et le
+    # clip s'etendrait jusqu'a la fin de la video source.
+    out_w = target_size[0]
+    logo_chain = position = ""
+    if watermark is not None:
+        from video.watermark import overlay_position, prepare_filter
+
+        args += ["-i", watermark.image]
+        logo_chain = prepare_filter(watermark, out_w)
+        position = overlay_position(watermark, out_w)
+
+    args += ["-t", f"{span:.3f}"]
+
+    if watermark is not None and edit_list.is_identity:
+        graph = (f"[0:v]{video_chain}[base];"
+                 f"[1:v]{logo_chain}[wm];"
+                 f"[base][wm]overlay={position}[vout]")
+        args += ["-filter_complex", graph, "-map", "[vout]", "-map", "0:a?"]
+        if audio_chain:
+            args += ["-af", audio_chain]
+    elif edit_list.is_identity:
         args += ["-vf", video_chain]
         if audio_chain:
             args += ["-af", audio_chain]
@@ -236,7 +264,12 @@ def build_ffmpeg_args(
 
         concat = f"{''.join(labels)}concat=n={len(edit_list.cuts)}:v=1:a=1[vc][ac]"
         graph = ";".join(segments_v + segments_a + [concat])
-        graph += f";[vc]{video_chain}[vout]"
+        if watermark is not None:
+            graph += f";[vc]{video_chain}[base]"
+            graph += f";[1:v]{logo_chain}[wm]"
+            graph += f";[base][wm]overlay={position}[vout]"
+        else:
+            graph += f";[vc]{video_chain}[vout]"
         graph += f";[ac]{audio_chain}[aout]" if audio_chain else ";[ac]anull[aout]"
 
         args += ["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]"]

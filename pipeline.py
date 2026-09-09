@@ -84,6 +84,10 @@ def run(
     src_w, src_h = ffmpeg_utils.video_resolution(str(input_path))
     logger.info(f"Video : {video_duration:.1f}s, {src_w}x{src_h}.")
 
+    from video.watermark import from_config as watermark_from_config
+
+    watermark = (watermark_from_config(settings.editing_module("watermark"))
+                 if settings.editing_module_enabled("watermark") else None)
     context_enabled = settings.editing_module_enabled("context_detection")
     metadata_enabled = (settings.editing_module_enabled("metadata")
                         or settings.editing_module_enabled("thumbnails"))
@@ -301,6 +305,7 @@ def run(
                     audio_cfg=settings.editing_module("montage").get("audio"),
                     fps=source_fps,
                     target_size=settings.target_size(),
+                    watermark=watermark,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
