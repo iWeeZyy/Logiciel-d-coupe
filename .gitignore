@@ -31,3 +31,8 @@ ClipFarming-windows.zip
 !video/**/*.mp4
 
 .DS_Store
+
+# Donnees locales creees a l'execution quand on lance depuis le depot (en
+# version installee, elles vivent dans le dossier de donnees de l'utilisateur).
+whisper-models/
+clips/

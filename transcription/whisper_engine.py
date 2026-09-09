@@ -15,6 +15,7 @@ from typing import Callable, Optional
 from core.cancellation import CancelToken
 from core.logging_setup import get_logger
 from core.models import Segment, Transcript, Word
+from core.paths import user_data_dir
 from utils.errors import CancelledError, ModelDownloadError, NoAudioError
 from utils.hardware import resolve_device
 
@@ -154,14 +155,71 @@ def _cached_snapshot_path(model_name: str) -> Optional[str]:
         return None
 
 
+# Le plus petit modele reel (tiny) pese environ 72 Mo. Un model.bin en dessous
+# de ce seuil n'est pas un modele : c'est un fichier tronque, laisse par un
+# telechargement coupe ou une copie interrompue. Verifier la seule PRESENCE du
+# fichier laissait passer ce cas, et le chargement echouait ensuite avec un
+# message de bibliotheque incomprehensible.
+MIN_MODEL_BIN_BYTES = 10 * 1024 * 1024
+
+
+def model_bin_size(snapshot_path: str | Path) -> int:
+    """Taille du fichier de poids, 0 s'il est absent ou illisible.
+
+    Un lien symbolique casse -- ce que laisse un blob supprime alors que
+    l'instantane reste -- rend 0 lui aussi : `is_file()` suit le lien et repond
+    False, et c'est bien ce qu'on veut.
+    """
+    try:
+        target = Path(snapshot_path) / "model.bin"
+        return target.stat().st_size if target.is_file() else 0
+    except OSError:
+        return 0
+
+
 def snapshot_is_complete(snapshot_path: str | Path) -> bool:
-    """Un instantane sans son fichier de poids est un telechargement interrompu.
+    """Un instantane sans fichier de poids utilisable est un telechargement raté.
 
     C'est exactement l'etat que laisse une application fermee pendant le
     telechargement : huggingface_hub voit le dossier, le considere comme deja
     la, et ne retelecharge plus jamais rien. Le detecter AVANT de charger le
     modele evite de dependre du texte d'un message d'erreur."""
-    return (Path(snapshot_path) / "model.bin").is_file()
+    return model_bin_size(snapshot_path) >= MIN_MODEL_BIN_BYTES
+
+
+def describe_snapshot(snapshot_path: str | Path | None) -> str:
+    """Etat reel du modele sur le disque, en clair.
+
+    Sert dans les messages d'erreur. Sans ces faits, un echec de chargement ne
+    dit pas s'il manque le fichier, s'il est tronque, ou s'il n'y a plus de
+    place -- trois problemes qui n'ont pas la meme reponse.
+    """
+    if not snapshot_path:
+        return "aucun dossier de modèle trouvé dans le cache"
+    path = Path(snapshot_path)
+    size = model_bin_size(path)
+    free = free_disk_mb(path if path.exists() else path.parent)
+    place = f", {free:.0f} Mo libres sur ce disque" if free is not None else ""
+    if size == 0:
+        return f"le fichier model.bin est absent de {path}{place}"
+    if size < MIN_MODEL_BIN_BYTES:
+        return (f"le fichier model.bin de {path} ne fait que {size / (1024 * 1024):.1f} Mo : "
+                f"il est tronqué{place}")
+    return f"model.bin fait {size / (1024 * 1024):.0f} Mo dans {path}{place}"
+
+
+def plain_model_dir(model_name: str) -> Path:
+    """Dossier simple ou telecharger un modele quand le cache Hugging Face pose
+    probleme.
+
+    Le cache normal range les fichiers dans `blobs/` et fabrique des liens dans
+    `snapshots/`. Sous Windows, creer un lien symbolique demande des droits que
+    l'utilisateur n'a en general pas : la bibliotheque recopie alors le fichier,
+    ce qui demande deux fois la place le temps de la copie et laisse un fichier
+    a moitie ecrit quand elle echoue. Un dossier simple n'a ni blobs ni liens :
+    le fichier est ecrit une fois, a sa place definitive.
+    """
+    return user_data_dir() / "whisper-models" / model_repo_id(model_name).replace("/", "--")
 
 
 def _dir_size_mb(path: Path) -> float:
@@ -182,6 +240,7 @@ def _download_with_progress(
     cache_dir: Path,
     on_download_progress: Optional[Callable[[float, Optional[float]], None]],
     cancel_token: Optional[CancelToken] = None,
+    output_dir: Optional[Path] = None,
 ) -> None:
     """Telecharge le modele en rendant compte de l'avancement.
 
@@ -210,7 +269,10 @@ def _download_with_progress(
 
     def worker() -> None:
         try:
-            download_model(model_name)
+            if output_dir is not None:
+                download_model(model_name, output_dir=str(output_dir))
+            else:
+                download_model(model_name)
         except BaseException as exc:  # remonte tel quel dans le fil principal
             outcome["error"] = exc
 
@@ -243,23 +305,31 @@ def ensure_model_downloaded(
     model_name: str,
     on_download_progress: Optional[Callable[[float, Optional[float]], None]] = None,
     cancel_token: Optional[CancelToken] = None,
-) -> None:
-    """Garantit un modele complet dans le cache avant tout chargement.
+) -> str:
+    """Garantit un modele utilisable, et renvoie ce qu'il faut charger.
 
-    Trois cas, dans cet ordre : deja complet -> rien a faire ; present mais sans
-    son fichier de poids -> le dossier est supprime puis retelecharge (sans
-    quoi huggingface_hub le croira eternellement present) ; absent -> verification
-    de l'espace disque puis telechargement avec avancement.
+    La valeur renvoyee est le nom du modele quand le cache Hugging Face est
+    sain, ou le CHEMIN d'un dossier simple quand il ne l'est pas. Le point
+    important est la : la fonction ne se contente plus de lancer un
+    telechargement et de supposer qu'il a marche, elle REGARDE le resultat.
+    C'est ce qui manquait -- un telechargement pouvait se terminer sans erreur
+    en laissant un instantane sans fichier de poids, et l'echec n'apparaissait
+    qu'au chargement, sous la forme d'un message de bibliotheque.
     """
     cached = _cached_snapshot_path(model_name)
     if cached is not None and snapshot_is_complete(cached):
-        return
+        return model_name
+
+    plain = plain_model_dir(model_name)
+    if snapshot_is_complete(plain):
+        logger.info(f"Modele '{model_name}' utilise depuis {plain}.")
+        return str(plain)
 
     cache_dir = hf_cache_dir_for(model_name)
     if cached is not None:
         logger.warning(
-            f"Le modele '{model_name}' est present dans le cache mais son fichier de poids "
-            f"manque (telechargement interrompu). Suppression de {cache_dir} et "
+            f"Le modele '{model_name}' est present dans le cache mais inutilisable "
+            f"({describe_snapshot(cached)}). Suppression de {cache_dir} et "
             "nouveau telechargement."
         )
         shutil.rmtree(cache_dir, ignore_errors=True)
@@ -271,7 +341,41 @@ def ensure_model_downloaded(
         + (f" (~{size} Mo)" if size else "")
         + " -- une seule fois, il sera ensuite reutilise hors ligne."
     )
-    _download_with_progress(model_name, cache_dir, on_download_progress, cancel_token)
+    try:
+        _download_with_progress(model_name, cache_dir, on_download_progress, cancel_token)
+    except (CancelledError, ModelDownloadError):
+        raise
+    except Exception as error:
+        logger.warning(f"Telechargement via le cache Hugging Face echoue : {error}")
+    else:
+        downloaded = _cached_snapshot_path(model_name)
+        if downloaded is not None and snapshot_is_complete(downloaded):
+            return model_name
+        logger.warning(
+            "Le telechargement s'est termine sans erreur mais le modele reste "
+            f"inutilisable : {describe_snapshot(downloaded or cache_dir)}."
+        )
+
+    # Repli : un dossier simple, sans blobs ni liens symboliques. C'est la seule
+    # facon de sortir d'un cache que la bibliotheque croit valide alors qu'il ne
+    # l'est pas, et cela evite aussi la copie en double que Windows impose quand
+    # il ne peut pas creer de lien.
+    logger.info(f"Nouvelle tentative dans un dossier simple : {plain}")
+    plain.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(plain, ignore_errors=True)
+    check_disk_space_for(model_name, plain.parent)
+    _download_with_progress(model_name, plain, on_download_progress, cancel_token,
+                            output_dir=plain)
+    if not snapshot_is_complete(plain):
+        raise ModelDownloadError(
+            f"Le modele Whisper '{model_name}' n'a pas pu etre telecharge, ni dans le "
+            f"cache Hugging Face, ni dans un dossier simple.\n\n"
+            f"Cache : {describe_snapshot(_cached_snapshot_path(model_name) or cache_dir)}\n"
+            f"Dossier simple : {describe_snapshot(plain)}\n\n"
+            "Verifie l'espace disponible sur ce disque et ta connexion internet, ou "
+            "choisis un modele plus petit dans les Parametres."
+        )
+    return str(plain)
 
 
 def _looks_like_incomplete_download(error: Exception) -> bool:
@@ -279,50 +383,54 @@ def _looks_like_incomplete_download(error: Exception) -> bool:
     return any(marker in message for marker in _INCOMPLETE_CACHE_MARKERS)
 
 
-def _load_model(model_name: str, device: str, compute_type: str):
-    """Charge le modele, en reparant une seule fois un cache incomplet.
+def _load_model(target: str, device: str, compute_type: str, model_name: str | None = None):
+    """Charge le modele, avec un dernier recours si le fichier est illisible.
 
-    Un telechargement interrompu laisse un dossier de modele sans son fichier de
-    poids, et huggingface_hub le considere alors comme deja present : il ne
-    retelecharge jamais rien et l'application echoue a chaque lancement. Le seul
-    moyen d'en sortir est de supprimer ce dossier -- on le fait donc nous-memes,
-    une fois, plutot que de demander a l'utilisateur d'aller fouiller dans un
-    cache qu'il n'a jamais cree.
+    ensure_model_downloaded a deja garanti un fichier de poids de taille
+    plausible. Il peut malgre tout etre corrompu -- une copie interrompue, un
+    secteur abime, un antivirus qui a tronque le fichier. Dans ce cas, le seul
+    recours utile est de le retelecharger ailleurs, dans un dossier simple, et
+    non de reessayer au meme endroit.
     """
     from faster_whisper import WhisperModel
 
-    cache_dir = hf_cache_dir_for(model_name)
-    if not cache_dir.exists():
-        check_disk_space_for(model_name, cache_dir)
+    # `target` peut etre un chemin ; le nom court reste necessaire pour savoir
+    # quel modele retelecharger et ou.
+    model_name = model_name or target
 
     try:
-        return WhisperModel(model_name, device=device, compute_type=compute_type)
+        return WhisperModel(target, device=device, compute_type=compute_type)
     except Exception as first_error:
-        if not (_looks_like_incomplete_download(first_error) and cache_dir.exists()):
+        if not _looks_like_incomplete_download(first_error):
             raise
 
+        plain = plain_model_dir(model_name)
         logger.warning(
-            f"Le modele '{model_name}' est present dans le cache mais incomplet "
-            f"(telechargement interrompu). Suppression de {cache_dir} et nouvelle tentative."
+            f"Le modele '{model_name}' est present mais illisible ({first_error}). "
+            f"Retelechargement complet dans {plain}."
         )
-        try:
-            shutil.rmtree(cache_dir, ignore_errors=True)
-        except OSError as cleanup_error:
-            raise ModelDownloadError(
-                f"Le modele Whisper '{model_name}' est incomplet dans le cache et n'a pas pu "
-                f"etre supprime automatiquement. Supprime ce dossier a la main puis relance :\n"
-                f"{cache_dir}\nDetail : {cleanup_error}"
-            ) from first_error
+        shutil.rmtree(plain, ignore_errors=True)
+        if Path(target) != plain:
+            shutil.rmtree(hf_cache_dir_for(model_name), ignore_errors=True)
 
-        check_disk_space_for(model_name, cache_dir)
         try:
-            return WhisperModel(model_name, device=device, compute_type=compute_type)
+            plain.parent.mkdir(parents=True, exist_ok=True)
+            check_disk_space_for(model_name, plain.parent)
+            _download_with_progress(model_name, plain, None, None, output_dir=plain)
+            return WhisperModel(str(plain), device=device, compute_type=compute_type)
+        except (CancelledError, ModelDownloadError):
+            raise
         except Exception as second_error:
             raise ModelDownloadError(
-                f"Le modele Whisper '{model_name}' n'a pas pu etre telecharge, meme apres "
-                f"nettoyage du cache. Verifie ta connexion internet et l'espace disque "
-                f"disponible ({'environ 3 Go' if 'large' in model_name else 'quelques centaines de Mo'} "
-                f"necessaires), ou choisis un modele plus petit.\nDetail : {second_error}"
+                f"Le modele Whisper '{model_name}' reste inutilisable apres un "
+                f"telechargement complet.\n\n"
+                f"Etat du fichier : {describe_snapshot(plain)}\n\n"
+                f"Ce modele represente "
+                f"{'environ 3 Go' if 'large' in model_name else 'quelques centaines de Mo'} "
+                "a telecharger : verifie l'espace disque disponible sur ce disque, et "
+                "qu'aucun antivirus ne bloque l'ecriture dans ce dossier. Un modele plus "
+                "petit (Parametres -> modele) demande moins de place.\n"
+                f"Detail : {second_error}"
             ) from second_error
 
 
@@ -363,8 +471,8 @@ def transcribe(
         )
 
     try:
-        ensure_model_downloaded(model_name, on_download_progress, cancel_token)
-        model = _load_model(model_name, device, compute_type)
+        target = ensure_model_downloaded(model_name, on_download_progress, cancel_token)
+        model = _load_model(target, device, compute_type, model_name)
     except (ModelDownloadError, CancelledError):
         # Une annulation demandee par l'utilisateur n'est pas un echec de
         # telechargement : la transformer en ModelDownloadError afficherait un
