@@ -47,23 +47,23 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "Lancer {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Le desinstalleur ne supprime que ce que l'installateur a POSE, et un dossier
-; seulement s'il est vide. Tout ce que l'application ecrit ensuite a cote de
-; l'exe -- caches Python, journal de plantage, fichiers restes d'une version
-; precedente -- lui est donc inconnu : il survit, empeche la suppression des
-; dossiers parents, et le dossier d'installation reste debout au complet
-; (constate en usage : ClipFarming.exe et toutes ses DLL encore la apres
-; desinstallation). On nomme donc explicitement ces restes.
+; Le desinstalleur d'Inno ne supprime que ce que l'installateur a POSE, et un
+; dossier seulement s'il est vide. Tout ce qui apparait APRES l'installation
+; lui est inconnu : caches Python et numba ecrits a cote des bibliotheques,
+; journal de plantage, fichiers de reglages reecrits par la page Parametres,
+; restes d'une version precedente. Chacun de ces fichiers empeche la
+; suppression de son dossier parent, et de proche en proche le dossier
+; d'installation reste debout au complet -- constate deux fois en usage reel :
+; d'abord ClipFarming.exe et ses DLL, puis les dossiers de dependances
+; (numpy, PySide6, scipy, av...) apres une desinstallation.
 ;
-; Rien de tout cela n'est une donnee de l'utilisateur : depuis la version qui
-; accompagne ce script, projets, reglages et caches vivent sous Documents et
-; %LOCALAPPDATA%, hors du dossier d'installation. Ce sont les emplacements que
-; le desinstalleur ne touche PAS, volontairement : desinstaller un logiciel ne
-; doit pas emporter le travail fait avec.
-Type: filesandordirs; Name: "{app}\.cache"
-Type: filesandordirs; Name: "{app}\__pycache__"
-Type: files; Name: "{app}\crash_log.txt"
-Type: files; Name: "{app}\youtube_api_key.txt"
-Type: files; Name: "{app}\config\gui_settings.json"
-Type: dirifempty; Name: "{app}\config"
-Type: dirifempty; Name: "{app}"
+; Nommer les restes un par un ne marche pas : c'est une liste sans fin. On
+; supprime donc TOUT le dossier d'installation, ce qui est sans risque ici :
+; depuis la version qui accompagne ce script, projets, reglages et caches
+; vivent sous Documents et %LOCALAPPDATA%, hors du dossier d'installation.
+; Ces deux emplacements ne sont volontairement nommes NULLE PART dans ce
+; fichier : desinstaller un logiciel ne doit pas emporter le travail fait avec.
+;
+; Conseil qui decoule de la meme regle : ne rangez rien de personnel dans le
+; dossier d'installation, il est fait pour disparaitre entierement.
+Type: filesandordirs; Name: "{app}"

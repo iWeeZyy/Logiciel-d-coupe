@@ -222,20 +222,30 @@ envoye nulle part.
 
 ### Ou l'application range ses fichiers
 
-Installee en .exe, ClipFarming n'ecrit RIEN dans son dossier d'installation
-(`Program Files`) : Windows le protege en ecriture, et une desinstallation le
-vide. Trois emplacements distincts :
+Installee en .exe, ClipFarming ne range AUCUN de vos fichiers dans son dossier
+d'installation (`Program Files`) : projets, clips, caches et reglages
+d'interface vivent ailleurs. Seuls les fichiers `config/*.json` y sont
+reecrits, par la page Parametres. Trois emplacements distincts :
 
 | Quoi | Ou | Survit a une desinstallation |
 |---|---|---|
 | Projets et clips generes | `Documents\ClipFarming` (modifiable dans Parametres) | oui |
 | Caches, reglages, cle YouTube | `%LOCALAPPDATA%\ClipFarming` | oui |
 | Modele Whisper | `%HF_HOME%` si defini, sinon `~/.cache/huggingface` | oui |
-| Application elle-meme | `Program Files\ClipFarming` | non, supprimee |
+| Application elle-meme et `config/` | `Program Files\ClipFarming` | non, supprimee |
 
 Les versions anterieures ecrivaient tout dans le dossier d'installation : au
 premier lancement, ce qui s'y trouve encore est recupere automatiquement vers
 les emplacements ci-dessus, sans jamais ecraser un fichier deja present.
+
+**La desinstallation supprime tout le dossier d'installation**, et pas
+seulement ce que l'installateur y avait pose. Le desinstalleur d'Inno ne
+connait que les fichiers qu'il a ecrits et ne retire un dossier que s'il est
+vide : le moindre fichier apparu apres l'installation -- cache Python ou numba
+ecrit a cote d'une bibliotheque, journal, reglage reecrit -- bloquait son
+dossier parent, et le dossier d'installation restait debout au complet. Rangez
+donc vos propres fichiers ailleurs : ce dossier est fait pour disparaitre
+entierement.
 
 En mode script (depot clone), rien ne change : tout reste dans le depot.
 
