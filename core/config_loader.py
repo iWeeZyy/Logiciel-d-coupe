@@ -175,3 +175,21 @@ def load_youtube_config() -> dict:
     data = _load_json("youtube.json")
     _validate_weights(data.get("weights", {}))
     return data
+
+
+def load_radar_config() -> dict:
+    """Reglages du Radar (config/radar.json).
+
+    Absent ou illisible -> dict vide : chaque module retombe alors sur ses
+    valeurs par defaut. Un fichier de config casse ne doit pas empecher le
+    Radar de fonctionner.
+    """
+    path = CONFIG_DIR / "radar.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}

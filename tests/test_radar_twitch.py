@@ -132,6 +132,7 @@ def test_vods_older_than_the_period_are_filtered_out():
          "view_count": 9000, "url": "u2", "thumbnail_url": ""},
     ]}})
 
+    adapter.content_kinds = (KIND_VOD,)   # les VOD ne sont plus cherchées par défaut
     vods = [o for o in adapter.scan(_creator(), _iso(24)) if o.kind == KIND_VOD]
 
     assert [v.content_id for v in vods] == ["V1"]
@@ -240,3 +241,74 @@ def test_without_history_no_percentage_is_invented():
 
 def test_an_offline_streamer_has_no_stream_potential():
     assert stream_potential(None, 9000) == (0.0, None)
+
+
+# ------------------------------------------------- types de contenu
+
+def test_vods_are_not_searched_by_default():
+    # Une rediffusion de quatre heures n'a rien qui designe le moment
+    # interessant, et Twitch n'offre aucun moyen officiel de la recuperer.
+    from radar.platforms.twitch import DEFAULT_CONTENT_KINDS
+
+    assert DEFAULT_CONTENT_KINDS == (KIND_CLIP, KIND_LIVE)
+
+
+def test_a_disabled_kind_triggers_no_request_at_all():
+    # Filtrer apres coup consommerait une requete par createur et par scan
+    # pour un resultat jete.
+    adapter = FakeTwitch({
+        "clips": {"data": [{"id": "C1", "title": "T", "created_at": _iso(1),
+                            "duration": 20, "view_count": 100, "url": "u"}]},
+        "streams": {"data": []},
+        "videos": {"data": [{"id": "V1", "title": "VOD", "published_at": _iso(1),
+                             "duration": "2h", "view_count": 50, "url": "u",
+                             "thumbnail_url": ""}]},
+    })
+
+    adapter.scan(_creator(), _iso(24))
+    endpoints = [endpoint for endpoint, _ in adapter.calls]
+
+    assert "videos" not in endpoints, "aucune requête VOD quand le type est désactivé"
+    assert "clips" in endpoints and "streams" in endpoints
+
+
+def test_asking_only_for_clips_returns_only_clips():
+    adapter = FakeTwitch({
+        "clips": {"data": [{"id": "C1", "title": "T", "created_at": _iso(1),
+                            "duration": 20, "view_count": 100, "url": "u"}]},
+        "streams": {"data": [{"id": "S1", "title": "Live", "viewer_count": 900,
+                              "started_at": _iso(2), "thumbnail_url": ""}]},
+    })
+    adapter.content_kinds = (KIND_CLIP,)
+
+    found = adapter.scan(_creator(), _iso(24))
+
+    assert [o.kind for o in found] == [KIND_CLIP]
+    assert "streams" not in [endpoint for endpoint, _ in adapter.calls]
+
+
+def test_vods_can_still_be_enabled_for_whoever_wants_them():
+    adapter = FakeTwitch({"videos": {"data": [
+        {"id": "V1", "title": "VOD", "published_at": _iso(1), "duration": "2h",
+         "view_count": 50, "url": "u", "thumbnail_url": ""}]}})
+    adapter.content_kinds = (KIND_VOD,)
+
+    assert [o.kind for o in adapter.scan(_creator(), _iso(24))] == [KIND_VOD]
+
+
+def test_the_configuration_file_drives_the_kinds():
+    from core.config_loader import load_radar_config
+
+    kinds = (load_radar_config().get("twitch", {}) or {}).get("content_kinds")
+
+    assert kinds == ["clip", "live"], "config/radar.json est la source de ce réglage"
+
+
+def test_a_broken_configuration_file_never_blocks_the_radar(monkeypatch, tmp_path):
+    from core import config_loader
+
+    broken = tmp_path / "radar.json"
+    broken.write_text("{ ceci n'est pas du json", encoding="utf-8")
+    monkeypatch.setattr(config_loader, "CONFIG_DIR", tmp_path)
+
+    assert config_loader.load_radar_config() == {}

@@ -376,3 +376,35 @@ def test_the_dashboard_counts_what_was_actually_found(tmp_path):
 @pytest.mark.parametrize("period", list(PERIODS))
 def test_every_advertised_period_is_usable(period):
     assert since_iso(period, NOW) < NOW.isoformat()
+
+
+def test_a_scan_stamps_its_snapshot_with_its_own_reference_time(tmp_path):
+    # Defaut reel : le score utilisait la reference fournie mais le releve
+    # prenait l'horloge reelle. Un scan melangeait donc deux horloges, et la
+    # progression calculee dependait de l'heure a laquelle il tournait -- un
+    # test passait le matin et echouait l'apres-midi.
+    store, engine = _engine(tmp_path, StubAdapter({"youtube:UC1": [_opportunity("v1", 4200)]}))
+    store.upsert_creator(Creator(platform="youtube", platform_id="UC1", display_name="A"))
+
+    engine.scan(reference=NOW)
+
+    stored = store.list_opportunities()[0]
+    captured = store.snapshots(stored.key)[0].captured_at
+    assert captured.startswith("2026-09-08T12:00"), captured
+
+
+def test_two_scans_at_known_times_give_a_deterministic_trend(tmp_path):
+    from datetime import timedelta as _td
+
+    store, engine = _engine(tmp_path, StubAdapter({"youtube:UC1": [_opportunity("v1", 18500)]}))
+    store.upsert_creator(Creator(platform="youtube", platform_id="UC1", display_name="A"))
+
+    engine.scan(reference=NOW - _td(hours=1))
+    assert store.list_opportunities()[0].trend["level"] == "inconnue"
+
+    engine.adapters["youtube"].per_creator["youtube:UC1"] = [_opportunity("v1", 42000)]
+    engine.scan(reference=NOW)
+
+    trend = store.list_opportunities()[0].trend
+    assert trend["level"] == "forte"
+    assert trend["growth_percent"] == pytest.approx(127.0, abs=1.0)

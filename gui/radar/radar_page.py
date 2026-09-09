@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.cancellation import CancelToken
+from core.config_loader import load_radar_config
 from radar.creators import CreatorAlreadyWatched, CreatorManager
 from radar.engine import DEFAULT_PERIOD, PERIODS, RadarEngine
 from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE, PRIORITIES, PRIORITY_LABELS
@@ -84,8 +85,16 @@ class RadarPage(QWidget):
         super().__init__()
         self.controller = controller
         self.store = RadarStore()
-        self.adapters = {PLATFORM_YOUTUBE: YouTubeAdapter(), PLATFORM_TWITCH: TwitchAdapter()}
-        self.engine = RadarEngine(self.store, self.adapters)
+        self.config = load_radar_config()
+        twitch_kinds = (self.config.get("twitch", {}) or {}).get("content_kinds")
+        self.adapters = {
+            PLATFORM_YOUTUBE: YouTubeAdapter(),
+            PLATFORM_TWITCH: TwitchAdapter(content_kinds=twitch_kinds),
+        }
+        self.engine = RadarEngine(
+            self.store, self.adapters,
+            weights=(self.config.get("score", {}) or {}).get("weights", {}),
+        )
         self.creators = CreatorManager(self.store)
         self._thread: ScanThread | None = None
         self._cancel_token: CancelToken | None = None
@@ -103,7 +112,10 @@ class RadarPage(QWidget):
         self.period_combo = QComboBox()
         for key in PERIODS:
             self.period_combo.addItem(f"Dernières {key}", key)
-        self.period_combo.setCurrentIndex(list(PERIODS).index(DEFAULT_PERIOD))
+        configured = (self.config.get("scan", {}) or {}).get("default_period", DEFAULT_PERIOD)
+        if configured not in PERIODS:
+            configured = DEFAULT_PERIOD
+        self.period_combo.setCurrentIndex(list(PERIODS).index(configured))
         header.addWidget(self.period_combo)
 
         self.scan_btn = QPushButton("🔄  Scanner maintenant")

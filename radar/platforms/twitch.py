@@ -46,6 +46,23 @@ _OAUTH = "https://id.twitch.tv/oauth2/token"
 
 CREDENTIALS_FILE = "twitch_credentials.txt"
 
+# Types de contenu recherches par defaut.
+#
+# Les CLIPS sont le coeur du Radar Twitch : ils sont deja le decoupage d'un
+# moment fort, fait par le public au moment ou il s'est produit. C'est
+# exactement le travail de selection que le reste du logiciel cherche a
+# automatiser, et le public l'a fait gratuitement.
+#
+# Les DIRECTS sont conserves parce qu'ils ne sont pas du contenu a recuperer
+# mais un signal de surveillance : savoir qui est en train de streamer, et
+# devant combien de monde, est ce que la section "Live Radar" demande.
+#
+# Les VOD sont ECARTEES par defaut : une rediffusion de quatre heures n'a rien
+# qui designe le moment interessant, et Twitch n'offre aucun moyen officiel de
+# la recuperer. Elles restent activables pour qui veut surveiller la simple
+# activite d'une chaine.
+DEFAULT_CONTENT_KINDS = (KIND_CLIP, KIND_LIVE)
+
 _DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
 
 
@@ -119,12 +136,20 @@ class TwitchAdapter(PlatformAdapter):
     platform = PLATFORM
 
     def __init__(self, client_id: str | None = None, client_secret: str | None = None,
-                 timeout: int = 15):
+                 timeout: int = 15, content_kinds=None):
         self._client_id = client_id
         self._client_secret = client_secret
         self._token = ""
         self._token_expires_at = 0.0
         self.timeout = timeout
+        # Types de contenu recherches. Les VOD sont ECARTEES par defaut : une
+        # rediffusion de quatre heures n'est pas une opportunite exploitable
+        # (rien n'y designe le moment fort, et Twitch n'offre aucun moyen
+        # officiel de la recuperer). Les clips, eux, sont deja le decoupage
+        # d'un moment fort fait par le public -- c'est le travail de selection
+        # le plus difficile, deja fait. Reglable dans config/radar.json.
+        self.content_kinds = tuple(content_kinds) if content_kinds is not None \
+            else DEFAULT_CONTENT_KINDS
 
     # ------------------------------------------------------------- etat
     def _credentials(self) -> tuple[str, str]:
@@ -250,11 +275,19 @@ class TwitchAdapter(PlatformAdapter):
         return by_key
 
     def scan(self, creator: Creator, since_iso: str, max_results: int = 50) -> list[Opportunity]:
-        """Direct en cours, VOD et clips recents de ce createur."""
+        """Contenus recents de ce createur, selon les types demandes.
+
+        Un type desactive n'est pas seulement filtre apres coup : la requete
+        correspondante n'est PAS envoyee. Chercher des VOD dont on ne veut pas
+        consommerait une requete par createur et par scan pour rien.
+        """
         out: list[Opportunity] = []
-        out.extend(self._live(creator))
-        out.extend(self._clips(creator, since_iso, max_results))
-        out.extend(self._videos(creator, since_iso, max_results))
+        if KIND_LIVE in self.content_kinds:
+            out.extend(self._live(creator))
+        if KIND_CLIP in self.content_kinds:
+            out.extend(self._clips(creator, since_iso, max_results))
+        if KIND_VOD in self.content_kinds:
+            out.extend(self._videos(creator, since_iso, max_results))
         return out
 
     def _live(self, creator: Creator) -> list[Opportunity]:

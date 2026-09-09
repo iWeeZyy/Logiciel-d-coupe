@@ -1,0 +1,30 @@
+{
+  "_comment": "Reglages du Radar. Le scan a besoin d'internet ; scores, tendances, historique et favoris sont calcules localement a partir de ce qui a deja ete recupere.",
+
+  "scan": {
+    "_comment": "Periode analysee par defaut et nombre maximal de resultats par createur. Les periodes disponibles sont 6h, 12h, 24h, 3j et 7j.",
+    "default_period": "24h",
+    "max_results_per_creator": 50
+  },
+
+  "twitch": {
+    "_comment": "Types de contenu recherches sur Twitch. Un type absent de cette liste ne declenche AUCUNE requete -- ce n'est pas un filtre applique apres coup. 'clip' : deja le decoupage d'un moment fort fait par le public, c'est le coeur du Radar. 'live' : signal de surveillance (qui streame, devant combien de monde), pas du contenu a recuperer. 'vod' : ecarte par defaut -- une rediffusion de quatre heures n'a rien qui designe le moment interessant, et Twitch n'offre aucun moyen officiel de la recuperer.",
+    "content_kinds": ["clip", "live"]
+  },
+
+  "youtube": {
+    "_comment": "Duree maximale, en secondes, en dessous de laquelle une video est consideree comme un Short. L'API YouTube n'expose AUCUN champ le disant : c'est une heuristique, et l'interface la presente comme telle. 180 s est la borne haute depuis le passage de YouTube de 60 s a 3 minutes.",
+    "short_max_duration_s": 180
+  },
+
+  "score": {
+    "_comment": "Poids du Radar Score. Renormalises : une somme differente de 1 ne change pas l'echelle. Une composante non mesurable est retiree du calcul et son poids redistribue, jamais remplacee par une valeur plausible.",
+    "weights": {
+      "speed": 0.30,
+      "engagement": 0.20,
+      "relative": 0.30,
+      "freshness": 0.10,
+      "format": 0.10
+    }
+  }
+}

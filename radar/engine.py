@@ -21,7 +21,7 @@ c'est ce qui rend la progression mesurable au scan suivant.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 
 from core.logging_setup import get_logger
@@ -133,7 +133,14 @@ class RadarEngine:
         createur est lu APRES pour que la comparaison relative inclue ce qui
         vient d'etre vu.
         """
-        self.store.add_snapshot(opportunity.snapshot())
+        snapshot = opportunity.snapshot()
+        if reference is not None:
+            # Un scan doit etre coherent : le releve porte le MEME instant que
+            # celui qui sert a noter et a dater. Sans cela, un scan pilote sur
+            # une reference fixe (tests, rejeu) melange deux horloges et la
+            # progression calculee depend de l'heure a laquelle il tourne.
+            snapshot = replace(snapshot, captured_at=reference.isoformat(timespec="milliseconds"))
+        self.store.add_snapshot(snapshot)
 
         history = [
             other for other in self.store.list_opportunities(creator_key=creator.key, limit=60)
