@@ -57,9 +57,9 @@
   },
 
   "export": {
-    "_comment": "Haute qualite par defaut : CRF 18 et preset lent. Le fichier est plus lourd et l'encodage plus long, mais c'est la seule etape ou de la qualite se perd definitivement -- Instagram et TikTok reencodent ce qu'on leur envoie, et ils reencodent ce qu'ils recoivent, pas l'original. Repassable en Standard dans Parametres.",
+    "_comment": "Haute qualite par defaut : CRF 18. C'est le CRF qui porte la qualite -- le preset ne regle que le temps que l'encodeur passe a chercher une facon de compresser. Mesure sur un clip reel de 24 s en 1080x1920, meme chaine de filtres : preset slow 54 s / 25,2 Mo / SSIM 0,9892 ; preset medium 30 s / 25,4 Mo / SSIM 0,9893. slow coutait 24 secondes de plus sans rien rendre de mieux, d'ou medium. L'encodage reste la seule etape ou de la qualite se perd definitivement, et les plateformes reencodent ce qu'on leur envoie : c'est pour cela que le CRF, lui, reste a 18. Repassable en Standard (CRF 23) dans Parametres.",
     "video_bitrate_crf": 18,
-    "video_preset": "slow",
+    "video_preset": "medium",
     "audio_bitrate": "160k"
   }
 }

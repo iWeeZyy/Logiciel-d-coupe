@@ -33,7 +33,13 @@ from utils.hardware import cuda_device_count
 
 _MODEL_CHOICES = [("tiny", "Tiny"), ("base", "Base"), ("small", "Small"), ("medium", "Medium"), ("large-v3", "Large")]
 _DEVICE_CHOICES = [("auto", "Automatique"), ("cpu", "CPU"), ("cuda", "GPU (CUDA)")]
-_QUALITY_CHOICES = [("standard", "Standard", 23, "medium"), ("high", "Haute qualité", 18, "slow")]
+# La qualite, c'est le CRF. Le preset ne regle que l'EFFORT de l'encodeur : a
+# CRF egal, "slow" ne rend pas une meilleure image, il cherche plus longtemps
+# une facon de la compresser. Mesure sur un clip reel de 24 s en 1080x1920 :
+# slow 54 s pour 25,2 Mo et un SSIM de 0,9892, medium 30 s pour 25,4 Mo et un
+# SSIM de 0,9893. Presque deux fois plus de temps pour 0,2 Mo, donc medium des
+# deux cotes.
+_QUALITY_CHOICES = [("standard", "Standard", 23, "medium"), ("high", "Haute qualité", 18, "medium")]
 
 _WEIGHT_KEYS = [
     ("audio", "Audio"),
