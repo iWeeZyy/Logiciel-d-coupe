@@ -57,8 +57,9 @@
   },
 
   "export": {
-    "video_bitrate_crf": 20,
-    "video_preset": "medium",
+    "_comment": "Haute qualite par defaut : CRF 18 et preset lent. Le fichier est plus lourd et l'encodage plus long, mais c'est la seule etape ou de la qualite se perd definitivement -- Instagram et TikTok reencodent ce qu'on leur envoie, et ils reencodent ce qu'ils recoivent, pas l'original. Repassable en Standard dans Parametres.",
+    "video_bitrate_crf": 18,
+    "video_preset": "slow",
     "audio_bitrate": "160k"
   }
 }

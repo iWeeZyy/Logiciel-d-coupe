@@ -147,6 +147,10 @@ class ClipAnalysisDialog(QDialog):
         self.creators = creators or {}
         self.controller = controller
         self._media_thread: MediaThread | None = None
+        # Vrai quand l'analyse doit enchainer sur une production. La
+        # transcription est mise en cache sur le chemin du fichier : la
+        # production qui suit ne la refait pas.
+        self._chain_production = False
         self.media_paths: dict[str, str] = {}
         self.results: list = []
         self.errors: list[tuple[str, str]] = []
@@ -171,6 +175,16 @@ class ClipAnalysisDialog(QDialog):
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         outer.addWidget(self.scroll, 1)
 
+        # Les options vivent dans la FENETRE et non dans le panneau defilant :
+        # afficher le resultat remplace ce panneau, ce qui detruisait le
+        # composant et faisait planter la production lancee juste apres. Elles
+        # restent aussi visibles a cote du resultat, ce qui est plus utile.
+        production_title = QLabel("Production du clip")
+        production_title.setStyleSheet("font-weight: 700;")
+        outer.addWidget(production_title)
+        self.production_options = ProductionOptionsBox(columns=3)
+        outer.addWidget(self.production_options)
+
         self.progress_label = QLabel()
         self.progress_label.setWordWrap(True)
         self.progress_label.setVisible(False)
@@ -182,7 +196,16 @@ class ClipAnalysisDialog(QDialog):
         outer.addWidget(self.progress)
 
         buttons = QHBoxLayout()
-        self.start_button = QPushButton("▶ Lancer l'analyse")
+        # Une action principale qui fait la chaine complete : recuperer le clip,
+        # l'ecouter, puis le produire avec les options choisies. C'est le geste
+        # attendu depuis le Radar -- separer les deux obligeait a cliquer deux
+        # fois pour un enchainement qui n'a jamais de raison d'etre coupe.
+        self.full_button = QPushButton("🚀 Analyser et produire")
+        self.full_button.setProperty("variant", "primary")
+        self.full_button.clicked.connect(self._analyze_and_produce)
+        buttons.addWidget(self.full_button)
+
+        self.start_button = QPushButton("▶ Analyser seulement")
         self.start_button.clicked.connect(self._start)
         buttons.addWidget(self.start_button)
 
@@ -190,10 +213,6 @@ class ClipAnalysisDialog(QDialog):
         self.reanalyze_button.clicked.connect(lambda: self._start(force=True))
         self.reanalyze_button.setVisible(False)
         buttons.addWidget(self.reanalyze_button)
-
-        self.produce_button = QPushButton("🏭 Produire les clips")
-        self.produce_button.clicked.connect(self._produce)
-        buttons.addWidget(self.produce_button)
 
         self.cancel_button = QPushButton("Annuler l'analyse")
         self.cancel_button.clicked.connect(self._cancel)
@@ -271,23 +290,6 @@ class ClipAnalysisDialog(QDialog):
                            else "📁 Choisir le fichier du clip…")
         pick.clicked.connect(self._pick_media)
         layout.addWidget(pick)
-
-        # Options de production, ici et pas ailleurs : c'est depuis cette
-        # fenetre qu'on lance un decoupage, donc c'est ici que les choix se
-        # font. Le meme composant que la page Accueil, pas une seconde liste de
-        # cases qui finirait par diverger.
-        production_title = QLabel("Production des clips")
-        production_title.setStyleSheet("font-weight: 700;")
-        layout.addWidget(production_title)
-        self.production_options = ProductionOptionsBox(columns=2)
-        layout.addWidget(self.production_options)
-
-        production_hint = QLabel(
-            "« Produire les clips » lance le découpage complet sur ce clip, avec "
-            "ces options. L'analyse du contenu, elle, ne produit que du texte.")
-        production_hint.setWordWrap(True)
-        production_hint.setProperty("role", "muted")
-        layout.addWidget(production_hint)
 
         # Fichier deja utilise lors d'une precedente analyse : repropose s'il
         # existe toujours, pour ne pas redemander le meme fichier a chaque fois.
@@ -399,6 +401,7 @@ class ClipAnalysisDialog(QDialog):
         self._thread.finished_all.connect(self._on_finished)
 
         self.start_button.setVisible(False)
+        self.full_button.setVisible(False)
         self.reanalyze_button.setVisible(False)
         self.cancel_button.setVisible(True)
         self.progress.setVisible(True)
@@ -440,15 +443,30 @@ class ClipAnalysisDialog(QDialog):
         self._thread = None
 
         if self._cancel_token is not None and self._cancel_token.is_cancelled and not self.results:
+            self._chain_production = False
             self.header.setText("Analyse annulée")
             self.start_button.setText("▶ Relancer l'analyse")
             self.start_button.setVisible(True)
+            self.full_button.setVisible(True)
+            self.full_button.setEnabled(True)
             return
 
         if self.errors and not self.results:
+            self._chain_production = False
             title, message = self.errors[0]
             QMessageBox.warning(self, "Analyse impossible", f"{title}\n\n{message}")
             self.start_button.setVisible(True)
+            self.full_button.setVisible(True)
+            self.full_button.setEnabled(True)
+            return
+
+        if self.results and self._chain_production:
+            self._chain_production = False
+            self._show_result(self.results[-1])
+            produced = self.results[-1]
+            if getattr(produced, "media_path", ""):
+                self.media_paths[produced.content_id] = produced.media_path
+            self._produce()
             return
 
         if self.results:
@@ -463,10 +481,32 @@ class ClipAnalysisDialog(QDialog):
         self.facts.setText("")
         self.scroll.setWidget(ClipAnalysisView(analysis))
         self.start_button.setVisible(False)
+        # Le bouton principal reste, avec un libelle qui dit ce qu'il reste a
+        # faire : l'analyse est la, la production non.
+        self.full_button.setText("🚀 Produire le clip")
+        self.full_button.setVisible(True)
+        self.full_button.setEnabled(True)
         self.reanalyze_button.setVisible(True)
         self.cancel_button.setVisible(False)
 
     # ---------------------------------------------------------- production
+    def _analyze_and_produce(self) -> None:
+        """Ecoute le clip puis le produit, en une seule action."""
+        if self.is_batch:
+            QMessageBox.information(
+                self, "Un clip à la fois",
+                "Le découpage traite une source à la fois. Sélectionnez un seul clip "
+                "pour l'analyser et le produire.")
+            return
+        self._chain_production = True
+        self._start()
+        if self._thread is None:
+            # Rien n'a demarre (analyse deja faite et affichee, ou media
+            # manquant) : on produit directement plutot que d'attendre un fil
+            # qui n'existe pas.
+            self._chain_production = False
+            self._produce()
+
     def _produce(self) -> None:
         """Lance le decoupage complet de ce clip par le pipeline existant.
 
@@ -503,7 +543,7 @@ class ClipAnalysisDialog(QDialog):
         self._media_thread.ready.connect(self._on_media_ready)
         self._media_thread.failed.connect(self._on_media_failed)
 
-        self.produce_button.setEnabled(False)
+        self.full_button.setEnabled(False)
         self.start_button.setEnabled(False)
         self.progress.setVisible(True)
         self.progress.setValue(0)
@@ -522,7 +562,7 @@ class ClipAnalysisDialog(QDialog):
         self.progress.setRange(0, 100)
         self.progress.setVisible(False)
         self.progress_label.setVisible(False)
-        self.produce_button.setEnabled(True)
+        self.full_button.setEnabled(True)
         self.start_button.setEnabled(True)
         self._media_thread = None
         if message != "__cancelled__":
