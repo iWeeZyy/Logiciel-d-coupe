@@ -97,7 +97,8 @@ def run(
     # exactement le defaut deja corrige sur la case des sous-titres.
     montage_audio_cfg = (settings.editing_module("montage").get("audio")
                          if settings.editing_module_enabled("montage") else None)
-    reserved_bottom = watermark_reserved_bottom(watermark, settings.target_size()[0])
+    reserved_bottom = watermark_reserved_bottom(
+        watermark, settings.target_size()[0], out_h=settings.target_size()[1])
     # La source EST deja le clip (Radar) : il n'y a pas de passage a chercher
     # dedans, donc pas de recadrage temporel non plus. La detection du contexte
     # deplacerait des bornes choisies par la personne qui a decoupe le clip.
@@ -338,6 +339,7 @@ def run(
                     fps=source_fps,
                     target_size=settings.target_size(),
                     watermark=watermark,
+                    fill=settings.fill_mode,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est

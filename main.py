@@ -96,6 +96,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                             help="Desactive le montage automatique (coupe des silences, zooms).")
     production.add_argument("--no-watermark", dest="no_watermark", action="store_true",
                             help="Ne pas poser le logo en filigrane sur les clips.")
+    production.add_argument("--black-bars", dest="black_bars", action="store_true",
+                            help="En 16:9, completer avec des bandes noires au lieu du fond flou.")
     production.add_argument("--whole-source", dest="whole_source", action="store_true",
                             help="La source est deja un clip : la traiter en entier, "
                                  "sans y chercher ni y recadrer un passage.")

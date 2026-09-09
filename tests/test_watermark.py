@@ -234,3 +234,88 @@ def test_the_config_alone_can_turn_the_watermark_off():
 
     assert Settings(editing={"watermark": {"enabled": False}}
                     ).editing_module_enabled("watermark") is False
+
+
+# ------------------------------------------------ remplissage du cadre 16:9
+
+def test_the_black_bars_are_the_historical_behaviour():
+    from video.filter_graph import FILL_BLACK, landscape_fill_chain
+
+    chain = landscape_fill_chain(1920, 1080, FILL_BLACK)
+
+    assert chain.startswith("scale=1920:1080:force_original_aspect_ratio=decrease")
+    assert "pad=1920:1080" in chain
+    assert "gblur" not in chain
+
+
+def test_the_blur_fill_uses_a_copy_of_the_image_itself():
+    # Rien n'est invente : le fond EST l'image, agrandie pour couvrir le cadre
+    # puis floutee. L'image nette reste entiere et centree par-dessus.
+    from video.filter_graph import FILL_BLUR, landscape_fill_chain
+
+    chain = landscape_fill_chain(1920, 1080, FILL_BLUR)
+
+    assert "split=2" in chain
+    assert "force_original_aspect_ratio=increase" in chain      # le fond couvre
+    assert "force_original_aspect_ratio=decrease" in chain      # l'image entiere
+    assert "gblur=sigma=" in chain
+    assert chain.rstrip().endswith("overlay=(W-w)/2:(H-h)/2")
+    assert "pad=" not in chain                                   # plus de bandes
+
+
+def test_the_blur_graph_plugs_into_both_ffmpeg_forms():
+    # Le graphe porte des etiquettes internes : il doit rester utilisable
+    # derriere une entree et devant une sortie, dans les deux constructions.
+    from editing.timeline import EditList
+    from video.filter_graph import FILL_BLUR, build_ffmpeg_args
+
+    simple = build_ffmpeg_args(
+        video_path="in.mp4", edit_list=EditList.identity(0.0, 5.0), framing_plan=None,
+        zoom_track=None, src_w=1080, src_h=1920, fps=25.0, face_hint=None, ass_path=None,
+        audio_cfg=None, export_settings={}, out_mp4_path="out.mp4",
+        target_size=(1920, 1080), fill=FILL_BLUR)
+    graph = simple[simple.index("-vf") + 1]
+
+    assert graph.startswith("split=2[vsbg][vsfg];")
+    assert graph.rstrip().endswith("overlay=(W-w)/2:(H-h)/2")
+
+    montage = build_ffmpeg_args(
+        video_path="in.mp4", edit_list=EditList.keeping(0.0, 10.0, removed=[(4.0, 5.0)]),
+        framing_plan=None, zoom_track=None, src_w=1080, src_h=1920, fps=25.0,
+        face_hint=None, ass_path=None, audio_cfg=None, export_settings={},
+        out_mp4_path="out.mp4", target_size=(1920, 1080), fill=FILL_BLUR)
+    complex_graph = montage[montage.index("-filter_complex") + 1]
+
+    assert "[vc]split=2[vsbg][vsfg];" in complex_graph
+    assert "overlay=(W-w)/2:(H-h)/2[vout]" in complex_graph
+
+
+def test_the_portrait_format_never_needs_a_fill():
+    # En 9:16 le recadrage remplit deja le cadre : pas de bandes, donc pas de
+    # fond a inventer.
+    from video.filter_graph import FILL_BLUR, build_video_chain
+    from editing.timeline import EditList
+
+    chain = build_video_chain(
+        edit_list=EditList.identity(0.0, 5.0), framing_plan=None, zoom_track=None,
+        src_w=1920, src_h=1080, fps=25.0, target_size=(1080, 1920), fill=FILL_BLUR)
+
+    assert "gblur" not in chain and "split=2" not in chain
+
+
+def test_the_margin_is_the_same_to_the_eye_in_both_formats():
+    # Calculee sur la largeur seule, la marge valait 230 px en 16:9 contre 130
+    # en 9:16, et le logo flottait au milieu du cadre horizontal.
+    mark = wm.Watermark(image="x", margin_percent=12.0)
+
+    assert wm.overlay_position(mark, 1080, 1920) == "(W-w)/2:H-h-130"
+    assert wm.overlay_position(mark, 1920, 1080) == "(W-w)/2:H-h-130"
+
+
+def test_the_blur_can_be_turned_off_from_the_settings():
+    from types import SimpleNamespace
+
+    from core.config_loader import load_settings
+
+    assert load_settings(SimpleNamespace(input="x")).fill_mode == "flou"
+    assert load_settings(SimpleNamespace(input="x", black_bars=True)).fill_mode == "noir"

@@ -63,6 +63,14 @@ class ProductionOptionsBox(QWidget):
         format_row.addStretch(1)
         layout.addLayout(format_row)
 
+        # En 16:9, une source verticale laisse des bandes. Le fond flou les
+        # remplit avec une copie floutee de l'image elle-meme -- rien n'est
+        # invente, rien n'est rogne. Sans objet en 9:16, ou le recadrage
+        # remplit deja le cadre : la case y est grisee.
+        self.blur_check = QCheckBox("Fond flou au lieu des bandes noires (16:9)")
+        self.blur_check.setChecked(True)
+        layout.addWidget(self.blur_check)
+
         self.hint = QLabel("")
         self.hint.setProperty("role", "muted")
         self.hint.setWordWrap(True)
@@ -97,6 +105,10 @@ class ProductionOptionsBox(QWidget):
     def aspect(self) -> str:
         return self.aspect_combo.currentData()
 
+    def fill_mode(self) -> str:
+        """« flou » ou « noir ». En 9:16 la valeur n'est pas utilisee."""
+        return "flou" if self.blur_check.isChecked() else "noir"
+
     def is_portrait(self) -> bool:
         return self.aspect() == ASPECT_PORTRAIT
 
@@ -130,3 +142,4 @@ class ProductionOptionsBox(QWidget):
         box = self.boxes.get("framing")
         if box is not None:
             box.setEnabled(portrait)
+        self.blur_check.setEnabled(not portrait)

@@ -143,7 +143,8 @@ def build_variant(text: str, label: str, style: str, request: RewriteRequest,
 def rewrite(request: RewriteRequest, provider, cancel_token: Optional[CancelToken] = None,
             on_step: Optional[Callable[[int, int, str], None]] = None,
             model_name: str = "", use_cache: bool = True,
-            stricter: bool = False) -> RewriteResult:
+            stricter: bool = False,
+            on_words: Optional[Callable[[int, int], None]] = None) -> RewriteResult:
     """Produit les variantes demandees.
 
     `stricter` renforce la consigne de fidelite : c'est ce qu'utilise le bouton
@@ -186,7 +187,10 @@ def rewrite(request: RewriteRequest, provider, cancel_token: Optional[CancelToke
         style = styles[index % len(styles)]
         label = f"{labels[index]} — {STYLE_LABELS.get(style, style)}"
         if on_step:
-            on_step(2, 3, f"Génération : {label}")
+            # Le premier appel couvre aussi le chargement du modele, qui prend
+            # plusieurs secondes : sans ce message, l'interface parait figee.
+            on_step(2, 3, ("Chargement du modèle puis génération : " if index == 0
+                           else "Génération : ") + label)
         user_prompt = prompts.build_user_prompt(request, analysis, style=style,
                                                 variant_label=STYLE_LABELS.get(style, style))
         if stricter:
@@ -194,7 +198,7 @@ def rewrite(request: RewriteRequest, provider, cancel_token: Optional[CancelToke
         try:
             text = provider.generate(prompts.SYSTEM_PROMPT, user_prompt,
                                      max_words=int(request.target_words * 1.4),
-                                     cancel_token=cancel_token)
+                                     cancel_token=cancel_token, on_progress=on_words)
         except CancelledError:
             raise
         except ProviderError as error:

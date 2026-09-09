@@ -65,6 +65,10 @@ class Settings:
     smart_framing: bool = True
     auto_montage: bool = True
     watermark_enabled: bool = True
+    # Comment remplir un cadre 16:9 quand la source est plus etroite : "flou"
+    # (une copie floutee de l'image) ou "noir" (des bandes). Sans effet en
+    # 9:16, ou le recadrage remplit deja le cadre.
+    fill_mode: str = "flou"
     # La source est deja un clip : on la traite en entier, sans y chercher un
     # passage. Mis par le Radar, ou par --whole-source en ligne de commande.
     whole_source: bool = False
@@ -192,6 +196,9 @@ def load_settings(cli_args: Any) -> Settings:
         smart_framing=not bool(getattr(cli_args, "no_smart_framing", False)),
         auto_montage=not bool(getattr(cli_args, "no_auto_montage", False)),
         watermark_enabled=not bool(getattr(cli_args, "no_watermark", False)),
+        fill_mode=("noir" if getattr(cli_args, "black_bars", False)
+                   else (getattr(cli_args, "fill_mode", None)
+                         or defaults.get("fill_mode") or "flou")),
         whole_source=bool(getattr(cli_args, "whole_source", False)),
         weights=weights,
         scoring_params=settings_json.get("scoring_params", {}),

@@ -88,6 +88,40 @@ def _framing_points(
     return xs, ys
 
 
+FILL_BLACK = "noir"
+FILL_BLUR = "flou"
+
+# Flou du fond. Assez fort pour qu'on ne lise plus l'image, assez faible pour
+# que les couleurs et le mouvement restent -- c'est ce qui fait que le cadre
+# parait rempli plutot que barre de noir.
+BLUR_SIGMA = 24
+
+
+def landscape_fill_chain(out_w: int, out_h: int, fill: str = FILL_BLACK) -> str:
+    """Comment remplir un cadre plus large que l'image.
+
+    `noir` : bandes noires, le comportement d'origine.
+    `flou` : une copie de l'image, agrandie pour couvrir tout le cadre puis
+    floutee, sert de fond ; l'image nette est posee dessus, entiere et centree.
+    Rien n'est rogne ni deforme -- ce qui est ajoute est une version floue de
+    l'image elle-meme, pas une invention.
+
+    Le graphe renvoye contient des etiquettes internes et des ';'. C'est
+    volontaire et compatible avec les deux usages : place derriere une entree
+    et devant une sortie, il reste un filtrage a une entree et une sortie.
+    """
+    if fill != FILL_BLUR:
+        return (f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
+                f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2")
+    return (
+        "split=2[vsbg][vsfg];"
+        f"[vsbg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
+        f"crop={out_w}:{out_h},gblur=sigma={BLUR_SIGMA}[vsbgb];"
+        f"[vsfg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease[vsfgs];"
+        "[vsbgb][vsfgs]overlay=(W-w)/2:(H-h)/2"
+    )
+
+
 def build_video_chain(
     *,
     edit_list: EditList,
@@ -99,6 +133,7 @@ def build_video_chain(
     face_hint=None,
     ass_path: str | None = None,
     target_size: tuple[int, int] = (TARGET_W, TARGET_H),
+    fill: str = FILL_BLACK,
 ) -> str:
     """Chaine video (sans le montage, applique en amont) : cadrage, zoom,
     mise a l'echelle, sous-titres.
@@ -111,12 +146,10 @@ def build_video_chain(
     """
     out_w, out_h = target_size
     if out_w >= out_h:
-        chain = [
-            # decrease + pad : l'image entiere est conservee, et le cadre est
-            # complete par des bandes plutot que de deformer ou de rogner.
-            f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease",
-            f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2",
-        ]
+        # L'image entiere est conservee, et le cadre est complete -- par des
+        # bandes noires, ou par une copie floutee de l'image (voir
+        # landscape_fill_chain).
+        chain = [landscape_fill_chain(out_w, out_h, fill)]
         if ass_path:
             chain.append(subtitle_filter(ass_path))
         return ",".join(chain)
@@ -201,6 +234,7 @@ def build_ffmpeg_args(
     out_mp4_path: str,
     target_size: tuple[int, int] = (TARGET_W, TARGET_H),
     watermark=None,
+    fill: str = FILL_BLACK,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -209,7 +243,7 @@ def build_ffmpeg_args(
     video_chain = build_video_chain(
         edit_list=edit_list, framing_plan=framing_plan, zoom_track=zoom_track,
         src_w=src_w, src_h=src_h, fps=fps, face_hint=face_hint, ass_path=ass_path,
-        target_size=target_size,
+        target_size=target_size, fill=fill,
     )
     audio_chain = build_audio_chain(audio_cfg)
 
@@ -234,7 +268,7 @@ def build_ffmpeg_args(
 
         args += ["-i", watermark.image]
         logo_chain = prepare_filter(watermark, out_w)
-        position = overlay_position(watermark, out_w)
+        position = overlay_position(watermark, out_w, target_size[1])
 
     args += ["-t", f"{span:.3f}"]
 

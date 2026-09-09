@@ -40,6 +40,7 @@ def build_clip(
     fps: float = 25.0,
     target_size: Optional[tuple] = None,
     watermark=None,
+    fill: str = "flou",
 ) -> None:
     """`edit_list`, `framing_plan`, `zoom_track` et `audio_cfg` viennent des
     modules d'edition automatique. Tous absents, le rendu est exactement celui
@@ -70,6 +71,7 @@ def build_clip(
         export_settings=export_settings,
         out_mp4_path=out_mp4_path,
         watermark=watermark,
+        fill=fill,
         **({"target_size": tuple(target_size)} if target_size else {}),
     )
     run_ffmpeg(args, description=f"generation du clip {clip_label}", cancel_token=cancel_token)

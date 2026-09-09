@@ -681,6 +681,7 @@ trouve. Le meme composant sert aux deux, donc les choix y sont identiques.
 | --- | --- | --- |
 | Sous-titres | case "Sous-titres" | `--no-subtitles` |
 | Format | menu "Format" | `--aspect 9:16` / `--aspect 16:9` |
+| Fond flou en 16:9 | case "Fond flou" | `--black-bars` pour l'inverse |
 | Cadrage intelligent | case "Cadrage intelligent" | `--no-smart-framing` |
 | Montage auto | case "Montage auto" | `--no-auto-montage` |
 | Filigrane | case "Filigrane" | `--no-watermark` |
@@ -689,6 +690,14 @@ trouve. Le meme composant sert aux deux, donc les choix y sont identiques.
   n'est incruste. Jusqu'a la version qui introduit ce tableau, la case coupait
   l'export du fichier `.srt` mais les sous-titres restaient incrustes dans
   l'image -- c'etait un defaut, pas un choix.
+- **Fond flou (16:9)** : une source verticale dans un cadre horizontal laisse
+  des bandes. Le fond flou les remplit avec une COPIE de l'image elle-meme,
+  agrandie pour couvrir le cadre puis floutee ; l'image nette reste entiere et
+  centree par-dessus. Rien n'est rogne, rien n'est deforme, et rien n'est
+  invente -- ce qui remplit les bords est l'image, pas une image d'ailleurs.
+  Actif par defaut ; `--black-bars` (ou la case decochee) rend les bandes
+  noires. Sans objet en 9:16, ou le recadrage remplit deja le cadre : la case y
+  est grisee.
 - **16:9** : l'image d'origine est conservee, sans aucun recadrage. Une source
   qui n'est pas deja au format est completee par des bandes plutot que
   deformee ou rognee. Le cadrage intelligent n'a alors plus d'objet et la case

@@ -107,15 +107,24 @@ def prepare_filter(watermark: Watermark, out_w: int) -> str:
             f"colorchannelmixer=aa={watermark.opacity:.3f}")
 
 
-def overlay_position(watermark: Watermark, out_w: int) -> str:
+def overlay_position(watermark: Watermark, out_w: int, out_h: int | None = None) -> str:
     """Coordonnees de l'incrustation, en expressions ffmpeg.
 
     W et H sont la taille du fond, w et h celle du logo : la marge reste juste
     quelle que soit la definition de sortie, et le centrage aussi.
+
+    La marge se calcule sur le PLUS PETIT des deux cotes. Calculee sur la
+    largeur seule -- ce qui etait le cas -- elle vaut 12 % de 1920 en 16:9,
+    soit 230 pixels : un cinquieme d'une image haute de 1080, et le logo
+    flottait au milieu du cadre au lieu d'etre en bas. Calculee sur la hauteur
+    seule, c'est le format 9:16 qui se retrouve avec un logo trop remonte. Le
+    plus petit cote donne le meme ecart a l'oeil dans les deux formats.
     """
-    margin = max(0, int(round(out_w * watermark.margin_percent / 100.0)))
+    reference = min(out_w, out_h or out_w)
+    margin = max(0, int(round(reference * watermark.margin_percent / 100.0)))
+    margin_v = margin
     horizontal = {"gauche": f"{margin}", "centre": "(W-w)/2", "droite": f"W-w-{margin}"}
-    vertical = {"haut": f"{margin}", "bas": f"H-h-{margin}"}
+    vertical = {"haut": f"{margin_v}", "bas": f"H-h-{margin_v}"}
     position = watermark.position if watermark.position in POSITIONS else DEFAULT_POSITION
     band, side = position.split("-")
     return f"{horizontal[side]}:{vertical[band]}"
@@ -143,7 +152,8 @@ def logo_height_px(watermark: Watermark, out_w: int) -> int:
     return max(2, int(round(width * ratio)))
 
 
-def reserved_bottom_px(watermark: Watermark | None, out_w: int, gap_px: int = 24) -> int:
+def reserved_bottom_px(watermark: Watermark | None, out_w: int, gap_px: int = 24,
+                       out_h: int | None = None) -> int:
     """Hauteur de la bande basse occupee par le logo, sous-titres exclus.
 
     Sert a empecher les sous-titres de redescendre sur le logo : le placement
@@ -153,5 +163,6 @@ def reserved_bottom_px(watermark: Watermark | None, out_w: int, gap_px: int = 24
     """
     if watermark is None or not watermark.position.startswith("bas-"):
         return 0
-    margin = max(0, int(round(out_w * watermark.margin_percent / 100.0)))
+    reference = min(out_w, out_h or out_w)
+    margin = max(0, int(round(reference * watermark.margin_percent / 100.0)))
     return margin + logo_height_px(watermark, out_w) + max(0, gap_px)

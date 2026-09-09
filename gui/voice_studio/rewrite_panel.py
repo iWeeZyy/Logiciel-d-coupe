@@ -95,6 +95,13 @@ class RewritePanel(QWidget):
         self.status.setProperty("role", "muted")
         layout.addWidget(self.status)
 
+        # Quel modele a produit ce qui est affiche : la question se pose des
+        # qu'on en installe deux.
+        self.model_label = QLabel("")
+        self.model_label.setProperty("role", "muted")
+        self.model_label.setWordWrap(True)
+        layout.addWidget(self.model_label)
+
         self.variants_box = QVBoxLayout()
         self.variants_box.setSpacing(8)
         layout.addLayout(self.variants_box)
@@ -254,6 +261,9 @@ class RewritePanel(QWidget):
         ready = has_model and has_library and bool(self._transcript_text)
         self.generate_btn.setEnabled(ready)
         self.model_combo.setEnabled(has_model)
+        if has_model and not self.model_label.text():
+            self.model_label.setText(
+                f"Modèle sélectionné : {self.model_combo.currentText()}")
         if not has_library:
             self.status.setText(
                 "Le moteur de réécriture n'est pas disponible dans cette version de "
@@ -301,6 +311,7 @@ class RewritePanel(QWidget):
                                      model_name=key, stricter=stricter,
                                      use_cache=not stricter)
         self._worker.step.connect(self._on_step)
+        self._worker.words.connect(self._on_words)
         self._worker.done.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)
         self._worker.cancelled.connect(self._on_cancelled)
@@ -323,8 +334,14 @@ class RewritePanel(QWidget):
         self.progress.setValue(index)
         self.status.setText(f"{index}/{total}  {label}")
 
+    def _on_words(self, done: int, total: int) -> None:
+        if total:
+            self.status.setText(f"Génération : {done} mots produits sur environ {total}")
+
     def _on_done(self, result) -> None:
         self._result = result
+        used = llm_models.describe(result.model).label if result.model else ""
+        self.model_label.setText(f"Modèle utilisé : {used}" if used else "")
         self._show_variants(result)
 
     def _on_failed(self, message: str) -> None:

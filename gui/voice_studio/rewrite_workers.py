@@ -19,6 +19,7 @@ class RewriteWorker(QThread):
     """Transcript -> variantes de script."""
 
     step = Signal(int, int, str)         # numero, total, libelle
+    words = Signal(int, int)             # mots produits, mots vises
     done = Signal(object)                # RewriteResult
     failed = Signal(str)
     cancelled = Signal()
@@ -38,6 +39,7 @@ class RewriteWorker(QThread):
             result = service.rewrite(
                 self.request, self.provider, cancel_token=self.cancel_token,
                 on_step=lambda i, t, label: self.step.emit(i, t, label),
+                on_words=lambda done, total: self.words.emit(done, total),
                 model_name=self.model_name, use_cache=self.use_cache,
                 stricter=self.stricter)
         except CancelledError:

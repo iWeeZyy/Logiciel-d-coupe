@@ -600,6 +600,7 @@ class ClipAnalysisDialog(QDialog):
             no_cache=False,
             debug_scores=False,
             aspect=self.production_options.aspect(),
+            fill_mode=self.production_options.fill_mode(),
         )
         name = _project_name(opportunity)
         self.controller.start_analysis(
