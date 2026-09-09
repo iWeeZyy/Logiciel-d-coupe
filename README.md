@@ -462,10 +462,16 @@ passe supplementaire.
 - **La taille est un pourcentage de la largeur de sortie** (14 % par defaut),
   jamais un nombre de pixels : le logo pese pareil a l'oeil en 1080x1920 et en
   1920x1080. Une taille fixe serait deux fois trop grosse sur l'un des deux.
-- **En haut a droite par defaut.** Le bas du cadre est deja pris : les
-  sous-titres y sont incrustes et les plateformes y posent leur propre
-  interface. `position` accepte `haut-gauche`, `haut-droite`, `bas-gauche`,
-  `bas-droite`.
+- **En bas au centre par defaut**, sous les sous-titres. La colonne d'icones de
+  TikTok et d'Instagram est a droite, la legende a gauche : le centre bas est la
+  seule zone basse que leur interface laisse libre. `position` accepte
+  `haut-gauche`, `haut-centre`, `haut-droite`, `bas-gauche`, `bas-centre`,
+  `bas-droite` ; le centrage est calcule par ffmpeg (`(W-w)/2`) et reste donc
+  juste dans les deux formats.
+- **Les sous-titres ne peuvent pas retomber dessus.** Le placement intelligent
+  les rapproche du bas quand un visage occupe le cadre, et il n'a aucune raison
+  de savoir qu'un logo est pose la : la bande occupee par le filigrane (marge +
+  hauteur reelle de l'image + un ecart) devient son plancher.
 - **L'opacite multiplie l'alpha existant** (`colorchannelmixer=aa=`) au lieu de
   le remplacer : le bord adouci du disque est conserve, sinon le logo
   ressortirait dans un carre net.

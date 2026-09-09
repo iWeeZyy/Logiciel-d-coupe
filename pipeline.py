@@ -86,6 +86,7 @@ def run(
     logger.info(f"Video : {video_duration:.1f}s, {src_w}x{src_h}.")
 
     from video.watermark import from_config as watermark_from_config
+    from video.watermark import reserved_bottom_px as watermark_reserved_bottom
 
     watermark = (watermark_from_config(settings.editing_module("watermark"))
                  if settings.editing_module_enabled("watermark") else None)
@@ -96,6 +97,7 @@ def run(
     # exactement le defaut deja corrige sur la case des sous-titres.
     montage_audio_cfg = (settings.editing_module("montage").get("audio")
                          if settings.editing_module_enabled("montage") else None)
+    reserved_bottom = watermark_reserved_bottom(watermark, settings.target_size()[0])
     # La source EST deja le clip (Radar) : il n'y a pas de passage a chercher
     # dedans, donc pas de recadrage temporel non plus. La detection du contexte
     # deplacerait des bornes choisies par la personne qui a decoupe le clip.
@@ -299,7 +301,8 @@ def run(
             }
 
             caption_groups, caption_margin_v = _build_captions_for_clip(
-                render_words, render_scores, settings, subtitle_style, face_hint, src_w, src_h
+                render_words, render_scores, settings, subtitle_style, face_hint, src_w, src_h,
+                reserved_bottom=reserved_bottom,
             )
 
             out_mp4_path = str(Path(settings.output) / relative_path)
@@ -679,6 +682,7 @@ def _build_captions_for_clip(
     face_hint,
     src_w: int,
     src_h: int,
+    reserved_bottom: int = 0,
 ) -> tuple[Optional[list[CaptionGroup]], Optional[int]]:
     """Blocs de sous-titres du clip + marge verticale eventuellement corrigee.
 
@@ -724,7 +728,11 @@ def _build_captions_for_clip(
             default_margin_v=subtitle_style.get("margin_v", 300),
             text_height_px=int(font_size * float(position_cfg.get("text_height_ratio", 2.2))),
             avoid_half_frac=float(position_cfg.get("avoid_half_frac", 0.16)),
-            min_margin_v=int(position_cfg.get("min_margin_v", 140)),
+            # Le placement intelligent rapproche les sous-titres du bas quand
+            # un visage occupe le cadre. Il n'a aucune raison de savoir qu'un
+            # logo est pose la : la bande reservee par le filigrane devient donc
+            # son plancher, sinon le texte retomberait dessus.
+            min_margin_v=max(int(position_cfg.get("min_margin_v", 140)), reserved_bottom),
         )
 
     return groups, margin_v

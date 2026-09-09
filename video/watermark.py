@@ -6,9 +6,12 @@ verifiable sans encoder quoi que ce soit.
 
 Deux choix de valeurs par defaut, expliques parce qu'ils ne sont pas evidents :
 
-- EN HAUT ET NON EN BAS. Le bas du cadre est deja occupe : les sous-titres y
-  sont incrustes, et les deux plateformes visees y posent leur propre interface
-  (legende, boutons). Un logo en bas se retrouve derriere du texte.
+- EN BAS AU CENTRE, sous les sous-titres. C'est l'emplacement demande, et il
+  tient : les sous-titres sont incrustes entre 300 et 460 pixels du bas selon
+  le style, le logo occupe la bande en dessous. La colonne d'icones de TikTok
+  et d'Instagram est a DROITE et la legende a GAUCHE : le centre bas est la
+  seule zone basse que leur interface laisse libre. `reserved_bottom_px()`
+  existe pour que les sous-titres ne puissent pas redescendre dessus.
 - LA TAILLE EST UN POURCENTAGE de la largeur de sortie, jamais un nombre de
   pixels. Le meme logo doit peser pareil a l'oeil en 1080x1920 et en 1920x1080 ;
   une taille fixe serait deux fois trop grosse sur l'un des deux.
@@ -20,11 +23,15 @@ from pathlib import Path
 
 DEFAULT_IMAGE = "branding/watermark.png"
 
-POSITIONS = ("haut-gauche", "haut-droite", "bas-gauche", "bas-droite")
-DEFAULT_POSITION = "haut-droite"
+POSITIONS = ("haut-gauche", "haut-centre", "haut-droite",
+             "bas-gauche", "bas-centre", "bas-droite")
+DEFAULT_POSITION = "bas-centre"
 DEFAULT_SIZE_PERCENT = 14.0
 DEFAULT_OPACITY = 0.70
-DEFAULT_MARGIN_PERCENT = 4.0
+# La marge est une distance au bord le plus proche, en pourcentage de la
+# LARGEUR de sortie. 12 % de 1080 px placent le logo a 130 px du bas, donc
+# sous les sous-titres et au-dessus de la barre de l'application.
+DEFAULT_MARGIN_PERCENT = 12.0
 
 # Bornes de bon sens. Un filigrane a 100 % d'opacite couvre l'image, et a 1 %
 # il n'existe pas : dans les deux cas l'utilisateur croirait a un bug.
@@ -104,13 +111,47 @@ def overlay_position(watermark: Watermark, out_w: int) -> str:
     """Coordonnees de l'incrustation, en expressions ffmpeg.
 
     W et H sont la taille du fond, w et h celle du logo : la marge reste juste
-    quelle que soit la definition de sortie.
+    quelle que soit la definition de sortie, et le centrage aussi.
     """
     margin = max(0, int(round(out_w * watermark.margin_percent / 100.0)))
-    if watermark.position == "haut-gauche":
-        return f"{margin}:{margin}"
-    if watermark.position == "bas-gauche":
-        return f"{margin}:H-h-{margin}"
-    if watermark.position == "bas-droite":
-        return f"W-w-{margin}:H-h-{margin}"
-    return f"W-w-{margin}:{margin}"      # haut-droite, le defaut
+    horizontal = {"gauche": f"{margin}", "centre": "(W-w)/2", "droite": f"W-w-{margin}"}
+    vertical = {"haut": f"{margin}", "bas": f"H-h-{margin}"}
+    position = watermark.position if watermark.position in POSITIONS else DEFAULT_POSITION
+    band, side = position.split("-")
+    return f"{horizontal[side]}:{vertical[band]}"
+
+
+def logo_height_px(watermark: Watermark, out_w: int) -> int:
+    """Hauteur du logo une fois pose, en pixels.
+
+    Le filtre le met a l'echelle sur sa largeur (`scale=w:-1`) : la hauteur
+    depend donc des proportions de l'image. On les lit vraiment plutot que de
+    supposer un carre -- une image large donnerait sinon une reserve trop
+    grande, et une image haute une reserve trop petite, ce qui laisserait les
+    sous-titres retomber dessus.
+    """
+    width = max(2, int(round(out_w * watermark.size_percent / 100.0)))
+    ratio = 1.0
+    try:
+        from PIL import Image
+
+        with Image.open(watermark.image) as image:
+            if image.width:
+                ratio = image.height / image.width
+    except Exception:
+        ratio = 1.0                      # image illisible : on suppose un carre
+    return max(2, int(round(width * ratio)))
+
+
+def reserved_bottom_px(watermark: Watermark | None, out_w: int, gap_px: int = 24) -> int:
+    """Hauteur de la bande basse occupee par le logo, sous-titres exclus.
+
+    Sert a empecher les sous-titres de redescendre sur le logo : le placement
+    intelligent peut les rapprocher du bas quand un visage occupe le cadre, et
+    il n'a aucune raison de savoir qu'un logo est pose la. Zero si le logo
+    n'est pas en bas -- il n'y a alors rien a reserver.
+    """
+    if watermark is None or not watermark.position.startswith("bas-"):
+        return 0
+    margin = max(0, int(round(out_w * watermark.margin_percent / 100.0)))
+    return margin + logo_height_px(watermark, out_w) + max(0, gap_px)

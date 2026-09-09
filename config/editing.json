@@ -103,13 +103,13 @@
     }
   },
   "watermark": {
-    "_comment": "Filigrane pose sur chaque clip. L'image par defaut est assets/branding/watermark.png, livree avec l'application ; 'image' permet d'en designer une autre. La taille est un POURCENTAGE de la largeur de sortie et non un nombre de pixels, pour que le logo pese pareil a l'oeil en 9:16 et en 16:9. En haut par defaut : le bas du cadre porte deja les sous-titres, et les plateformes y posent leur propre interface. Positions : haut-gauche, haut-droite, bas-gauche, bas-droite.",
+    "_comment": "Filigrane pose sur chaque clip. L'image par defaut est assets/branding/watermark.png, livree avec l'application ; 'image' permet d'en designer une autre. La taille est un POURCENTAGE de la largeur de sortie et non un nombre de pixels, pour que le logo pese pareil a l'oeil en 9:16 et en 16:9 ; la marge est la distance au bord le plus proche, dans la meme unite. En BAS AU CENTRE par defaut : la colonne d'icones de TikTok et d'Instagram est a droite, la legende a gauche, et les sous-titres sont incrustes plus haut (300 a 460 px du bas selon le style) -- le centre bas est la seule zone basse reellement libre. Les sous-titres ne peuvent pas y redescendre : la bande occupee par le logo devient leur plancher. Positions : haut-gauche, haut-centre, haut-droite, bas-gauche, bas-centre, bas-droite.",
     "enabled": true,
     "image": "",
-    "position": "haut-droite",
+    "position": "bas-centre",
     "size_percent": 14,
     "opacity": 0.70,
-    "margin_percent": 4
+    "margin_percent": 12
   },
   "montage": {
     "_comment": "Fonctionnalite 3 : montage automatique. Produit une EditList (segments conserves) sur laquelle sous-titres, cadrage et zooms se recalent automatiquement.",

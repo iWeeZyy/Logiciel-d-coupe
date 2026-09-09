@@ -105,20 +105,68 @@ def test_the_opacity_multiplies_the_existing_alpha(logo):
     assert "colorchannelmixer=aa=0.700" in chain
 
 
-def test_each_corner_has_its_own_expression(logo):
-    def pos(corner):
+def test_each_position_has_its_own_expression(logo):
+    def pos(where):
         return wm.overlay_position(
-            wm.Watermark(image=str(logo), position=corner, margin_percent=5.0), 1000)
+            wm.Watermark(image=str(logo), position=where, margin_percent=5.0), 1000)
 
     assert pos("haut-gauche") == "50:50"
+    assert pos("haut-centre") == "(W-w)/2:50"
     assert pos("haut-droite") == "W-w-50:50"
     assert pos("bas-gauche") == "50:H-h-50"
+    assert pos("bas-centre") == "(W-w)/2:H-h-50"
     assert pos("bas-droite") == "W-w-50:H-h-50"
 
 
-def test_the_default_corner_is_the_top_one(logo):
-    # Le bas porte deja les sous-titres incrustes et l'interface des plateformes.
-    assert "H-h" not in wm.overlay_position(wm.Watermark(image=str(logo)), 1080)
+def test_the_default_place_is_the_bottom_centre(logo):
+    # Emplacement demande : la colonne d'icones de TikTok et d'Instagram est a
+    # droite, la legende a gauche, les sous-titres plus haut.
+    assert wm.overlay_position(wm.Watermark(image=str(logo)), 1080) == "(W-w)/2:H-h-130"
+
+
+def test_the_centring_is_computed_by_ffmpeg_and_not_by_us(logo):
+    # (W-w)/2 reste juste quelle que soit la definition de sortie ; un nombre
+    # de pixels calcule ici serait faux des qu'on change de format.
+    for width in (1080, 1920, 720):
+        assert "(W-w)/2" in wm.overlay_position(wm.Watermark(image=str(logo)), width)
+
+
+# --------------------------------------------- place reservee aux sous-titres
+
+def test_a_logo_at_the_bottom_reserves_the_band_it_occupies(logo, monkeypatch):
+    monkeypatch.setattr(wm, "logo_height_px", lambda mark, out_w: 150)
+    mark = wm.Watermark(image=str(logo), position="bas-centre", margin_percent=10.0)
+
+    # marge (100) + hauteur du logo (150) + un ecart (24)
+    assert wm.reserved_bottom_px(mark, 1000, gap_px=24) == 274
+
+
+def test_a_logo_that_is_not_at_the_bottom_reserves_nothing(logo):
+    for where in ("haut-gauche", "haut-centre", "haut-droite"):
+        mark = wm.Watermark(image=str(logo), position=where)
+        assert wm.reserved_bottom_px(mark, 1080) == 0
+
+
+def test_no_logo_reserves_nothing():
+    assert wm.reserved_bottom_px(None, 1080) == 0
+
+
+def test_the_reserved_band_becomes_the_floor_of_the_smart_subtitles():
+    # Le placement intelligent rapproche les sous-titres du bas quand un visage
+    # occupe le cadre, et il n'a aucune raison de savoir qu'un logo est pose la.
+    from editing.captions import choose_margin_v
+
+    reserve = 305
+    # Visage assez bas dans le cadre : le texte passe SOUS lui, donc plus bas
+    # que la marge du style -- c'est la seule situation ou il peut tomber sur
+    # le logo.
+    sans_logo = choose_margin_v(0.62, default_margin_v=380, text_height_px=140,
+                                min_margin_v=140)
+    avec_logo = choose_margin_v(0.62, default_margin_v=380, text_height_px=140,
+                                min_margin_v=max(140, reserve))
+
+    assert sans_logo < reserve
+    assert avec_logo >= reserve
 
 
 # ------------------------------------------------------- integration ffmpeg
