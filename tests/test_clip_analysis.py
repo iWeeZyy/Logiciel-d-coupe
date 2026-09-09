@@ -260,3 +260,75 @@ class TestModeles:
     def test_horodatage_lisible(self):
         assert format_timestamp(77.6) == "01:17"
         assert format_timestamp(None) == "--:--"
+
+
+class TestTransmission:
+    """Sections 14 et 15 : ce qu'une analyse peut transmettre, sans rien ecrire."""
+
+    def _analysis(self, **kwargs):
+        base = dict(
+            content_id="twitch:c1", platform="twitch", creator_label="Streamer B",
+            clip_title="Le moment", clip_url="https://clips.twitch.tv/c1",
+            duration_s=28.0, radar_score=87.0, language="fr",
+            transcript_text="Attends quoi ? C'est pas possible !",
+            segments=[{"start": 0.0, "end": 3.0, "text": "Attends quoi ?"}],
+            summary="Résumé", description="Description", short_description="Courte",
+            social_description="Sociale", hashtags=["#Twitch"],
+            title_direct="Direct", title_curiosity="Curiosité", title_punchy="PUNCHY",
+            detected_topics=["carte"], detected_signals=["1 question(s)"],
+            detected_emotions=[{"name": "surprise", "confidence": "elevee",
+                                "evidence": "Attends quoi ?"}],
+            speech_density=2.1, silence_ratio=0.12, confidence=CONFIDENCE_HIGH,
+            key_moment={"start": 6.0, "end": 15.0, "text": "bloc",
+                        "reaction_text": "Attends quoi ?", "label": "réaction"},
+        )
+        base.update(kwargs)
+        return ClipAnalysis(**base)
+
+    def test_le_content_factory_recoit_tout_ce_que_la_section_14_demande(self):
+        from radar.analysis.handoff import to_content_factory
+
+        payload = to_content_factory(self._analysis())
+        for key in ("transcript", "key_moment", "summary", "description", "titles",
+                    "radar_score", "segments"):
+            assert key in payload, f"{key} manquant"
+        assert payload["key_moment"]["start"] == 6.0
+        assert payload["titles"]["punchy"] == "PUNCHY"
+
+    def test_une_valeur_inconnue_est_absente_et_non_mise_a_zero(self):
+        from radar.analysis.handoff import to_content_factory, to_performance_features
+
+        vide = ClipAnalysis(content_id="twitch:x")
+        payload = to_content_factory(vide)
+        assert "radar_score" not in payload
+        assert "duration_s" not in payload
+        features = to_performance_features(vide)
+        assert "duration" not in features
+        assert "radar_score" not in features
+
+    def test_l_apprentissage_ne_recoit_aucun_score_du_pipeline_video(self):
+        """Un clip Twitch recupere tel quel n'a ni Hook ni Rewatch ni Viral Potential :
+        ces scores viennent du decoupage fait par le logiciel. Les mettre a zero
+        les ferait passer pour des mesures."""
+        from radar.analysis.handoff import to_performance_features
+
+        features = to_performance_features(self._analysis())
+        for absent in ("hook_score", "rewatch_score", "viral_potential_score"):
+            assert absent not in features
+
+    def test_l_emotion_transmise_porte_sa_confiance(self):
+        from radar.analysis.handoff import to_performance_features
+
+        features = to_performance_features(self._analysis())
+        assert features["emotion"] == "surprise"
+        assert features["emotion_confidence"] == CONFIDENCE_HIGH
+
+    def test_la_transmission_n_ecrit_nulle_part(self, tmp_path):
+        """Section 14 : preparer l'integration, ne pas la construire."""
+        from radar.analysis import handoff
+        from radar.store import RadarStore
+
+        store = RadarStore(path=tmp_path / "radar.sqlite3")
+        handoff.to_content_factory(self._analysis())
+        handoff.to_performance_features(self._analysis())
+        assert store.list_analyses() == []

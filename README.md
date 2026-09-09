@@ -116,6 +116,35 @@ telecharger un stream, une VOD ou un clip. Le Radar le dit et propose de
 selectionner un fichier local dont vous disposez legalement, qui sera alors
 traite comme n'importe quelle autre video.
 
+### Analyse de contenu d'un clip
+
+Depuis une carte du Radar, "🔊 Analyser le contenu" ecoute le clip localement et
+en rend un descriptif pret a publier : moment cle date, resume, description
+editoriale, description courte, version reseaux sociaux, hashtags et trois
+titres, chacun copiable en un clic. Plusieurs clips peuvent etre coches puis
+analyses a la suite ; rien ne demarre sans un clic explicite.
+
+Trois niveaux : rapide (transcription, resume, description courte), standard
+(le tout avec moment cle, titres et hashtags) et approfondie (plus le rythme,
+les silences et plusieurs candidats pour le moment cle).
+
+- **Tout est local.** La transcription est Faster-Whisper, deja utilise par le
+  pipeline. La redaction est EXTRACTIVE : les phrases proposees sont des phrases
+  reellement prononcees, jamais un texte genere. Aucun modele de langue, aucune
+  API distante, rien n'est envoye nulle part.
+- **Rien n'est invente.** Un clip sans parole ne produit aucun descriptif et le
+  dit. Un clip qui commence au milieu d'une idee signale qu'il manque du
+  contexte au lieu de le combler. Une emotion supposee est affichee avec la
+  phrase qui l'a declenchee et un niveau de confiance -- eleve, moyen ou faible,
+  jamais un pourcentage, que rien ici ne permettrait de calculer honnetement.
+- **Le media vient de vous.** Comme pour le Content Factory ci-dessus, Twitch
+  n'offre aucun telechargement officiel : l'analyse demande un fichier dont vous
+  disposez legalement. Il est memorise, donc la question n'est posee qu'une fois
+  par clip.
+- Une analyse deja faite est reaffichee immediatement ; "Réanalyser" la refait
+  et remplace l'ancienne. Le meme media, le meme modele et le meme niveau ne
+  sont jamais retraites.
+
 ### Content Factory et apprentissage par les performances
 
 **Content Factory** produit plusieurs clips d'une video longue en une passe. La
@@ -453,7 +482,7 @@ pip install -r requirements.txt   # inclut pytest
 pytest tests/
 ```
 
-Les tests sont des tests unitaires purs (analyse texte, scoring, selection, analyse audio sur un signal synthetique, decoupage en phrases, recalage du contexte, timeline de montage, structure de sortie) -- ils ne necessitent ni ffmpeg, ni modele Whisper, ni GPU.
+Les tests sont des tests unitaires purs (analyse texte, scoring, selection, analyse audio sur un signal synthetique, decoupage en phrases, recalage du contexte, timeline de montage, structure de sortie, analyse de contenu d'un clip) -- ils ne necessitent ni ffmpeg, ni modele Whisper, ni GPU.
 
 ## Limites connues (volontaires)
 

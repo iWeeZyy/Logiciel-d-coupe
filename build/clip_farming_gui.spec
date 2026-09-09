@@ -24,7 +24,15 @@ datas = [
     (os.path.join(ROOT, "assets"), "assets"),
 ]
 binaries = []
-hiddenimports = []
+
+# radar.analysis.handoff n'est encore appele par personne : c'est l'interface
+# preparee pour le Content Factory et l'apprentissage, que la demande dit
+# explicitement de ne pas brancher tout de suite. L'analyse statique de
+# PyInstaller ne peut donc pas le trouver, et il serait absent de l'exe -- le
+# jour ou on le branche, l'application compilee planterait sur un import
+# manquant alors que tout marche depuis les sources. Le declarer ici coute un
+# fichier de 3 ko et supprime ce piege.
+hiddenimports = ["radar.analysis.handoff"]
 
 for pkg in [
     "faster_whisper", "ctranslate2", "av", "librosa", "numba",
