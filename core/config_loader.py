@@ -211,3 +211,22 @@ def load_clip_analysis_config() -> dict:
         return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def load_keywords_config() -> dict:
+    """config/hooks_keywords.json, sans lever d'exception.
+
+    load_settings() charge deja ce fichier pour le pipeline video, mais il exige
+    des arguments de ligne de commande. Le Radar n'en a pas : il lui faut juste
+    les amorces de question et les mots-cles forts, et une absence de fichier ne
+    doit pas empecher une analyse de tourner.
+    """
+    path = CONFIG_DIR / "hooks_keywords.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}

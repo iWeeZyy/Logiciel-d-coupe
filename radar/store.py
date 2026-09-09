@@ -23,7 +23,11 @@ from pathlib import Path
 from core.paths import user_data_dir
 from radar.models import Creator, Opportunity, ScanResult, Snapshot
 
-SCHEMA_VERSION = 1
+# 2 : ajout de clip_analyses (analyse de contenu d'un clip). La migration est
+# automatique et sans perte -- chaque table est creee IF NOT EXISTS et aucune
+# colonne existante n'a change -- donc une base deja remplie gagne simplement la
+# nouvelle table a la premiere ouverture.
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS creators (
@@ -104,6 +108,24 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Une analyse par contenu : la cle primaire est le contenu lui-meme, donc une
+-- reanalyse REMPLACE la precedente au lieu d'empiler des doublons (section 12).
+-- Les champs sortis du JSON sont ceux qui servent a decider si une analyse peut
+-- etre reutilisee (section 17) : les interroger ne doit pas demander de
+-- desserialiser toutes les analyses de la base.
+CREATE TABLE IF NOT EXISTS clip_analyses (
+    content_id        TEXT PRIMARY KEY,
+    platform          TEXT,
+    analysis_level    TEXT,
+    model_used        TEXT,
+    media_fingerprint TEXT,
+    analyzed_at       TEXT,
+    confidence        TEXT,
+    payload           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_analyses_date ON clip_analyses (analyzed_at DESC);
 """
 
 
@@ -133,8 +155,11 @@ class RadarStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # OR REPLACE et non OR IGNORE : le script ci-dessus vient d'etre
+            # applique, la base est donc bien a cette version. La laisser
+            # annoncer une version anterieure serait faux.
             conn.execute(
-                "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', ?)",
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
                 (str(SCHEMA_VERSION),),
             )
 
@@ -357,4 +382,80 @@ class RadarStore:
             except json.JSONDecodeError:
                 data["platforms"], data["errors"] = [], []
             out.append(data)
+        return out
+
+    # ------------------------------------------------------- analyses
+    def save_analysis(self, analysis) -> None:
+        """Enregistre ou remplace l'analyse d'un contenu.
+
+        Remplacement plutot qu'historique de versions : une analyse est
+        entierement recalculee a partir du meme media, deux versions
+        successives du meme clip n'apprennent rien de plus et encombreraient la
+        liste (section 12, "ne pas multiplier inutilement les doublons").
+        """
+        payload = analysis.to_dict()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO clip_analyses
+                   (content_id, platform, analysis_level, model_used,
+                    media_fingerprint, analyzed_at, confidence, payload)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(content_id) DO UPDATE SET
+                     platform=excluded.platform,
+                     analysis_level=excluded.analysis_level,
+                     model_used=excluded.model_used,
+                     media_fingerprint=excluded.media_fingerprint,
+                     analyzed_at=excluded.analyzed_at,
+                     confidence=excluded.confidence,
+                     payload=excluded.payload""",
+                (analysis.content_id, analysis.platform, analysis.analysis_level,
+                 analysis.model_used, analysis.media_fingerprint, analysis.analyzed_at,
+                 analysis.confidence, _dumps(payload)),
+            )
+
+    def get_analysis(self, content_id: str):
+        from radar.analysis.models import ClipAnalysis
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT payload FROM clip_analyses WHERE content_id = ?", (content_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        payload = _loads(row["payload"])
+        return ClipAnalysis.from_dict(payload) if payload else None
+
+    def has_analysis(self, content_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM clip_analyses WHERE content_id = ?", (content_id,)
+            ).fetchone()
+        return row is not None
+
+    def analyzed_ids(self) -> set:
+        """Contenus deja analyses, en une requete.
+
+        La liste des opportunites peut compter des centaines de lignes ; une
+        requete par carte pour savoir s'il faut afficher "✓ Analysé" serait une
+        requete de trop, repetee a chaque rafraichissement.
+        """
+        with self._connect() as conn:
+            rows = conn.execute("SELECT content_id FROM clip_analyses").fetchall()
+        return {row["content_id"] for row in rows}
+
+    def delete_analysis(self, content_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM clip_analyses WHERE content_id = ?", (content_id,))
+
+    def list_analyses(self, limit: int = 50) -> list:
+        from radar.analysis.models import ClipAnalysis
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT payload FROM clip_analyses ORDER BY analyzed_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        out = []
+        for row in rows:
+            payload = _loads(row["payload"])
+            if payload:
+                out.append(ClipAnalysis.from_dict(payload))
         return out

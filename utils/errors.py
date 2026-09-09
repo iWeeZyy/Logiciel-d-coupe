@@ -77,3 +77,12 @@ class TwitchConfigError(ClipFarmingError):
 
 class TwitchApiError(ClipFarmingError):
     """L'API Twitch a repondu une erreur, ou est injoignable."""
+
+
+class MediaNotAvailableError(ClipFarmingError):
+    """Aucun media analysable pour ce contenu (clip supprime, plateforme sans
+    telechargement officiel, fichier local introuvable)."""
+
+
+class ClipAnalysisError(ClipFarmingError):
+    """Echec de l'analyse de contenu d'un clip, avec un message affichable."""
