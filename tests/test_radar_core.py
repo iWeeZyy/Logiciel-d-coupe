@@ -311,3 +311,98 @@ def test_a_long_live_is_penalised_but_never_eliminated():
 
     assert scoring.format_component(live, scoring.DEFAULT_PARAMS) >= 0.0
     assert scoring.compute_radar_score(live, [], reference=NOW).total > 0
+
+
+class TestTypesCherches:
+    """Un type de contenu qui n'est plus cherche ne doit plus apparaitre."""
+
+    def _store(self, tmp_path):
+        from datetime import datetime, timezone
+
+        from radar.models import KIND_CLIP, KIND_LIVE, Opportunity
+        from radar.store import RadarStore
+
+        # Date recente : le tableau de bord filtre aussi sur la periode, et un
+        # contenu sans date serait ecarte pour cette raison-la, pas pour son
+        # type -- le test ne prouverait alors rien.
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        store = RadarStore(path=tmp_path / "radar.sqlite3")
+        for index in range(3):
+            live = Opportunity(platform="twitch", content_id=f"live{index}", kind=KIND_LIVE,
+                               creator_key="twitch:1", title=f"Live {index}",
+                               published_at=now, viewer_count=5000, is_live=True)
+            # Un direct tres suivi score haut : c'est ce qui lui faisait occuper
+            # le haut de la liste a la place des clips.
+            live.radar_score = 100.0 - index
+            store.upsert_opportunity(live)
+        for index in range(2):
+            clip = Opportunity(platform="twitch", content_id=f"clip{index}", kind=KIND_CLIP,
+                               creator_key="twitch:1", title=f"Clip {index}",
+                               published_at=now, view_count=9000)
+            clip.radar_score = 80.0 - index
+            store.upsert_opportunity(clip)
+        return store
+
+    def test_le_filtre_s_applique_avant_la_limite(self, tmp_path):
+        """Filtrer apres la limite laisserait les directs consommer les places
+        et sortirait des clips de la liste."""
+        from radar.models import KIND_CLIP
+
+        store = self._store(tmp_path)
+        clips = store.list_opportunities(platform="twitch", limit=2, kinds=(KIND_CLIP,))
+        assert [o.kind for o in clips] == [KIND_CLIP, KIND_CLIP]
+
+    def test_sans_filtre_le_comportement_est_inchange(self, tmp_path):
+        store = self._store(tmp_path)
+        assert len(store.list_opportunities(platform="twitch", limit=50)) == 5
+
+    def test_purge_des_types_non_cherches(self, tmp_path):
+        from radar.models import KIND_CLIP
+
+        store = self._store(tmp_path)
+        removed = store.purge_kinds("twitch", (KIND_CLIP,))
+        assert removed == 3
+        assert {o.kind for o in store.list_opportunities(limit=50)} == {KIND_CLIP}
+
+    def test_une_purge_sans_type_ne_supprime_rien(self, tmp_path):
+        """Garde-fou : une liste vide signifierait "tout supprimer" en SQL."""
+        store = self._store(tmp_path)
+        assert store.purge_kinds("twitch", ()) == 0
+        assert len(store.list_opportunities(limit=50)) == 5
+
+    def test_un_favori_survit_a_la_purge(self, tmp_path):
+        from radar.models import KIND_CLIP
+
+        store = self._store(tmp_path)
+        live = store.get_opportunity("twitch:live0")
+        store.add_favorite(live, note="à revoir")
+        store.purge_kinds("twitch", (KIND_CLIP,))
+        favorites = store.list_favorites()
+        assert len(favorites) == 1
+        assert favorites[0]["snapshot"], "le favori garde sa copie des statistiques"
+
+    def test_le_tableau_de_bord_ne_compte_pas_ce_qui_n_est_plus_cherche(self, tmp_path):
+        from radar.engine import RadarEngine
+        from radar.models import KIND_CLIP
+
+        store = self._store(tmp_path)
+
+        class Twitch:
+            content_kinds = (KIND_CLIP,)
+
+        engine = RadarEngine(store, {"twitch": Twitch()})
+        data = engine.dashboard(period="7j")
+        assert data["live_now"] == 0
+        assert data["opportunities"] == 2
+
+    def test_une_plateforme_sans_reglage_affiche_tout(self, tmp_path):
+        from radar.engine import RadarEngine
+
+        store = self._store(tmp_path)
+
+        class Youtube:
+            pass
+
+        engine = RadarEngine(store, {"twitch": Youtube()})
+        assert engine.searched_kinds("twitch") is None
+        assert engine.keeps(store.get_opportunity("twitch:live0")) is True

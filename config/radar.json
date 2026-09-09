@@ -8,8 +8,8 @@
   },
 
   "twitch": {
-    "_comment": "Types de contenu recherches sur Twitch. Un type absent de cette liste ne declenche AUCUNE requete -- ce n'est pas un filtre applique apres coup. 'clip' : deja le decoupage d'un moment fort fait par le public, c'est le coeur du Radar. 'live' : signal de surveillance (qui streame, devant combien de monde), pas du contenu a recuperer. 'vod' : ecarte par defaut -- une rediffusion de quatre heures n'a rien qui designe le moment interessant, et Twitch n'offre aucun moyen officiel de la recuperer.",
-    "content_kinds": ["clip", "live"]
+    "_comment": "Types de contenu recherches sur Twitch. Un type absent de cette liste ne declenche AUCUNE requete -- ce n'est pas un filtre applique apres coup. 'clip' : deja le decoupage d'un moment fort fait par le public, c'est le coeur du Radar. 'live' : signal de surveillance (qui streame, devant combien de monde), pas du contenu a recuperer -- ecarte par defaut, un direct tres suivi score haut et occupait le haut de la liste a la place des clips. 'vod' : ecarte par defaut -- une rediffusion de quatre heures n'a rien qui designe le moment interessant, et Twitch n'offre aucun moyen officiel de la recuperer.",
+    "content_kinds": ["clip"]
   },
 
   "youtube": {

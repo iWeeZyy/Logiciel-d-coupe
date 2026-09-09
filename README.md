@@ -100,6 +100,17 @@ definir `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET`, ou renseigner
 ligne, Client Secret en seconde). Sans identifiants, la plateforme se declare
 indisponible avec la marche a suivre et l'autre continue de fonctionner.
 
+**Le Radar ne cherche que des clips.** Un clip est deja le decoupage d'un
+moment fort, fait par le public au moment ou il s'est produit. Les directs ont
+ete retires du reglage par defaut apres usage reel : un direct tres suivi score
+tres haut et occupait le haut de la liste a la place des clips. Ils restent
+activables en ajoutant `"live"` a `twitch.content_kinds` dans
+`config/radar.json` (`"vod"` egalement). Un type retire n'est plus cherche --
+aucune requete n'est envoyee pour lui -- et les contenus de ce type deja
+enregistres sont retires de la base au scan suivant : un direct d'hier ne
+redeviendra jamais exact, et le garder fausserait les compteurs. Les favoris ne
+sont pas touches, ils portent leur propre copie des statistiques du moment.
+
 **Trois limites assumees, ecrites plutot que masquees :**
 
 - Aucune API ne dit si une video est un **Short** : la detection se fait sur la
@@ -429,6 +440,15 @@ Utilise exclusivement la **YouTube Data API v3 officielle** (REST direct, pas de
 **La cle n'est jamais ecrite dans le code ni committee.** Deux facons de la fournir :
 - variable d'environnement `YOUTUBE_API_KEY` ;
 - ou un fichier texte `youtube_api_key.txt` (contenant uniquement la cle) place a cote de `main.py` (ou de `clip_farming.exe` pour la version .exe) -- deja dans `.gitignore`.
+
+**Qualite de telechargement.** La meilleure piste reellement disponible est
+prise, y compris les flux VP9 et AV1 que YouTube ne sert pas en MP4 -- c'est ce
+que l'ancien reglage refusait sans le dire, plafonnant au mieux a du 1080p
+H.264. L'audio reste en AAC, qui se remuxe proprement en MP4 la ou l'Opus des
+pistes WebM fait echouer la fusion. Pour plafonner la definition (une source 4K
+en AV1 se decode lentement, et le clip produit sort au mieux en 1080 vertical),
+renseigner `download.max_height` dans `config/youtube.json` ; `0` signifie
+aucune limite.
 
 ### Quotas
 

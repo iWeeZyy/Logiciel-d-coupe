@@ -15,5 +15,10 @@
     "ideal_duration_max_s": 5400
   },
 
+  "download": {
+    "_comment": "Telechargement d'une video (yt-dlp). La meilleure qualite reellement disponible est prise par defaut, y compris les pistes VP9 et AV1 que YouTube ne sert pas en MP4 -- c'est ce que l'ancien reglage refusait sans le dire, plafonnant a du 1080p H.264. 'max_height' plafonne la definition (1080, 1440...) ; 0 signifie aucune limite. A renseigner si une source 4K rend le traitement trop lent : le clip produit sort au mieux en 1080 vertical.",
+    "max_height": 0
+  },
+
   "daily_quota_limit": 10000
 }

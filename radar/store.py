@@ -272,12 +272,25 @@ class RadarStore:
             )
 
     def list_opportunities(self, platform: str | None = None, creator_key: str | None = None,
-                           since: str | None = None, limit: int = 500) -> list[Opportunity]:
+                           since: str | None = None, limit: int = 500,
+                           kinds=None) -> list[Opportunity]:
+        """Contenus enregistres, du mieux note au moins bien note.
+
+        `kinds` filtre DANS la requete et non apres coup, et c'est le point
+        important : la requete est ordonnee par score puis coupee par LIMIT. Un
+        direct tres suivi score tres haut ; filtrer apres la limite laisserait
+        les directs consommer les places et sortirait des clips de la liste
+        alors qu'ils devraient y figurer.
+        """
         query = "SELECT * FROM opportunities"
         clauses, params = [], []
         if platform:
             clauses.append("platform = ?")
             params.append(platform)
+        if kinds:
+            kinds = tuple(kinds)
+            clauses.append("kind IN (" + ",".join("?" for _ in kinds) + ")")
+            params.extend(kinds)
         if creator_key:
             clauses.append("creator_key = ?")
             params.append(creator_key)
@@ -291,6 +304,26 @@ class RadarStore:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._opportunity_from_row(row) for row in rows]
+
+    def purge_kinds(self, platform: str, keep_kinds) -> int:
+        """Supprime les contenus d'un type qui n'est plus cherche.
+
+        Un direct enregistre lors d'un scan precedent ne redeviendra jamais
+        exact : le stream est fini, son nombre de spectateurs est celui d'hier.
+        Le garder n'apporte rien et fausse les compteurs du tableau de bord.
+        Les favoris ne sont pas touches -- ils portent leur propre copie des
+        statistiques du moment, precisement pour survivre a ce genre de menage.
+        """
+        keep = tuple(keep_kinds or ())
+        if not keep:
+            return 0
+        placeholders = ",".join("?" for _ in keep)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"DELETE FROM opportunities WHERE platform = ? AND kind NOT IN ({placeholders})",
+                (platform, *keep),
+            )
+            return cursor.rowcount or 0
 
     def get_opportunity(self, key: str) -> Opportunity | None:
         with self._connect() as conn:

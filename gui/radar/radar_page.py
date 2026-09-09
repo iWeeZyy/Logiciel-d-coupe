@@ -222,7 +222,8 @@ class RadarPage(QWidget):
 
         opportunities = []
         for platform in platforms:
-            opportunities.extend(self.store.list_opportunities(platform=platform, limit=60))
+            opportunities.extend(self.store.list_opportunities(
+                platform=platform, limit=60, kinds=self.engine.searched_kinds(platform)))
         opportunities.sort(key=lambda o: o.radar_score or 0, reverse=True)
 
         if not opportunities:

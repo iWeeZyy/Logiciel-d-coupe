@@ -85,6 +85,16 @@ class RadarEngine:
         result = ScanResult(platforms=wanted)
         threshold = since_iso(period, reference)
 
+        # Menage avant de scanner : ce qu'on ne cherche plus n'a pas a rester en
+        # base. Un direct enregistre hier ne redeviendra jamais exact.
+        for platform in wanted:
+            kinds = self.searched_kinds(platform)
+            if kinds:
+                removed = self.store.purge_kinds(platform, kinds)
+                if removed:
+                    logger.info(f"{removed} contenu(s) d'un type non cherche retire(s) "
+                                f"de {platform}.")
+
         creators = [
             creator for creator in self.store.list_creators(active_only=True)
             if creator.platform in wanted and creator.platform in self.adapters
@@ -158,12 +168,29 @@ class RadarEngine:
         self.store.upsert_opportunity(opportunity)
 
     # ----------------------------------------------------- tableau de bord
+    def searched_kinds(self, platform: str):
+        """Types de contenu reellement cherches sur cette plateforme, ou None.
+
+        None signifie "l'adaptateur ne declare rien", et tout est alors affiche
+        -- c'est le cas de YouTube, qui n'a pas de reglage de ce genre.
+        """
+        adapter = self.adapters.get(platform)
+        kinds = getattr(adapter, "content_kinds", None)
+        return tuple(kinds) if kinds else None
+
+    def keeps(self, opportunity) -> bool:
+        kinds = self.searched_kinds(getattr(opportunity, "platform", ""))
+        return kinds is None or getattr(opportunity, "kind", "") in kinds
+
     def dashboard(self, period: str = DEFAULT_PERIOD, reference=None) -> dict:
         """Chiffres du bandeau (section 20 du Radar Twitch)."""
         threshold = since_iso(period, reference)
         creators = self.store.list_creators()
         active = [c for c in creators if c.active]
-        opportunities = self.store.list_opportunities(since=threshold, limit=1000)
+        # Un type qui n'est plus cherche ne doit plus etre compte : le bandeau
+        # annoncerait des directs alors que le Radar n'en cherche plus.
+        opportunities = [o for o in self.store.list_opportunities(since=threshold, limit=1000)
+                         if self.keeps(o)]
         strong = [o for o in opportunities if (o.radar_score or 0) >= 80]
         trending = [o for o in opportunities if (o.trend or {}).get("level") in ("forte", "moderee")]
         live = [o for o in opportunities if o.is_live]

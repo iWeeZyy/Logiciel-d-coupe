@@ -297,11 +297,18 @@ def test_vods_can_still_be_enabled_for_whoever_wants_them():
 
 
 def test_the_configuration_file_drives_the_kinds():
+    """Le Radar livré ne cherche que des clips.
+
+    Les directs ont été retirés du réglage par défaut après usage réel : un
+    direct très suivi score très haut et occupait le haut de la liste à la
+    place des clips, qui sont le contenu recherché. Ils restent activables en
+    ajoutant "live" à cette liste.
+    """
     from core.config_loader import load_radar_config
 
     kinds = (load_radar_config().get("twitch", {}) or {}).get("content_kinds")
 
-    assert kinds == ["clip", "live"], "config/radar.json est la source de ce réglage"
+    assert kinds == ["clip"], "config/radar.json est la source de ce réglage"
 
 
 def test_a_broken_configuration_file_never_blocks_the_radar(monkeypatch, tmp_path):
