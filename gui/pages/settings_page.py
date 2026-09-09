@@ -262,6 +262,18 @@ class SettingsPage(QWidget):
         browse_btn.clicked.connect(self._browse_projects_dir)
         folder_row.addWidget(browse_btn)
         grid.addLayout(folder_row, row, 1)
+        row += 1
+
+        grid.addWidget(QLabel("Dossier des clips téléchargés"), row, 0)
+        clips_row = QHBoxLayout()
+        self.clips_label = QLabel(str(settings_store.clips_dir()))
+        self.clips_label.setProperty("role", "mono")
+        self.clips_label.setWordWrap(True)
+        clips_row.addWidget(self.clips_label, stretch=1)
+        clips_btn = QPushButton("Parcourir…")
+        clips_btn.clicked.connect(self._browse_clips_dir)
+        clips_row.addWidget(clips_btn)
+        grid.addLayout(clips_row, row, 1)
 
         card.layout().addLayout(grid)
 
@@ -270,6 +282,20 @@ class SettingsPage(QWidget):
         if folder:
             settings_store.save({"projects_dir": folder})
             self.folder_label.setText(folder)
+
+    def _browse_clips_dir(self) -> None:
+        """Les clips deja telecharges ne sont PAS deplaces.
+
+        Les recopier a l'insu de l'utilisateur pourrait remplir le disque
+        choisi sans prevenir ; les nouveaux clips iront au nouvel endroit, les
+        anciens restent la ou ils sont et peuvent etre supprimes ou deplaces a
+        la main.
+        """
+        folder = QFileDialog.getExistingDirectory(
+            self, "Dossier des clips téléchargés", str(settings_store.clips_dir()))
+        if folder:
+            settings_store.save({"clips_dir": folder})
+            self.clips_label.setText(folder)
 
     # ---------- Video ----------
 

@@ -203,6 +203,33 @@ class TestEnchainement:
         assert reloaded.summary == original.summary
         assert reloaded.hashtags == original.hashtags
 
+    def test_l_avancement_du_modele_est_en_megaoctets_pas_en_pourcentage(
+            self, clip, media_file, store, patched, monkeypatch):
+        """Le premier argument du rappel est un NOMBRE DE MEGAOCTETS.
+
+        L'avoir pris pour une fraction affichait "17254 % de 484 Mo" pendant
+        que la barre restait collee a 100 %.
+        """
+        def transcribe_with_download(wav_path, model_name, language, device_pref,
+                                     cancel_token=None, on_segment_progress=None,
+                                     on_download_progress=None):
+            if on_download_progress:
+                on_download_progress(172.5, 484.0)
+            return fake_transcript()
+
+        monkeypatch.setattr("transcription.whisper_engine.transcribe",
+                            transcribe_with_download)
+        events = []
+        runner.run(request_for(clip, media_file), store=store,
+                   on_progress=lambda event: events.append(event))
+
+        download = [e for e in events if e.sub_label and "modèle" in e.sub_label]
+        assert download, "l'avancement du téléchargement doit être rapporté"
+        label = download[-1].sub_label
+        assert "172 / 484 Mo" in label, label
+        assert "%" not in label
+        assert 0.35 < download[-1].step_fraction < 0.36
+
     def test_la_progression_suit_les_quatre_etapes(self, clip, media_file, store, patched):
         seen = []
         runner.run(request_for(clip, media_file), store=store,
@@ -320,3 +347,59 @@ class TestAnnulationEtErreurs:
             runner.run(request_for(clip, media_file), store=store)
         assert "minutes" in str(error.value)
         assert patched["transcribe"] == 0
+
+
+class TestDossierDesClips:
+    """Le dossier des clips telecharges est deplacable (Parametres).
+
+    Des clips s'accumulent -- quelques dizaines de megaoctets chacun -- et le
+    disque systeme n'est pas toujours le bon endroit pour les garder.
+    """
+
+    def test_le_dossier_par_defaut_est_dans_les_donnees_utilisateur(self, monkeypatch):
+        from gui import settings_store
+
+        monkeypatch.setattr(settings_store, "get", lambda key: None)
+        assert settings_store.clips_dir().name == "clips"
+
+    def test_le_dossier_choisi_est_respecte(self, monkeypatch, tmp_path):
+        from gui import settings_store
+
+        monkeypatch.setattr(settings_store, "get",
+                            lambda key: str(tmp_path / "E") if key == "clips_dir" else None)
+        assert settings_store.clips_dir() == tmp_path / "E"
+        assert media.clips_dir() == tmp_path / "E"
+
+    def test_le_clip_est_telecharge_dans_le_dossier_choisi(self, clip, tmp_path, monkeypatch):
+        chosen = tmp_path / "ailleurs"
+        monkeypatch.setattr(media, "clips_dir", lambda: chosen)
+        seen = {}
+
+        def fake_download(url, out_dir, **kwargs):
+            seen["dir"] = out_dir
+            path = Path(out_dir)
+            path.mkdir(parents=True, exist_ok=True)
+            target = path / "Abc.mp4"
+            target.write_bytes(b"x" * 2048)
+            return str(target)
+
+        monkeypatch.setattr("radar.clip_download.download_clip", fake_download)
+
+        media.resolve(clip)
+
+        assert seen["dir"] == str(chosen)
+
+    def test_un_dossier_illisible_ne_casse_pas_l_analyse(self, monkeypatch):
+        """Le module de preferences vit sous gui/ : s'il devient indisponible
+        (usage en ligne de commande), on retombe sur le dossier par defaut."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def refuse(name, *args, **kwargs):
+            if name == "gui" or name.startswith("gui."):
+                raise ImportError("pas d'interface ici")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", refuse)
+        assert media.clips_dir().name == "clips"

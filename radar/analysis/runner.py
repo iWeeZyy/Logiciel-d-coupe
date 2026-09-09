@@ -146,11 +146,19 @@ def _transcribe(wav_path: str, request: AnalysisRequest, model: str,
         progress.report(f"{done:.0f} s / {total:.0f} s transcrites",
                         min(1.0, done / total) if total else None)
 
-    def on_download(fraction: float, total_mb):
-        label = "téléchargement du modèle Whisper"
+    def on_download(done_mb: float, total_mb) -> None:
+        # Le premier argument est un NOMBRE DE MEGAOCTETS, pas une fraction.
+        # L'avoir pris pour une fraction affichait "17254 % de 484 Mo" pendant
+        # que la barre restait collee a 100 % : le nom du parametre mentait, et
+        # le calcul suivait. Meme mise en forme que pipeline.py, qui l'avait
+        # juste depuis le debut.
         if total_mb:
-            label += f" ({fraction * 100:.0f} % de {total_mb:.0f} Mo)"
-        progress.report(label, fraction)
+            progress.report(
+                f"téléchargement du modèle Whisper : {done_mb:.0f} / {total_mb:.0f} Mo",
+                fraction=min(done_mb / total_mb, 0.999),
+            )
+        else:
+            progress.report(f"téléchargement du modèle Whisper : {done_mb:.0f} Mo")
 
     transcript = transcribe(
         wav_path, model, request.language, request.device,

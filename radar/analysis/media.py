@@ -120,11 +120,22 @@ def can_download(opportunity) -> bool:
 def clips_dir() -> Path:
     """Ou sont gardes les clips telecharges.
 
-    Dans le dossier de donnees de l'utilisateur et non dans un dossier
-    temporaire : un clip garde est un clip qu'on ne retelecharge pas a chaque
-    reanalyse, ni pour l'envoyer ensuite au Content Factory.
+    Dans un dossier durable et non temporaire : un clip garde est un clip qu'on
+    ne retelecharge pas a chaque reanalyse, ni pour l'envoyer ensuite au Content
+    Factory. L'emplacement est modifiable dans les Parametres -- des clips
+    s'accumulent, et le disque systeme n'est pas toujours le bon endroit.
+
+    L'import de gui.settings_store est fait ICI et non en tete de fichier : ce
+    module est un simple fichier de preferences en JSON, sans aucune dependance
+    a Qt, mais il vit sous gui/. L'importer paresseusement et avec un repli
+    garantit qu'un usage en ligne de commande ne depende jamais de lui.
     """
-    return user_data_dir() / "clips"
+    try:
+        from gui import settings_store
+
+        return settings_store.clips_dir()
+    except Exception:
+        return user_data_dir() / "clips"
 
 
 def explanation_for(opportunity) -> str:
