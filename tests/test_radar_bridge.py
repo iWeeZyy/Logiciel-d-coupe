@@ -7,7 +7,7 @@ en place dans youtube/downloader.py.
 import pytest
 
 from radar.bridge import RIGHTS_NOTICE, SourceNotAvailable, build_request
-from radar.models import KIND_CLIP, KIND_LIVE, KIND_SHORT, Opportunity
+from radar.models import KIND_CLIP, KIND_LIVE, KIND_SHORT, KIND_VOD, Opportunity
 
 
 def _youtube(title="Un titre", url="https://youtu.be/v1"):
@@ -29,15 +29,36 @@ def test_a_youtube_content_is_prepared_as_a_youtube_source():
     assert not request.needs_local_file
 
 
-def test_twitch_is_refused_with_an_explanation_not_a_silent_failure():
-    # Twitch ne fournit aucun moyen officiel de telecharger : le dire est plus
-    # utile que d'echouer, et bien plus honnete que de contourner.
-    with pytest.raises(SourceNotAvailable) as excinfo:
-        build_request([_twitch()])
+def test_a_twitch_clip_is_prepared_as_a_twitch_source():
+    """Twitch propose lui-meme le telechargement d'un clip (menu Partager).
 
-    message = str(excinfo.value)
-    assert "aucun moyen officiel" in message
-    assert "disposez légalement du fichier" in message
+    Ce test verifiait l'inverse : le pont refusait les clips, au motif errone
+    qu'aucun telechargement officiel n'existait. La premisse etait fausse, pas
+    le code -- elle est corrigee ici.
+    """
+    request = build_request([_twitch()])
+
+    assert request.source_kind == "twitch"
+    assert request.source == "https://clips.twitch.tv/c1"
+    assert not request.needs_local_file
+
+
+def test_a_vod_or_a_live_is_still_refused_with_an_explanation():
+    """Twitch ne propose de telechargement que pour les clips."""
+    for kind in (KIND_VOD, KIND_LIVE):
+        with pytest.raises(SourceNotAvailable) as excinfo:
+            build_request([_twitch(kind=kind)])
+
+        message = str(excinfo.value)
+        assert "que pour les clips" in message
+        assert "disposez légalement du fichier" in message
+
+
+def test_the_rights_notice_never_says_a_download_grants_rights():
+    from radar.bridge import RIGHTS_NOTICE
+
+    assert "pas une licence" in RIGHTS_NOTICE
+    assert "libre de droit" not in RIGHTS_NOTICE.lower()
 
 
 def test_a_local_file_the_user_owns_is_accepted_for_any_platform(tmp_path):

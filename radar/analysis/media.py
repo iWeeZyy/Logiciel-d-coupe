@@ -1,23 +1,25 @@
-"""Obtention du media a analyser, et rien de plus (section 4, etape 1).
+"""Obtention du media a analyser (section 4, etape 1).
 
-CE MODULE NE CONTOURNE RIEN, et c'est sa raison d'etre.
+CE MODULE A ETE CORRIGE APRES UNE ERREUR DE FAIT. Il refusait de telecharger un
+clip Twitch, au motif que la plateforme n'offrirait aucun moyen officiel de le
+faire. C'est faux : le menu Partager d'un clip propose "Telecharger la version
+paysage" et "Telecharger la version portrait". Refuser interdisait donc ce que
+Twitch autorise, et obligeait a fournir un fichier a la main pour une operation
+que l'application peut faire elle-meme. Un clip est desormais telecharge
+automatiquement (radar/clip_download.py).
 
-Twitch ne publie aucun moyen officiel de recuperer le fichier d'un clip, d'une
-VOD ou d'un direct. Les methodes qui existent -- deviner l'URL du mp4 a partir
-de celle de la miniature, passer par l'API interne du site, se faire passer
-pour un navigateur -- fonctionnent, et sont exactement ce que les conditions
-d'utilisation de Twitch interdisent. Le Radar les refuse depuis sa premiere
-version (radar/bridge.py) ; l'analyse de contenu s'aligne dessus au lieu
-d'ouvrir une seconde porte qui rendrait la premiere inutile.
+Ce qui reste vrai, et qui n'est pas la meme question : disposer du fichier ne
+donne aucun droit de republication. Twitch fournit un fichier, pas une licence.
+L'avertissement sur les droits n'est donc plus une condition pour telecharger,
+c'est un rappel avant de publier.
 
-Consequence assumee, et c'est la seule limite reelle de la fonctionnalite :
-pour analyser un clip Twitch, il faut designer un fichier dont on dispose
-legalement. L'association est ensuite MEMORISEE, donc le geste ne se refait pas
-a chaque analyse du meme clip.
+Ce qui reste refuse, faute de tout mecanisme officiel : les VOD et les directs.
+Twitch n'offre aucun bouton de telechargement pour eux, et il n'est pas question
+d'aller le chercher autrement. Pour ceux-la, un fichier local reste attendu.
 
-Pour YouTube, rien de nouveau non plus : youtube/downloader.py existe deja,
-avec sa confirmation de droits obligatoire. Ce module l'appelle, il ne le
-reecrit pas.
+Pour YouTube, rien ne change : telecharger depuis YouTube contrevient a SES
+conditions quelle que soit la licence affichee, donc youtube/downloader.py et sa
+confirmation de droits obligatoire restent le seul chemin.
 """
 from __future__ import annotations
 
@@ -26,7 +28,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.logging_setup import get_logger
-from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE
+from core.paths import user_data_dir
+from radar.models import KIND_CLIP, PLATFORM_TWITCH, PLATFORM_YOUTUBE
 from utils.errors import MediaNotAvailableError
 
 logger = get_logger()
@@ -38,17 +41,18 @@ logger = get_logger()
 FINGERPRINT_BYTES = 1_048_576
 
 TWITCH_EXPLANATION = (
-    "Twitch ne fournit aucun moyen officiel de télécharger un clip, une VOD ou un "
-    "direct. ClipFarming ne contourne pas cette limite.\n\n"
-    "Pour analyser ce clip, indiquez un fichier vidéo ou audio dont vous disposez "
-    "légalement (votre propre contenu, ou celui d'un créateur qui vous a donné son "
-    "accord). Le fichier choisi sera mémorisé pour ce clip."
+    "Le clip est téléchargé automatiquement depuis Twitch, qui propose ce "
+    "téléchargement.\n\n"
+    "Disposer du fichier ne donne pas pour autant le droit de le republier : le "
+    "clip appartient à son créateur et peut contenir des tiers, de la musique ou "
+    "du jeu soumis à leurs propres règles."
 )
 
-YOUTUBE_EXPLANATION = (
-    "Le téléchargement YouTube demande une confirmation explicite de vos droits sur "
-    "le contenu. Sans cette confirmation, indiquez un fichier local dont vous "
-    "disposez légalement."
+TWITCH_NO_DOWNLOAD_EXPLANATION = (
+    "Twitch ne propose de téléchargement que pour les clips, pas pour les VOD ni "
+    "les directs, et ClipFarming ne contourne pas cette limite.\n\n"
+    "Pour analyser ce contenu, indiquez un fichier vidéo ou audio dont vous "
+    "disposez légalement. Le fichier choisi sera mémorisé."
 )
 
 MISSING_FILE = "Le fichier indiqué est introuvable : {path}"
@@ -101,22 +105,53 @@ def can_analyze(opportunity) -> bool:
     return not getattr(opportunity, "is_live", False)
 
 
+def can_download(opportunity) -> bool:
+    """L'application peut-elle recuperer ce media elle-meme ?
+
+    Vrai pour un clip Twitch, que la plateforme propose au telechargement. Faux
+    pour une VOD, un direct, et pour YouTube, dont le telechargement passe par
+    le chemin dedie avec confirmation des droits.
+    """
+    return (getattr(opportunity, "platform", "") == PLATFORM_TWITCH
+            and getattr(opportunity, "kind", "") == KIND_CLIP
+            and not getattr(opportunity, "is_live", False))
+
+
+def clips_dir() -> Path:
+    """Ou sont gardes les clips telecharges.
+
+    Dans le dossier de donnees de l'utilisateur et non dans un dossier
+    temporaire : un clip garde est un clip qu'on ne retelecharge pas a chaque
+    reanalyse, ni pour l'envoyer ensuite au Content Factory.
+    """
+    return user_data_dir() / "clips"
+
+
 def explanation_for(opportunity) -> str:
     platform = getattr(opportunity, "platform", "")
     if platform == PLATFORM_TWITCH:
-        return TWITCH_EXPLANATION
+        return TWITCH_EXPLANATION if can_download(opportunity) else TWITCH_NO_DOWNLOAD_EXPLANATION
     if platform == PLATFORM_YOUTUBE:
         return YOUTUBE_EXPLANATION
-    return TWITCH_EXPLANATION
+    return TWITCH_NO_DOWNLOAD_EXPLANATION
+
+
+def cached_clip(opportunity) -> Path | None:
+    """Clip deja telecharge pour cette opportunite, s'il est toujours la."""
+    from video.ytdlp_utils import find_downloaded_file
+
+    content_id = getattr(opportunity, "content_id", "")
+    if not content_id or not clips_dir().is_dir():
+        return None
+    return find_downloaded_file(str(clips_dir()), content_id)
 
 
 def resolve(opportunity, *, local_path: str | None = None, download_dir: str | None = None,
-            rights_confirmed: bool = False) -> MediaSource:
+            rights_confirmed: bool = False, on_progress=None, cancel_token=None) -> MediaSource:
     """Media a analyser pour cette opportunite.
 
-    Ordre volontaire : un fichier local designe par l'utilisateur gagne toujours,
-    y compris sur YouTube. C'est la voie la plus sure -- elle ne telecharge rien
-    -- et la seule disponible pour Twitch.
+    Ordre volontaire : un fichier local designe par l'utilisateur gagne toujours
+    -- c'est le seul cas ou il a explicitement choisi quelque chose.
     """
     if local_path:
         return from_local_file(local_path)
@@ -125,6 +160,20 @@ def resolve(opportunity, *, local_path: str | None = None, download_dir: str | N
         raise MediaNotAvailableError(
             "Un direct en cours n'a pas de média figé : il n'y a rien à analyser "
             "tant que le stream n'est pas terminé.")
+
+    if can_download(opportunity):
+        existing = cached_clip(opportunity)
+        if existing is not None:
+            logger.info(f"Clip déjà téléchargé, réutilisé : {existing.name}")
+            return from_local_file(existing, origin="twitch")
+
+        from radar.clip_download import download_clip
+
+        target = Path(download_dir) if download_dir else clips_dir()
+        downloaded = download_clip(
+            getattr(opportunity, "url", "") or getattr(opportunity, "content_id", ""),
+            str(target), on_progress=on_progress, cancel_token=cancel_token)
+        return from_local_file(downloaded, origin="twitch")
 
     platform = getattr(opportunity, "platform", "")
     if platform == PLATFORM_YOUTUBE and rights_confirmed and download_dir:

@@ -174,8 +174,16 @@ def run(request: AnalysisRequest, *, store=None, cancel_token: CancelToken | Non
     try:
         # ---------------------------------------------------- 1. le media
         progress.step(STEP_MEDIA)
+
+        def on_download(fraction) -> None:
+            if fraction is None:
+                progress.report("téléchargement du clip depuis Twitch", None)
+            else:
+                progress.report(f"téléchargement du clip : {fraction * 100:.0f} %", fraction)
+
         source = media.resolve(opportunity, local_path=request.local_path,
-                               rights_confirmed=request.rights_confirmed)
+                               rights_confirmed=request.rights_confirmed,
+                               on_progress=on_download, cancel_token=cancel_token)
         if source.temporary:
             temporaries.append(source.path)
 

@@ -97,17 +97,60 @@ def request_for(clip, media_file, **kwargs) -> runner.AnalysisRequest:
 
 
 class TestMedia:
-    def test_twitch_refuse_le_telechargement_et_explique(self, clip):
+    def test_un_clip_twitch_est_telecharge_par_l_application(self, clip, tmp_path,
+                                                             monkeypatch):
+        """Twitch propose lui-meme le telechargement d'un clip.
+
+        Ce test verifiait l'inverse -- que le telechargement etait refuse --
+        sur une premisse fausse : le menu Partager d'un clip contient bien
+        "Télécharger la version paysage".
+        """
+        downloaded = tmp_path / "Abc.mp4"
+        downloaded.write_bytes(b"x" * 2048)
+        calls = {}
+
+        def fake_download(url, out_dir, **kwargs):
+            calls["url"] = url
+            return str(downloaded)
+
+        monkeypatch.setattr("radar.clip_download.download_clip", fake_download)
+        monkeypatch.setattr(media, "clips_dir", lambda: tmp_path / "vide")
+
+        source = media.resolve(clip)
+
+        assert source.origin == "twitch"
+        assert calls["url"] == clip.url
+        assert source.temporary is False, "un clip telecharge est garde, pas jete"
+
+    def test_un_clip_deja_telecharge_n_est_pas_repris(self, clip, tmp_path, monkeypatch):
+        cache = tmp_path / "clips"
+        cache.mkdir()
+        (cache / f"{clip.content_id}.mp4").write_bytes(b"x" * 2048)
+        monkeypatch.setattr(media, "clips_dir", lambda: cache)
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("le clip est déjà là, rien à télécharger")
+
+        monkeypatch.setattr("radar.clip_download.download_clip", refuse)
+
+        assert media.resolve(clip).origin == "twitch"
+
+    def test_une_vod_reste_refusee_faute_de_telechargement_officiel(self, tmp_path,
+                                                                     monkeypatch):
+        from radar.models import KIND_VOD
+
+        monkeypatch.setattr(media, "clips_dir", lambda: tmp_path / "vide")
+        vod = Opportunity(platform=PLATFORM_TWITCH, content_id="v1", kind=KIND_VOD,
+                          creator_key="twitch:42")
+        assert media.can_download(vod) is False
         with pytest.raises(MediaNotAvailableError) as error:
-            media.resolve(clip)
-        message = str(error.value)
-        assert "aucun moyen officiel" in message
-        assert "fichier" in message.lower()
+            media.resolve(vod)
+        assert "que pour les clips" in str(error.value)
 
     def test_aucune_promesse_de_libre_de_droits(self, clip):
         message = media.explanation_for(clip)
         assert "libre de droit" not in message.lower()
-        assert "légalement" in message
+        assert "ne donne pas pour autant le droit" in message
 
     def test_un_direct_n_est_pas_analysable(self):
         live = Opportunity(platform=PLATFORM_TWITCH, content_id="live1", kind=KIND_LIVE,

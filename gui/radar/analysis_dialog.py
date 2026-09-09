@@ -216,7 +216,12 @@ class ClipAnalysisDialog(QDialog):
         self.media_label.setWordWrap(True)
         layout.addWidget(self.media_label)
 
-        pick = QPushButton("📁 Choisir le fichier du clip…")
+        # Le choix manuel reste possible meme quand le telechargement marche :
+        # un montage deja monte, une meilleure copie, un contenu dont on a la
+        # source. Le libelle dit lequel des deux est le cas courant.
+        automatic = all(media.can_download(o) for o in self.opportunities)
+        pick = QPushButton("📁 Utiliser un fichier de mon ordinateur…" if automatic
+                           else "📁 Choisir le fichier du clip…")
         pick.clicked.connect(self._pick_media)
         layout.addWidget(pick)
 
@@ -258,8 +263,11 @@ class ClipAnalysisDialog(QDialog):
     def _refresh_media_label(self) -> None:
         chosen = len(self.media_paths)
         total = len(self.opportunities)
+        downloadable = sum(1 for o in self.opportunities if media.can_download(o))
         if chosen == 0:
-            self.media_label.setText("Aucun fichier choisi pour l'instant.")
+            self.media_label.setText(
+                "Le clip sera téléchargé automatiquement." if downloadable == total
+                else "Aucun fichier choisi pour l'instant.")
         elif total == 1:
             self.media_label.setText("Fichier : " + Path(next(iter(self.media_paths.values()))).name)
         else:
@@ -296,12 +304,22 @@ class ClipAnalysisDialog(QDialog):
         if self._thread is not None and self._thread.isRunning():
             return
 
-        missing = [o for o in self.opportunities if o.key not in self.media_paths]
-        if missing:
-            existing = None if self.is_batch else self._existing_analysis(self.opportunities[0])
-            if existing is not None and not force:
-                self._show_result(existing)      # rien a recalculer : on affiche
+        # Une analyse deja faite s'affiche, elle ne se refait pas. Cette
+        # verification passe AVANT celle du media : depuis que l'application
+        # telecharge les clips, plus rien ne manquait, et "Voir l'analyse"
+        # relancait un telechargement au lieu d'ouvrir le resultat existant.
+        if not force and not self.is_batch:
+            existing = self._existing_analysis(self.opportunities[0])
+            if existing is not None:
+                self._show_result(existing)
                 return
+
+        # Un clip que l'application sait telecharger n'a pas besoin d'un fichier :
+        # exiger le contraire etait la consequence d'une erreur de fait, corrigee
+        # (voir radar/clip_download.py).
+        missing = [o for o in self.opportunities
+                   if o.key not in self.media_paths and not media.can_download(o)]
+        if missing:
             QMessageBox.information(
                 self, "Fichier manquant",
                 "Indiquez d'abord le fichier du clip.\n\n"

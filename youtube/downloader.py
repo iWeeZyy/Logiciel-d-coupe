@@ -19,13 +19,14 @@ from core.config_loader import load_youtube_config
 from core.logging_setup import get_logger
 from utils.errors import RightsNotConfirmedError, YouTubeDownloadError
 from video.ffmpeg_utils import FFMPEG_BIN
+# Helpers yt-dlp communs a YouTube et Twitch, ranges hors de ce paquet depuis
+# que le telechargement des clips Twitch les utilise aussi. Reexportes ici :
+# ils faisaient partie de l'interface de ce module.
+from video.ytdlp_utils import build_format, find_downloaded_file  # noqa: F401
 
 logger = get_logger()
 
 _BARE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-
-# Extensions produites par yt-dlp selon ce qu'il a pu fusionner.
-_OUTPUT_EXTENSIONS = (".mp4", ".mkv", ".webm", ".m4a")
 
 RIGHTS_WARNING = (
     "Telecharger une video YouTube par ce moyen viole les conditions "
@@ -38,35 +39,6 @@ RIGHTS_WARNING = (
 )
 
 
-def build_format(max_height: int = 0) -> str:
-    """Selecteur de format yt-dlp : la meilleure qualite reellement disponible.
-
-    Pourquoi la version precedente plafonnait sans le dire : elle demandait
-    `bestvideo[ext=mp4]`, or YouTube ne sert en MP4 que ses flux H.264. Le
-    1440p, le 2160p et souvent le 1080p60 n'existent qu'en VP9 ou AV1, dans un
-    conteneur WebM. Exiger du MP4 revenait donc a refuser silencieusement les
-    meilleures pistes et a se contenter, au mieux, d'un 1080p H.264.
-
-    La contrainte de conteneur est levee sur la VIDEO, gardee sur l'AUDIO :
-    l'AAC (m4a) que YouTube propose systematiquement se remuxe proprement en
-    MP4, alors que l'Opus de la piste WebM y est mal supporte et fait echouer la
-    fusion. On obtient ainsi la meilleure image disponible dans un fichier qui
-    reste un vrai MP4.
-
-    `max_height` plafonne la definition quand elle est renseignee. 0 signifie
-    "aucune limite". Le reglage existe parce qu'une source 4K en AV1 se decode
-    lentement, et que le clip produit sort au mieux en 1080 vertical : payer un
-    long rendu pour une definition que la sortie ne conservera pas est un choix
-    qui doit rester possible, pas impose.
-    """
-    ceiling = f"[height<={int(max_height)}]" if max_height and max_height > 0 else ""
-    return (
-        f"bestvideo*{ceiling}+bestaudio[ext=m4a]/"
-        f"bestvideo*{ceiling}+bestaudio/"
-        f"best{ceiling}/best"
-    )
-
-
 def configured_max_height() -> int:
     """Plafond de definition lu dans config/youtube.json, 0 par defaut."""
     try:
@@ -75,22 +47,6 @@ def configured_max_height() -> int:
         return int(value) if isinstance(value, (int, float)) and value > 0 else 0
     except Exception:      # pragma: no cover - config illisible
         return 0
-
-
-def find_downloaded_file(out_dir: str, video_id: str) -> Path | None:
-    """Fichier reellement produit par yt-dlp.
-
-    On ne suppose plus le .mp4 : quand la fusion doit se rabattre sur un autre
-    conteneur, le fichier existe bel et bien et l'ancien code annoncait un echec
-    alors que le telechargement avait reussi.
-    """
-    directory = Path(out_dir)
-    for extension in _OUTPUT_EXTENSIONS:
-        candidate = directory / f"{video_id}{extension}"
-        if candidate.is_file():
-            return candidate
-    matches = sorted(directory.glob(f"{video_id}.*"))
-    return matches[0] if matches else None
 
 
 def resolve_watch_url(video_id_or_url: str) -> str:

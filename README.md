@@ -122,10 +122,22 @@ sont pas touches, ils portent leur propre copie des statistiques du moment.
 - Le **nombre de followers Twitch** demande une autorisation utilisateur que la
   surveillance ne justifie pas : il reste inconnu plutot qu'affiche a zero.
 
-**Twitch et le Content Factory.** Twitch ne fournit aucun moyen officiel de
-telecharger un stream, une VOD ou un clip. Le Radar le dit et propose de
-selectionner un fichier local dont vous disposez legalement, qui sera alors
-traite comme n'importe quelle autre video.
+**Twitch et le telechargement.** Un CLIP est telecharge par l'application :
+Twitch propose lui-meme ce telechargement (menu Partager d'un clip). Les
+versions precedentes le refusaient, sur une affirmation fausse -- elles
+interdisaient ce que la plateforme autorise. Une VOD ou un direct, en revanche,
+n'ont aucun bouton de telechargement chez Twitch et restent refuses : pour
+ceux-la, selectionnez un fichier dont vous disposez legalement, il sera traite
+comme n'importe quelle autre video.
+
+Disposer du fichier n'est pas disposer des droits : Twitch fournit un fichier,
+pas une licence. Le clip reste la propriete de son createur et peut contenir des
+tiers, de la musique ou du jeu soumis a leurs propres regles. L'avertissement
+s'affiche avant publication, il ne conditionne plus le telechargement.
+
+Les clips telecharges sont gardes dans `%LOCALAPPDATA%\ClipFarming\clips` : un
+clip deja recupere n'est jamais retelecharge, ni pour une reanalyse, ni pour un
+envoi au Content Factory.
 
 ### Analyse de contenu d'un clip
 
@@ -148,10 +160,9 @@ les silences et plusieurs candidats pour le moment cle).
   contexte au lieu de le combler. Une emotion supposee est affichee avec la
   phrase qui l'a declenchee et un niveau de confiance -- eleve, moyen ou faible,
   jamais un pourcentage, que rien ici ne permettrait de calculer honnetement.
-- **Le media vient de vous.** Comme pour le Content Factory ci-dessus, Twitch
-  n'offre aucun telechargement officiel : l'analyse demande un fichier dont vous
-  disposez legalement. Il est memorise, donc la question n'est posee qu'une fois
-  par clip.
+- **Le media est recupere tout seul.** Le clip est telecharge depuis Twitch a la
+  meilleure qualite disponible, puis garde. Un fichier de votre ordinateur reste
+  utilisable a la place, et une VOD ou un direct en demande un (voir plus haut).
 - Une analyse deja faite est reaffichee immediatement ; "Réanalyser" la refait
   et remplace l'ancienne. Le meme media, le meme modele et le meme niveau ne
   sont jamais retraites.

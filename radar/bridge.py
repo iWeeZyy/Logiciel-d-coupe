@@ -12,10 +12,11 @@ tout telechargement sans confirmation explicite des droits
 seconde regle, qui finirait par diverger. Voir la constante RIGHTS_WARNING de ce
 module-la, deja affichee par la recherche YouTube.
 
-Aucune VOD ni aucun stream Twitch n'est telecharge : Twitch ne fournit pas de
-mecanisme officiel pour cela, et le faire par un autre moyen contournerait ses
-conditions. Pour Twitch, le pont attend donc un FICHIER LOCAL dont
-l'utilisateur dispose legalement.
+Un CLIP Twitch est telecharge : la plateforme propose elle-meme ce
+telechargement (menu Partager d'un clip). Une VOD ou un direct, non -- Twitch
+n'offre rien pour eux et il n'est pas question d'aller le chercher autrement ;
+pour ceux-la, le pont attend un fichier local. La correction de cette erreur --
+le pont refusait aussi les clips -- est documentee dans radar/clip_download.py.
 """
 from __future__ import annotations
 
@@ -27,8 +28,8 @@ from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE
 # Message affiche avant tout envoi vers le pipeline. Il dit ce qui est vrai :
 # trouver un contenu ne donne aucun droit dessus.
 RIGHTS_NOTICE = (
-    "Trouver un contenu sur YouTube ou Twitch ne signifie pas disposer des droits "
-    "nécessaires pour le republier ou le monétiser.\n\n"
+    "Pouvoir télécharger un contenu ne signifie pas disposer des droits nécessaires "
+    "pour le republier ou le monétiser. Twitch fournit un fichier, pas une licence.\n\n"
     "Vous devez être l'auteur du contenu, avoir l'autorisation de son auteur, ou "
     "disposer d'un autre fondement légal. Cette vérification vous incombe."
 )
@@ -39,7 +40,7 @@ class PipelineRequest:
     """Ce qu'il faut au pipeline pour traiter une opportunite."""
 
     project_name: str
-    source_kind: str            # "youtube" | "local"
+    source_kind: str            # "youtube" | "twitch" | "local"
     source: str                 # URL YouTube ou chemin local
     opportunity_keys: tuple = ()
 
@@ -61,7 +62,8 @@ def build_request(opportunities: list, local_files: dict | None = None) -> Pipel
     """Prepare l'envoi au Content Factory.
 
     `local_files` : {cle d'opportunite: chemin} pour les contenus dont
-    l'utilisateur possede deja le fichier. Obligatoire pour Twitch.
+    l'utilisateur possede deja le fichier. Obligatoire pour une VOD ou un direct
+    Twitch, facultatif pour un clip, que l'application sait telecharger.
 
     Un seul contenu par projet : le pipeline decoupe UNE video longue en
     plusieurs clips. Regrouper plusieurs sources dans un projet melangerait des
@@ -98,9 +100,27 @@ def build_request(opportunities: list, local_files: dict | None = None) -> Pipel
         )
 
     if opportunity.platform == PLATFORM_TWITCH:
+        from radar.analysis import media
+
+        # Un clip deja telecharge par l'analyse est reutilise tel quel : le
+        # retelecharger pour le meme contenu serait du temps et de la bande
+        # passante depenses pour un fichier qu'on a deja.
+        cached = media.cached_clip(opportunity)
+        if cached is not None:
+            return PipelineRequest(
+                project_name=_safe_project_name(opportunity.title or opportunity.content_id),
+                source_kind="local", source=str(cached),
+                opportunity_keys=(opportunity.key,),
+            )
+        if media.can_download(opportunity):
+            return PipelineRequest(
+                project_name=_safe_project_name(opportunity.title or opportunity.content_id),
+                source_kind="twitch", source=opportunity.url,
+                opportunity_keys=(opportunity.key,),
+            )
         raise SourceNotAvailable(
-            "Twitch ne fournit aucun moyen officiel de télécharger un stream, une VOD "
-            "ou un clip, et le faire autrement contournerait ses conditions.\n\n"
+            "Twitch ne propose de téléchargement que pour les clips, pas pour les VOD "
+            "ni les directs, et ClipFarming ne contourne pas cette limite.\n\n"
             "Si vous disposez légalement du fichier vidéo (votre propre contenu, ou "
             "une autorisation de son auteur), sélectionnez-le : il sera traité par le "
             "pipeline local comme n'importe quelle autre vidéo."
