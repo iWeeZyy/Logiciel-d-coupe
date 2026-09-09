@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -26,9 +27,9 @@ from gui import settings_store
 from gui.branding import APP_TAGLINE
 from content_factory import planning
 from video import ffmpeg_utils
-from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
 from gui.controller import AppController
 from gui.widgets.drop_zone import DropZone
+from gui.widgets.production_options import ProductionOptionsBox
 from utils.hardware import cuda_device_count
 
 _DURATION_PRESETS = [15, 30, 45, 60]
@@ -42,19 +43,6 @@ _AUTO_DURATION = 45
 # Modules proposes directement sur l'accueil (section 8). Les autres
 # (contexte, cadrage, silences, hesitations, zoom) se reglent dans Parametres :
 # les mettre tous ici transformerait l'accueil en tableau de bord.
-_QUICK_MODULES = [
-    ("context_detection", "Contexte"),
-    ("framing", "Cadrage intelligent"),
-    ("montage", "Montage auto"),
-    ("captions", "Sous-titres"),
-    # "Titres" et "Descriptions" sont deux cases distinctes dans la demande,
-    # mais un seul module ici : editing/metadata.py les extrait ensemble, du
-    # meme texte et du meme classement de phrases. Deux interrupteurs pour un
-    # seul mecanisme donneraient une case sans effet propre.
-    ("metadata", "Titres et descriptions"),
-    ("thumbnails", "Miniatures"),
-]
-
 _MODEL_CHOICES = [
     ("tiny", "Tiny", "Très rapide • qualité basique • ~1 Go RAM"),
     ("base", "Base", "Rapide • qualité correcte • ~1 Go RAM"),
@@ -82,7 +70,22 @@ class HomePage(QWidget):
         self.selected_video_path: str | None = None
         self.video_duration_s: float | None = None
 
-        outer = QVBoxLayout(self)
+        # La page defile. Sans cela, des que la carte depassait la hauteur de la
+        # fenetre, Qt comprimait les widgets les uns sur les autres : les champs
+        # "Duree" et "Nombre de clips" se retrouvaient PAR-DESSUS la zone de
+        # depot. Une page trop haute doit defiler, pas se replier sur elle-meme.
+        page_layout = QVBoxLayout(self)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        scroll.setWidget(content)
+        page_layout.addWidget(scroll)
+
+        outer = QVBoxLayout(content)
         outer.setContentsMargins(40, 36, 40, 36)
         outer.setSpacing(0)
         outer.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -167,36 +170,15 @@ class HomePage(QWidget):
         gpu_label.setProperty("role", "muted")
         card_layout.addWidget(gpu_label)
 
-        # --- Format (fixe) + modules rapides ---
-        format_label = QLabel("Format : 9:16 (1080 × 1920) — vertical, prêt à publier")
-        format_label.setProperty("role", "muted")
-        card_layout.addWidget(format_label)
-
+        # --- Options de production ---
+        # La ligne "Format : 9:16 (1080 x 1920)" qui se trouvait ici annoncait
+        # un fait ; c'est devenu un choix, et la laisser aurait affiche deux
+        # formats a l'ecran, l'un fixe et l'autre reglable.
         card_layout.addWidget(_field_label("Édition automatique"))
-        modules_row = QHBoxLayout()
-        modules_row.setSpacing(14)
-        self._module_boxes: dict[str, QCheckBox] = {}
-        for key, label in _QUICK_MODULES:
-            box = QCheckBox(label)
-            box.setChecked(True)
-            self._module_boxes[key] = box
-            modules_row.addWidget(box)
-        modules_row.addStretch(1)
-        card_layout.addLayout(modules_row)
-
-        format_row = QHBoxLayout()
-        format_row.addWidget(_field_label("Format"))
-        self.aspect_combo = QComboBox()
-        self.aspect_combo.addItem("9:16 — vertical (Reels, Shorts, TikTok)", ASPECT_PORTRAIT)
-        self.aspect_combo.addItem("16:9 — horizontal (image d'origine)", ASPECT_LANDSCAPE)
-        format_row.addWidget(self.aspect_combo)
-        self.aspect_hint = QLabel()
-        self.aspect_hint.setProperty("role", "muted")
-        self.aspect_hint.setWordWrap(True)
-        format_row.addWidget(self.aspect_hint, stretch=1)
-        self.aspect_combo.currentIndexChanged.connect(self._on_aspect_changed)
-        card_layout.addLayout(format_row)
-        self._on_aspect_changed()
+        # Trois colonnes : six cases sur une seule ligne dans une carte de
+        # 620 px tronquaient les libelles ("Cadrage int...", "Montage au...").
+        self.production_options = ProductionOptionsBox(columns=3)
+        card_layout.addWidget(self.production_options)
 
         modules_hint = QLabel(
             "Cadrage suivi, contexte, silences et zooms se règlent dans Paramètres."
@@ -257,25 +239,8 @@ class HomePage(QWidget):
             return self.custom_duration_spin.value()
         return _AUTO_DURATION if data == 0 else int(data)
 
-    def _on_aspect_changed(self) -> None:
-        """En 16:9 l'image n'est pas recadree, donc rien a cadrer intelligemment.
-
-        La case reste visible mais devient inoperante : la griser et le dire est
-        plus honnete que de la laisser cochee sans effet.
-        """
-        portrait = self.aspect_combo.currentData() == ASPECT_PORTRAIT
-        self.aspect_hint.setText(
-            "" if portrait else "L'image d'origine est conservée : aucun recadrage, "
-                                "donc pas de cadrage intelligent.")
-        box = self._module_boxes.get("framing")
-        if box is not None:
-            box.setEnabled(portrait)
-
     def _editing_overrides(self) -> dict:
-        overrides = {key: box.isChecked() for key, box in self._module_boxes.items()}
-        if self.aspect_combo.currentData() != ASPECT_PORTRAIT:
-            overrides["framing"] = False
-        return overrides
+        return self.production_options.editing_overrides()
 
     def _confirm_heavy_model(self) -> bool:
         """Sans GPU, un gros modele peut transcrire plus lentement que la duree
@@ -318,7 +283,7 @@ class HomePage(QWidget):
             device=settings_store.get("default_device"),
             no_cache=False,
             debug_scores=False,
-            aspect=self.aspect_combo.currentData(),
+            aspect=self.production_options.aspect(),
         )
         name = Path(self.selected_video_path).stem
         self.controller.start_analysis(

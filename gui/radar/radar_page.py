@@ -481,7 +481,8 @@ class RadarPage(QWidget):
         """Ouvre la fenetre d'analyse. Rien ne demarre avant le bouton dedie."""
         from gui.radar.analysis_dialog import ClipAnalysisDialog
 
-        dialog = ClipAnalysisDialog(opportunities, self.store, creators=self.creators, parent=self)
+        dialog = ClipAnalysisDialog(opportunities, self.store, creators=self.creators,
+                                    parent=self, controller=self.controller)
         dialog.analysis_saved.connect(self._on_analysis_saved)
         dialog.exec()
         self._selected.clear()
@@ -491,15 +492,23 @@ class RadarPage(QWidget):
         self._analyzed.add(content_id)
 
     def _send_to_factory(self, opportunity) -> None:
+        """Ouvre la fenetre du clip pour y choisir les options, puis produire.
+
+        Ce bouton se contentait d'afficher un message : il annoncait un projet
+        sans jamais rien lancer. Il ouvre desormais la meme fenetre que
+        "Analyser le contenu", ou se trouvent le format et les cases -- une
+        production se lance apres avoir choisi, pas avant.
+        """
         from radar.bridge import RIGHTS_NOTICE, SourceNotAvailable, build_request
+
         try:
-            request = build_request([opportunity])
+            build_request([opportunity])
         except SourceNotAvailable as error:
             QMessageBox.information(self, "Source non disponible", str(error))
             return
-        QMessageBox.information(
-            self, "Vérification des droits",
-            RIGHTS_NOTICE + f"\n\nProjet à créer : {request.project_name}")
+
+        QMessageBox.information(self, "Vérification des droits", RIGHTS_NOTICE)
+        self._open_analysis([opportunity])
 
     # ------------------------------------------------------------- scan
     def _start_scan(self) -> None:

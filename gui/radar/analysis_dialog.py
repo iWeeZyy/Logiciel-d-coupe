@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from core.cancellation import CancelToken
 from gui import settings_store
+from gui.widgets.production_options import ProductionOptionsBox
 from gui.radar.analysis_view import ClipAnalysisView
 from radar.analysis import media, runner
 from radar.analysis.models import (
@@ -44,6 +45,13 @@ from radar.analysis.models import (
     format_timestamp,
 )
 from utils.errors import CancelledError, ClipFarmingError
+
+def _project_name(opportunity) -> str:
+    """Nom de projet lisible, via la regle deja utilisee par le pont."""
+    from radar.bridge import _safe_project_name
+
+    return _safe_project_name(getattr(opportunity, "title", "") or opportunity.content_id)
+
 
 MEDIA_FILTER = ("Vidéos et audio (*.mp4 *.mkv *.mov *.avi *.webm *.wav *.mp3 *.m4a *.flac);;"
                 "Tous les fichiers (*)")
@@ -91,19 +99,54 @@ class AnalysisThread(QThread):
         self.finished_all.emit()
 
 
+class MediaThread(QThread):
+    """Recupere le fichier du clip hors du fil de l'interface.
+
+    Le telechargement dure quelques secondes : le faire dans le fil graphique
+    figerait la fenetre juste apres un clic, ce qui est le moment ou une
+    interface doit justement rester vivante.
+    """
+
+    progressed = Signal(object)      # fraction, ou None si la taille est inconnue
+    ready = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, opportunity, local_path, cancel_token):
+        super().__init__()
+        self.opportunity = opportunity
+        self.local_path = local_path
+        self.cancel_token = cancel_token
+
+    def run(self) -> None:
+        try:
+            source = media.resolve(self.opportunity, local_path=self.local_path,
+                                   on_progress=lambda f: self.progressed.emit(f),
+                                   cancel_token=self.cancel_token)
+        except CancelledError:
+            self.failed.emit("__cancelled__")
+        except ClipFarmingError as error:
+            self.failed.emit(str(error))
+        except Exception as error:      # noqa: BLE001
+            self.failed.emit(f"Erreur inattendue : {error}")
+        else:
+            self.ready.emit(source.path)
+
+
 class ClipAnalysisDialog(QDialog):
     """Analyse d'un clip, ou d'une selection de clips."""
 
     analysis_saved = Signal(str)     # content_id, pour rafraichir la carte du Radar
 
-    def __init__(self, opportunities, store, creators=None, parent=None):
+    def __init__(self, opportunities, store, creators=None, parent=None, controller=None):
         super().__init__(parent)
         self.setWindowTitle("Analyse du contenu")
-        self.setMinimumSize(560, 520)
+        self.setMinimumSize(600, 560)
 
         self.opportunities = list(opportunities)
         self.store = store
         self.creators = creators or {}
+        self.controller = controller
+        self._media_thread: MediaThread | None = None
         self.media_paths: dict[str, str] = {}
         self.results: list = []
         self.errors: list[tuple[str, str]] = []
@@ -147,6 +190,10 @@ class ClipAnalysisDialog(QDialog):
         self.reanalyze_button.clicked.connect(lambda: self._start(force=True))
         self.reanalyze_button.setVisible(False)
         buttons.addWidget(self.reanalyze_button)
+
+        self.produce_button = QPushButton("🏭 Produire les clips")
+        self.produce_button.clicked.connect(self._produce)
+        buttons.addWidget(self.produce_button)
 
         self.cancel_button = QPushButton("Annuler l'analyse")
         self.cancel_button.clicked.connect(self._cancel)
@@ -224,6 +271,23 @@ class ClipAnalysisDialog(QDialog):
                            else "📁 Choisir le fichier du clip…")
         pick.clicked.connect(self._pick_media)
         layout.addWidget(pick)
+
+        # Options de production, ici et pas ailleurs : c'est depuis cette
+        # fenetre qu'on lance un decoupage, donc c'est ici que les choix se
+        # font. Le meme composant que la page Accueil, pas une seconde liste de
+        # cases qui finirait par diverger.
+        production_title = QLabel("Production des clips")
+        production_title.setStyleSheet("font-weight: 700;")
+        layout.addWidget(production_title)
+        self.production_options = ProductionOptionsBox(columns=2)
+        layout.addWidget(self.production_options)
+
+        production_hint = QLabel(
+            "« Produire les clips » lance le découpage complet sur ce clip, avec "
+            "ces options. L'analyse du contenu, elle, ne produit que du texte.")
+        production_hint.setWordWrap(True)
+        production_hint.setProperty("role", "muted")
+        layout.addWidget(production_hint)
 
         # Fichier deja utilise lors d'une precedente analyse : repropose s'il
         # existe toujours, pour ne pas redemander le meme fichier a chaque fois.
@@ -402,6 +466,106 @@ class ClipAnalysisDialog(QDialog):
         self.reanalyze_button.setVisible(True)
         self.cancel_button.setVisible(False)
 
+    # ---------------------------------------------------------- production
+    def _produce(self) -> None:
+        """Lance le decoupage complet de ce clip par le pipeline existant.
+
+        Aucun second pipeline : on prepare les memes arguments que la page
+        Accueil et on appelle le meme controleur. La seule difference est qu'il
+        faut d'abord disposer du fichier.
+        """
+        if self.controller is None:
+            QMessageBox.information(
+                self, "Production indisponible",
+                "Cette fenêtre a été ouverte sans accès au moteur de traitement.")
+            return
+        if self.is_batch:
+            QMessageBox.information(
+                self, "Un clip à la fois",
+                "Le découpage traite une source à la fois : il découpe UNE vidéo en "
+                "plusieurs clips. Sélectionnez un seul clip pour le produire.")
+            return
+        if self._media_thread is not None and self._media_thread.isRunning():
+            return
+
+        opportunity = self.opportunities[0]
+        local = self.media_paths.get(opportunity.key)
+        if not local and not media.can_download(opportunity):
+            QMessageBox.information(
+                self, "Fichier manquant",
+                "Indiquez d'abord le fichier de cette vidéo.\n\n"
+                + media.explanation_for(opportunity))
+            return
+
+        self._cancel_token = CancelToken()
+        self._media_thread = MediaThread(opportunity, local, self._cancel_token)
+        self._media_thread.progressed.connect(self._on_media_progress)
+        self._media_thread.ready.connect(self._on_media_ready)
+        self._media_thread.failed.connect(self._on_media_failed)
+
+        self.produce_button.setEnabled(False)
+        self.start_button.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setValue(0)
+        self.progress_label.setVisible(True)
+        self.progress_label.setText("Récupération du clip…")
+        self._media_thread.start()
+
+    def _on_media_progress(self, fraction) -> None:
+        if fraction is None:
+            self.progress.setRange(0, 0)     # indetermine : la taille est inconnue
+            return
+        self.progress.setRange(0, 100)
+        self.progress.setValue(int(max(0.0, min(1.0, fraction)) * 100))
+
+    def _on_media_failed(self, message: str) -> None:
+        self.progress.setRange(0, 100)
+        self.progress.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.produce_button.setEnabled(True)
+        self.start_button.setEnabled(True)
+        self._media_thread = None
+        if message != "__cancelled__":
+            QMessageBox.warning(self, "Production impossible", message)
+
+    def _on_media_ready(self, path: str) -> None:
+        from types import SimpleNamespace
+
+        opportunity = self.opportunities[0]
+        self.media_paths[opportunity.key] = path
+        self._media_thread = None
+        self.progress.setRange(0, 100)
+        self.progress.setVisible(False)
+        self.progress_label.setVisible(False)
+
+        duration = getattr(opportunity, "duration_s", None)
+        cli_args = SimpleNamespace(
+            input=path,
+            # Un clip est deja court : on en tire UNE sortie, pas cinq morceaux
+            # de quelques secondes. La duree demandee couvre le clip entier
+            # quand elle est connue.
+            clip_duration=max(5, int(duration)) if duration else 45,
+            nb_clips=1,
+            model=settings_store.get("default_model") or "small",
+            language=None,
+            pre_roll=None,
+            post_roll=None,
+            min_gap=None,
+            subtitle_style=settings_store.get("default_subtitle_style"),
+            device=settings_store.get("default_device"),
+            no_cache=False,
+            debug_scores=False,
+            aspect=self.production_options.aspect(),
+        )
+        name = _project_name(opportunity)
+        self.controller.start_analysis(
+            cli_args, name=name,
+            source_label=opportunity.title or opportunity.content_id,
+            source_kind="local", source_url=opportunity.url or None,
+            editing_overrides=self.production_options.editing_overrides(),
+        )
+        self.accept()
+
     # ------------------------------------------------------------ fermeture
     def reject(self) -> None:
         self.cleanup()
@@ -415,7 +579,8 @@ class ClipAnalysisDialog(QDialog):
         """
         if self._cancel_token is not None:
             self._cancel_token.cancel()
-        thread = self._thread
-        if thread is not None and thread.isRunning():
-            thread.wait(5000)
-        self._thread = None
+        for attribute in ("_thread", "_media_thread"):
+            thread = getattr(self, attribute, None)
+            if thread is not None and thread.isRunning():
+                thread.wait(5000)
+            setattr(self, attribute, None)

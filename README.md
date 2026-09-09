@@ -495,7 +495,11 @@ Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique 
 Quatre choix, faits AVANT de lancer un traitement -- sur la page Accueil, ou en
 ligne de commande.
 
-| Option | Accueil | Ligne de commande |
+Elles se choisissent a deux endroits : sur la page **Accueil** pour une video de
+votre ordinateur, et dans la fenetre du **Radar** avant de produire un clip
+trouve. Le meme composant sert aux deux, donc les choix y sont identiques.
+
+| Option | Accueil et Radar | Ligne de commande |
 | --- | --- | --- |
 | Sous-titres | case "Sous-titres" | `--no-subtitles` |
 | Format | menu "Format" | `--aspect 9:16` / `--aspect 16:9` |
@@ -511,6 +515,12 @@ ligne de commande.
   deformee ou rognee. Le cadrage intelligent n'a alors plus d'objet et la case
   se grise : il sert a choisir QUOI garder dans un cadre plus etroit que la
   source, ce qui ne se pose pas ici.
+- **Depuis le Radar**, "Produire les clips" lance le decoupage complet sur le
+  clip choisi, avec ces options. Le clip est recupere d'abord si besoin. Une
+  seule sortie est produite : un clip Twitch est deja court, le decouper en
+  cinq morceaux de quelques secondes n'aurait pas de sens. L'analyse du
+  contenu, elle, ne produit que du texte -- ce sont deux actions distinctes
+  dans la meme fenetre.
 - Ces interrupteurs ne peuvent que DESACTIVER. Un module coupe dans
   `config/editing.json` (page Parametres) ne se rallume pas en cochant une
   case : la configuration reste la source, la case est un interrupteur
