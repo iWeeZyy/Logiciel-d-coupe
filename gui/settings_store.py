@@ -27,6 +27,14 @@ _DEFAULTS = {
     # de megaoctets et ils s'accumulent, le disque systeme n'est pas toujours le
     # bon endroit pour les garder.
     "clips_dir": None,
+    # Voice Studio : dernier moteur/voix/vitesse utilises, et dossier des voix
+    # Piper. None -> l'emplacement par defaut sous les donnees de
+    # l'application ; l'utilisateur peut le deplacer, les modeles pesent
+    # plusieurs dizaines de megaoctets chacun.
+    "tts_engine": None,
+    "tts_voice": None,
+    "tts_rate": 1.0,
+    "piper_models_dir": None,
 }
 
 

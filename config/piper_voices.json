@@ -1,0 +1,60 @@
+{
+  "_comment": "Catalogue des voix Piper proposees au telechargement. Fichier de CONFIGURATION et non de code : une adresse qui change se corrige ici, sans reconstruire l'application. Les fichiers viennent du depot officiel rhasspy/piper-voices (licences par voix, voir model_card a cote de chaque modele). AUCUNE TAILLE N'EST ECRITE ICI : elle est lue sur le serveur au moment du telechargement, une taille recopiee a la main serait fausse tot ou tard. 'gender' n'est renseigne que lorsqu'il est connu ; absent, l'interface n'affiche rien plutot que de deviner.",
+  "base_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main",
+  "voices": [
+    {
+      "key": "fr_FR-siwis-medium",
+      "label": "Français — Femme (Siwis, qualité moyenne)",
+      "language": "fr_FR",
+      "quality": "medium",
+      "gender": "female",
+      "path": "fr/fr_FR/siwis/medium/fr_FR-siwis-medium"
+    },
+    {
+      "key": "fr_FR-siwis-low",
+      "label": "Français — Femme (Siwis, légère)",
+      "language": "fr_FR",
+      "quality": "low",
+      "gender": "female",
+      "path": "fr/fr_FR/siwis/low/fr_FR-siwis-low"
+    },
+    {
+      "key": "fr_FR-upmc-medium",
+      "label": "Français — Deux voix (UPMC, qualité moyenne)",
+      "language": "fr_FR",
+      "quality": "medium",
+      "gender": "",
+      "path": "fr/fr_FR/upmc/medium/fr_FR-upmc-medium"
+    },
+    {
+      "key": "fr_FR-gilles-low",
+      "label": "Français — Homme (Gilles, légère)",
+      "language": "fr_FR",
+      "quality": "low",
+      "gender": "male",
+      "path": "fr/fr_FR/gilles/low/fr_FR-gilles-low"
+    },
+    {
+      "key": "fr_FR-mls_1840-low",
+      "label": "Français — Homme (MLS 1840, légère)",
+      "language": "fr_FR",
+      "quality": "low",
+      "gender": "male",
+      "path": "fr/fr_FR/mls_1840/low/fr_FR-mls_1840-low"
+    },
+    {
+      "key": "fr_FR-tom-medium",
+      "label": "Français — Homme (Tom, qualité moyenne)",
+      "language": "fr_FR",
+      "quality": "medium",
+      "gender": "male",
+      "path": "fr/fr_FR/tom/medium/fr_FR-tom-medium"
+    }
+  ],
+  "engine": {
+    "_comment": "Programme piper officiel (depot rhasspy/piper, licence MIT), utilise quand la bibliotheque Python n'est pas installee. Telecharge UNIQUEMENT sur demande explicite. Adresse a corriger ici si une version plus recente est publiee.",
+    "win32": "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip",
+    "linux": "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz",
+    "darwin": "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_macos_x64.tar.gz"
+  }
+}

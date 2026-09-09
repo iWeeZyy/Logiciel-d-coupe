@@ -1,22 +1,26 @@
-"""Synthese vocale LOCALE.
+"""Synthese vocale LOCALE : deux moteurs, aucune API.
 
 Rien ne sort de la machine : ni le texte, ni l'audio produit. Aucun compte,
-aucune cle d'API, aucun abonnement. C'est la contrainte qui a decide du moteur.
+aucune cle d'API, aucun abonnement.
 
-Moteur retenu : les voix DEJA INSTALLEES sur le systeme, atteintes par pyttsx3
--- SAPI5 sous Windows (les voix de Windows, dont les francaises quand elles
-sont installees), espeak-ng sous Linux, NSSpeechSynthesizer sous macOS. Deux
-raisons : rien a telecharger (une voix Piper pese des dizaines de megaoctets et
-vient d'un depot distant), et rien a compiler.
+DEUX MOTEURS, ET ILS NE SERVENT PAS A LA MEME CHOSE :
 
-Piper est PREVU mais pas impose : `PiperEngine` s'active seulement si un
-executable et une voix sont reellement presents sur la machine. Tant qu'ils ne
-le sont pas, il n'apparait pas dans la liste -- plutot qu'un choix qui echoue
-au moment de generer.
+- `SystemVoiceEngine` : les voix DEJA installees dans le systeme (SAPI5 sous
+  Windows -- Hortense et compagnie --, espeak-ng sous Linux), via pyttsx3.
+  Aucun telechargement, disponible immediatement, qualite de voix systeme.
+- `PiperEngine` : des voix neuronales nettement plus naturelles, executees
+  localement a partir d'un modele .onnx que l'utilisateur installe depuis le
+  gestionnaire de voix (voice_studio/piper_models.py). Rien n'est telecharge
+  sans clic, et une fois le modele la, plus aucune connexion n'est necessaire.
 
-Le clonage de voix n'existe pas ici, volontairement (section 19 du cahier des
-charges) : reproduire la voix d'une personne reelle a partir de sa video
-demande son autorisation, et rien dans ce logiciel ne peut la verifier.
+Les deux exposent la meme interface -- `available()`, `voices()`,
+`synthesize()` -- et c'est tout ce que le reste du logiciel connait. Ajouter un
+troisieme moteur demain, c'est ajouter une classe a `engines()`, sans toucher
+ni a l'interface ni au cache.
+
+Le clonage de voix n'existe pas ici, volontairement : reproduire la voix d'une
+personne reelle a partir de sa video demande son autorisation, et rien dans ce
+logiciel ne peut la verifier.
 """
 from __future__ import annotations
 
@@ -45,16 +49,28 @@ class TtsError(Exception):
 
 @dataclass(frozen=True)
 class Voice:
-    """Une voix disponible sur CETTE machine."""
+    """Une voix disponible sur CETTE machine.
+
+    `engine` dit d'ou elle vient : c'est ce qui permet a l'interface de
+    proposer un choix de moteur sans que la liste des voix ne mente -- une voix
+    affichee correspond toujours a un moteur present et a un modele installe.
+    """
 
     id: str
     label: str
     language: str = ""
     engine: str = "system"
+    quality: str = ""
+    gender: str = ""
 
     @property
     def is_french(self) -> bool:
         return (self.language or "").lower().startswith("fr")
+
+    @property
+    def display_label(self) -> str:
+        flag = "🇫🇷 " if self.is_french else ""
+        return f"{flag}{self.label}"
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -172,50 +188,213 @@ class SystemVoiceEngine:
 
 
 class PiperEngine:
-    """Piper, s'il est reellement installe sur la machine.
+    """Voix neuronales Piper, executees LOCALEMENT.
 
-    Rien n'est telecharge par l'application : l'executable et le fichier de
-    voix (.onnx) doivent etre presents. Sans eux, ce moteur ne se declare pas
-    disponible et n'apparait nulle part -- une voix proposee doit fonctionner.
+    Deux facons d'executer Piper, cherchees dans cet ordre :
 
-    Emplacements cherches : la variable d'environnement PIPER_BIN /
-    PIPER_VOICES, puis un dossier "piper" a cote des donnees de
-    l'application.
+    1. la bibliotheque Python `piper` quand elle est installee -- generation
+       dans le processus, sans binaire externe ni fichier temporaire ;
+    2. l'executable `piper` s'il est present (variable PIPER_BIN, PATH, ou a
+       cote des modeles) -- lance comme un programme separe.
+
+    Aucune des deux n'est obligatoire : sans l'une ni l'autre, le moteur se
+    declare indisponible et l'interface propose de l'installer, plutot que
+    d'afficher des voix qui echoueraient au moment de generer.
+
+    UN PIEGE REEL, CORRIGE ICI. Les configurations des voix officielles
+    declarent la langue espeak "fr-fr", que la donnee espeak livree avec la
+    bibliotheque Python REFUSE ("Failed to set voice: fr-fr") ; elle attend
+    "fr". Verifie sur machine. `_espeak_voice()` retombe donc sur le code de
+    langue de base quand le code complet est refuse.
     """
 
     name = "piper"
 
-    def __init__(self, binary: str | None = None, voices_dir: str | None = None):
-        self._binary = binary or os.environ.get("PIPER_BIN") or shutil.which("piper") or ""
-        self._voices_dir = Path(voices_dir or os.environ.get("PIPER_VOICES") or self._default_dir())
+    def __init__(self, binary: str | None = None, models_dir=None):
+        self._binary = binary if binary is not None else self._find_binary()
+        self._models_dir = Path(models_dir) if models_dir else None
+        self._loaded = {}
+
+    # ------------------------------------------------------------ presence
+    @staticmethod
+    def _find_binary() -> str:
+        candidate = os.environ.get("PIPER_BIN") or shutil.which("piper") or ""
+        if candidate and Path(candidate).exists():
+            return candidate
+        from voice_studio import piper_models
+
+        for name in ("piper.exe", "piper"):
+            local = piper_models.models_dir().parent / "piper-bin" / name
+            if local.is_file():
+                return str(local)
+        return ""
 
     @staticmethod
-    def _default_dir() -> Path:
-        from core.paths import user_data_dir
+    def library_available() -> bool:
+        try:
+            import piper  # noqa: F401
+        except Exception:
+            return False
+        return True
 
-        return user_data_dir() / "voice_studio_data" / "piper"
+    def runtime(self) -> str:
+        """« library », « binary » ou « » : ce qui fera reellement tourner Piper."""
+        if self.library_available():
+            return "library"
+        if self._binary and Path(self._binary).exists():
+            return "binary"
+        return ""
 
     def available(self) -> bool:
-        return bool(self._binary) and Path(self._binary).exists() and bool(self.voices())
+        return bool(self.runtime()) and bool(self.voices())
 
+    def models_dir(self) -> Path:
+        from voice_studio import piper_models
+
+        return self._models_dir or piper_models.models_dir()
+
+    # -------------------------------------------------------------- voix
     def voices(self) -> list[Voice]:
-        if not self._voices_dir.is_dir():
-            return []
-        return [Voice(id=str(path), label=f"Piper — {path.stem}",
-                      language=path.stem.split("-")[0], engine=self.name)
-                for path in sorted(self._voices_dir.glob("*.onnx"))]
+        """Uniquement les modeles REELLEMENT installes.
+
+        Le catalogue de telechargement n'apparait pas ici : une voix listee
+        dans le choix de voix est une voix utilisable tout de suite.
+        """
+        from voice_studio import piper_models
+
+        found = []
+        directory = self.models_dir()
+        for model in sorted(directory.glob("*.onnx")) if directory.is_dir() else []:
+            if model.name.endswith(".onnx.json"):
+                continue
+            key = model.name[: -len(".onnx")]
+            if not piper_models.is_installed(key):
+                continue
+            described = piper_models.describe(key)
+            found.append(Voice(id=str(model), label=described.label or key,
+                               language=(described.language or key.split("-")[0]).replace("_", "-"),
+                               engine=self.name, quality=described.quality,
+                               gender=described.gender))
+        return found
+
+    def metadata(self) -> dict:
+        """De quoi expliquer l'etat du moteur dans l'interface, sans deviner."""
+        return {
+            "engine": self.name,
+            "runtime": self.runtime(),
+            "models_dir": str(self.models_dir()),
+            "installed": len(self.voices()),
+        }
+
+    # ---------------------------------------------------------- synthese
+    @staticmethod
+    def _espeak_voice(configured: str) -> str:
+        """Code de langue espeak reellement accepte par la donnee installee.
+
+        "fr-fr" est refuse par la donnee espeak livree avec piper-tts, "fr"
+        passe. On essaie donc le code du modele, puis sa langue de base.
+        """
+        candidates = [configured]
+        if "-" in (configured or ""):
+            candidates.append(configured.split("-")[0])
+        try:
+            from piper.phonemize_espeak import EspeakPhonemizer
+
+            phonemizer = EspeakPhonemizer()
+        except Exception:                              # pragma: no cover - piper absent
+            return configured
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                phonemizer.phonemize(candidate, "test")
+                return candidate
+            except Exception:
+                continue
+        return configured
+
+    def _voice_object(self, model_path: str):
+        if model_path in self._loaded:
+            return self._loaded[model_path]
+        from piper import PiperVoice
+
+        if not Path(model_path).is_file():
+            raise TtsError("Cette voix n'est plus installée sur cet ordinateur.")
+        try:
+            voice = PiperVoice.load(model_path)
+        except Exception as error:
+            raise TtsError(
+                "Cette voix n'a pas pu être chargée : le fichier est peut-être "
+                "incomplet ou abîmé. Supprime-la puis réinstalle-la depuis "
+                f"« Gérer les voix ». Détail : {type(error).__name__}"
+            ) from error
+        voice.config.espeak_voice = self._espeak_voice(voice.config.espeak_voice)
+        self._loaded[model_path] = voice
+        return voice
 
     def synthesize(self, text: str, out_wav: str, voice_id: str = "", rate: float = 1.0,
                    volume: float = 1.0, sentence_pause_s: float = 0.0) -> str:
-        if not self.available():
-            raise TtsError("Piper n'est pas installé sur cet ordinateur.")
+        runtime = self.runtime()
+        if not runtime:
+            raise TtsError(
+                "Le moteur Piper n'est pas installé sur cet ordinateur. "
+                "Ouvre « Gérer les voix » pour l'installer."
+            )
         model = voice_id or (self.voices()[0].id if self.voices() else "")
+        if not model:
+            raise TtsError("Aucune voix Piper n'est installée. "
+                           "Ouvre « Gérer les voix » pour en télécharger une.")
         Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
+
+        if runtime == "library":
+            self._synthesize_library(text, out_wav, model, rate, volume, sentence_pause_s)
+        else:
+            self._synthesize_binary(text, out_wav, model, rate, sentence_pause_s)
+
+        if not Path(out_wav).is_file() or Path(out_wav).stat().st_size < 128:
+            raise TtsError("La voix n'a produit aucun son. Réinstalle la voix, "
+                           "ou essaie une autre voix.")
+        return out_wav
+
+    def _synthesize_library(self, text, out_wav, model, rate, volume, sentence_pause_s) -> None:
+        import wave
+
+        from piper import SynthesisConfig
+
+        voice = self._voice_object(model)
+        # Vitesse et volume sont geres PAR LE MOTEUR : length_scale allonge ou
+        # raccourcit la parole a la synthese, sans reechantillonnage ni passage
+        # par ffmpeg, donc sans artefact. normalize_audio evite la saturation.
+        config = SynthesisConfig(
+            length_scale=1.0 / clamp(rate, MIN_RATE, MAX_RATE),
+            volume=clamp(volume, MIN_VOLUME, MAX_VOLUME),
+            normalize_audio=True,
+        )
+        pause = clamp(sentence_pause_s, 0.0, MAX_PAUSE_S)
+        if pause <= 0:
+            with wave.open(out_wav, "wb") as handle:
+                voice.synthesize_wav(text, handle, syn_config=config)
+            return
+
+        pieces = []
+        for index, sentence in enumerate(split_sentences(text)):
+            piece = f"{out_wav}.part{index}.wav"
+            with wave.open(piece, "wb") as handle:
+                voice.synthesize_wav(sentence, handle, syn_config=config)
+            pieces.append(piece)
+        if not pieces:
+            raise TtsError("Il n'y a pas de texte à lire.")
+        concat_wavs(pieces, out_wav, silence_s=pause)
+        for piece in pieces:
+            Path(piece).unlink(missing_ok=True)
+
+    def _synthesize_binary(self, text, out_wav, model, rate, sentence_pause_s) -> None:
         command = [self._binary, "--model", model, "--output_file", out_wav]
         if rate and rate != 1.0:
             command += ["--length_scale", f"{1.0 / clamp(rate, MIN_RATE, MAX_RATE):.3f}"]
         if sentence_pause_s:
-            command += ["--sentence_silence", f"{clamp(sentence_pause_s, 0.0, MAX_PAUSE_S):.2f}"]
+            command += ["--sentence_silence",
+                        f"{clamp(sentence_pause_s, 0.0, MAX_PAUSE_S):.2f}"]
         try:
             subprocess.run(command, input=(text or "").encode("utf-8"),
                            capture_output=True, check=True)
@@ -224,7 +403,6 @@ class PiperEngine:
                 "Piper n'a pas pu générer la voix. "
                 f"Détail : {(error.stderr or b'').decode('utf-8', 'replace')[:200]}"
             ) from error
-        return out_wav
 
 
 def concat_wavs(paths: list[str], out_wav: str, silence_s: float = 0.0) -> str:
@@ -276,18 +454,38 @@ def to_mp3(wav_path: str, mp3_path: str) -> str:
 
 
 def engines() -> list:
-    """Moteurs presents sur cette machine, le systeme d'abord."""
+    """Moteurs presents sur cette machine, le systeme d'abord.
+
+    Le systeme d'abord parce qu'il est toujours la : sur une installation
+    neuve, la generation fonctionne immediatement avec les voix de Windows, et
+    Piper vient s'ajouter quand l'utilisateur telecharge une voix.
+    """
     return [engine for engine in (SystemVoiceEngine(), PiperEngine()) if engine.available()]
 
 
-def available_voices() -> list[Voice]:
-    """Toutes les voix utilisables, francaises en tete.
+def all_engines() -> list:
+    """Tous les moteurs connus, disponibles ou non.
 
-    Liste vide = aucune voix sur cette machine. L'interface l'annonce et
-    desactive la generation, au lieu d'offrir un bouton qui echouera.
+    Sert a l'interface : un moteur indisponible doit pouvoir etre montre AVEC
+    la raison, plutot que disparaitre sans explication.
+    """
+    return [SystemVoiceEngine(), PiperEngine()]
+
+
+ENGINE_LABELS = {"system": "Voix du système (Windows)", "piper": "Piper — voix locales"}
+
+
+def available_voices(engine_name: str = "") -> list[Voice]:
+    """Voix utilisables, francaises en tete.
+
+    `engine_name` restreint a un moteur. Liste vide = rien d'installe pour ce
+    moteur : l'interface l'annonce et desactive la generation, au lieu
+    d'offrir un bouton qui echouera.
     """
     found: list[Voice] = []
     for engine in engines():
+        if engine_name and engine.name != engine_name:
+            continue
         try:
             found.extend(engine.voices())
         except TtsError as error:                      # pragma: no cover - depend du systeme
@@ -302,11 +500,84 @@ def engine_for(voice: Voice | None):
     raise TtsError("Aucun moteur de synthèse vocale n'est disponible sur cet ordinateur.")
 
 
+def cache_dir() -> Path:
+    from core.paths import user_data_dir
+
+    path = user_data_dir() / "voice_studio_data" / "tts_cache"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def cache_key(text: str, voice: Voice | None, rate: float, volume: float,
+              sentence_pause_s: float) -> str:
+    """Empreinte de TOUT ce qui change le son produit.
+
+    Le moteur et la voix en font partie : le meme texte lu par Hortense et par
+    une voix Piper ne donne evidemment pas le meme fichier.
+    """
+    import hashlib
+
+    parts = [text or "", voice.engine if voice else "", voice.id if voice else "",
+             f"{clamp(rate, MIN_RATE, MAX_RATE):.3f}",
+             f"{clamp(volume, MIN_VOLUME, MAX_VOLUME):.3f}",
+             f"{clamp(sentence_pause_s, 0.0, MAX_PAUSE_S):.2f}"]
+    return hashlib.sha256("\u0000".join(parts).encode("utf-8")).hexdigest()[:32]
+
+
 def synthesize(text: str, out_wav: str, voice: Voice | None = None, rate: float = 1.0,
-               volume: float = 1.0, sentence_pause_s: float = 0.0) -> str:
-    """Genere le fichier et renvoie son chemin."""
+               volume: float = 1.0, sentence_pause_s: float = 0.0,
+               use_cache: bool = True) -> str:
+    """Genere le fichier et renvoie son chemin.
+
+    Le cache est garde a part et RECOPIE vers la destination demandee : deux
+    demandes identiques ne relancent pas la synthese, mais l'appelant recoit
+    toujours le fichier a l'endroit qu'il a choisi.
+    """
     if not (text or "").strip():
         raise TtsError("Il n'y a pas de texte à lire.")
     engine = engine_for(voice)
-    return engine.synthesize(text, out_wav, voice_id=voice.id if voice else "",
-                             rate=rate, volume=volume, sentence_pause_s=sentence_pause_s)
+
+    cached = cache_dir() / f"{cache_key(text, voice, rate, volume, sentence_pause_s)}.wav"
+    if use_cache and cached.is_file() and cached.stat().st_size > 128:
+        Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
+        if str(cached) != str(out_wav):
+            shutil.copyfile(cached, out_wav)
+        return out_wav
+
+    engine.synthesize(text, out_wav, voice_id=voice.id if voice else "",
+                      rate=rate, volume=volume, sentence_pause_s=sentence_pause_s)
+    if use_cache:
+        try:
+            shutil.copyfile(out_wav, cached)
+        except OSError as error:                       # pragma: no cover - disque plein
+            logger.warning(f"Voix non mise en cache : {error}")
+    return out_wav
+
+
+PREVIEW_MAX_CHARS = 240
+
+
+def preview_text(text: str, max_chars: int = PREVIEW_MAX_CHARS) -> str:
+    """Extrait servant d'apercu.
+
+    On coupe a la fin d'une phrase quand c'est possible : un apercu qui
+    s'arrete au milieu d'un mot ne dit rien de la voix.
+    """
+    cleaned = (text or "").strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    head = cleaned[:max_chars]
+    for mark in (". ", "! ", "? ", ", "):
+        cut = head.rfind(mark)
+        if cut > max_chars // 3:
+            return head[: cut + 1].strip()
+    return head.rsplit(" ", 1)[0].strip() + "…"
+
+
+def clear_cache() -> int:
+    """Vide le cache des voix generees. Renvoie le nombre de fichiers effaces."""
+    removed = 0
+    for path in cache_dir().glob("*.wav"):
+        path.unlink()
+        removed += 1
+    return removed

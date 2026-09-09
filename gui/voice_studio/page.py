@@ -32,8 +32,9 @@ from PySide6.QtWidgets import (
 from core.cancellation import CancelToken
 from gui import settings_store
 from gui.voice_studio.transcript_view import TranscriptView
+from gui.voice_studio.voices_dialog import VoicesDialog
 from gui.voice_studio.workers import AnalysisWorker, VoiceWorker
-from voice_studio import exporters, services, store, tts
+from voice_studio import exporters, piper_models, services, store, tts
 from voice_studio.models import SOURCE_LABELS, TtsSettings
 from voice_studio.transcript import VIEW_CLEAN, VIEW_RAW, coverage, format_timestamp
 from voice_studio.transcription import RIGHTS_NOTICE
@@ -42,6 +43,11 @@ LANGUAGES = [("Détection automatique", None), ("Français", "fr"), ("Anglais", 
              ("Espagnol", "es"), ("Allemand", "de"), ("Italien", "it")]
 
 MODELS = ["tiny", "base", "small", "medium", "large-v3"]
+
+# Paliers de vitesse, plutot qu'un curseur libre : ce sont les valeurs qui ont
+# un sens a l'oreille, et elles restent comparables d'une generation a l'autre.
+RATES = [0.75, 0.85, 1.00, 1.10, 1.25, 1.50]
+DEFAULT_RATE = 1.00
 
 
 def _card(title: str = "") -> tuple[QFrame, QVBoxLayout]:
@@ -269,26 +275,34 @@ class VoiceStudioPage(QWidget):
         take.addStretch(1)
         layout.addLayout(take)
 
-        settings = QHBoxLayout()
-        settings.addWidget(QLabel("Voix"))
-        self.voice_combo = QComboBox()
-        settings.addWidget(self.voice_combo, stretch=1)
+        engine_row = QHBoxLayout()
+        engine_row.addWidget(QLabel("Moteur"))
+        self.engine_combo = QComboBox()
+        self.engine_combo.currentIndexChanged.connect(self._on_engine_changed)
+        engine_row.addWidget(self.engine_combo)
 
+        engine_row.addWidget(QLabel("Voix"))
+        self.voice_combo = QComboBox()
+        engine_row.addWidget(self.voice_combo, stretch=1)
+
+        self.manage_btn = QPushButton("Gérer les voix")
+        self.manage_btn.clicked.connect(self._manage_voices)
+        engine_row.addWidget(self.manage_btn)
+        layout.addLayout(engine_row)
+
+        settings = QHBoxLayout()
         settings.addWidget(QLabel("Vitesse"))
-        self.rate_slider = QSlider(Qt.Orientation.Horizontal)
-        self.rate_slider.setRange(50, 200)
-        self.rate_slider.setValue(100)
-        self.rate_slider.setFixedWidth(110)
-        self.rate_slider.valueChanged.connect(self._update_voice_labels)
-        settings.addWidget(self.rate_slider)
-        self.rate_label = QLabel("1.00x")
-        settings.addWidget(self.rate_label)
+        self.rate_combo = QComboBox()
+        for value in RATES:
+            self.rate_combo.addItem(f"{value:.2f}x", value)
+        self.rate_combo.setCurrentIndex(RATES.index(DEFAULT_RATE))
+        settings.addWidget(self.rate_combo)
 
         settings.addWidget(QLabel("Volume"))
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(100)
-        self.volume_slider.setFixedWidth(110)
+        self.volume_slider.setFixedWidth(120)
         self.volume_slider.valueChanged.connect(self._update_voice_labels)
         settings.addWidget(self.volume_slider)
         self.volume_label = QLabel("100 %")
@@ -303,10 +317,15 @@ class VoiceStudioPage(QWidget):
         settings.addWidget(self.pause_slider)
         self.pause_label = QLabel("0.0 s")
         settings.addWidget(self.pause_label)
+        settings.addStretch(1)
         layout.addLayout(settings)
 
         row = QHBoxLayout()
-        self.generate_btn = QPushButton("▶  Générer")
+        self.preview_btn = QPushButton("▶  Écouter un aperçu")
+        self.preview_btn.clicked.connect(self._preview_voice)
+        row.addWidget(self.preview_btn)
+
+        self.generate_btn = QPushButton("▶  Générer la voix")
         self.generate_btn.setProperty("variant", "primary")
         self.generate_btn.clicked.connect(self._generate_voice)
         row.addWidget(self.generate_btn)
@@ -338,16 +357,65 @@ class VoiceStudioPage(QWidget):
             self._load_voices()
 
     def _load_voices(self) -> None:
-        self._voices = tts.available_voices()
+        """Recharge moteurs et voix. Aucun moteur indisponible n'est propose."""
+        previous = self.engine_combo.currentData()
+        self.engine_combo.blockSignals(True)
+        self.engine_combo.clear()
+        for engine in tts.all_engines():
+            if engine.available():
+                self.engine_combo.addItem(tts.ENGINE_LABELS.get(engine.name, engine.name),
+                                          engine.name)
+        if previous is not None:
+            index = self.engine_combo.findData(previous)
+            if index >= 0:
+                self.engine_combo.setCurrentIndex(index)
+        elif self.engine_combo.count():
+            preferred = settings_store.get("tts_engine")
+            index = self.engine_combo.findData(preferred) if preferred else -1
+            self.engine_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.engine_combo.blockSignals(False)
+        self._load_voices_for_engine()
+
+    def _load_voices_for_engine(self) -> None:
+        engine_name = self.engine_combo.currentData() or ""
+        self._voices = tts.available_voices(engine_name)
         self.voice_combo.clear()
         for voice in self._voices:
-            self.voice_combo.addItem(voice.label, voice.id)
-        if not self._voices:
+            self.voice_combo.addItem(voice.display_label, voice.id)
+        preferred = settings_store.get("tts_voice")
+        if preferred:
+            index = self.voice_combo.findData(preferred)
+            if index >= 0:
+                self.voice_combo.setCurrentIndex(index)
+
+        piper = tts.PiperEngine()
+        if not self._voices and not tts.available_voices():
             self.voice_status.setText(
                 "Aucune voix n'est installée sur cet ordinateur : la génération est "
-                "indisponible. Sous Windows, les voix s'ajoutent dans Paramètres > "
-                "Heure et langue > Voix.")
+                "indisponible. Sous Windows, les voix système s'ajoutent dans "
+                "Paramètres > Heure et langue > Voix.")
+        elif not piper.available():
+            installed = len(piper_models.installed_keys())
+            if piper.runtime() and installed == 0:
+                self.voice_status.setText(
+                    "Aucune voix locale Piper installée. Clique sur « Gérer les voix » "
+                    "pour en télécharger une : les voix Piper sont plus naturelles que "
+                    "les voix de Windows et fonctionnent ensuite hors ligne.")
+            elif not piper.runtime():
+                self.voice_status.setText(
+                    "Piper n'est pas encore configuré : seules les voix du système sont "
+                    "disponibles. Ouvre « Gérer les voix » pour voir ce qu'il manque.")
         self._refresh_state()
+
+    def _on_engine_changed(self) -> None:
+        self._load_voices_for_engine()
+
+    def _manage_voices(self) -> None:
+        dialog = VoicesDialog(self)
+        dialog.exec()
+        dialog.cleanup()
+        # Une voix telechargee doit apparaitre tout de suite dans la liste.
+        self._load_voices()
 
     def _refresh_state(self) -> None:
         has_transcript = bool(self.project and self.project.has_transcript)
@@ -360,7 +428,9 @@ class VoiceStudioPage(QWidget):
         has_voice = bool(self._voices)
         has_text = bool(self.voice_text.toPlainText().strip())
         self.generate_btn.setEnabled(has_voice)
+        self.preview_btn.setEnabled(has_voice)
         self.voice_combo.setEnabled(has_voice)
+        self.engine_combo.setEnabled(self.engine_combo.count() > 1)
         ready = bool(self._last_audio and Path(self._last_audio).is_file())
         self.play_btn.setEnabled(ready)
         self.export_wav_btn.setEnabled(ready)
@@ -369,7 +439,6 @@ class VoiceStudioPage(QWidget):
         return has_text
 
     def _update_voice_labels(self) -> None:
-        self.rate_label.setText(f"{self.rate_slider.value() / 100:.2f}x")
         self.volume_label.setText(f"{self.volume_slider.value()} %")
         self.pause_label.setText(f"{self.pause_slider.value() / 10:.1f} s")
 
@@ -550,6 +619,38 @@ class VoiceStudioPage(QWidget):
         self.voice_text.setPlainText(selection)
         self._refresh_state()
 
+    def _rate(self) -> float:
+        value = self.rate_combo.currentData()
+        return float(value) if value else DEFAULT_RATE
+
+    def _preview_voice(self) -> None:
+        """Apercu : un EXTRAIT du texte, avec le moteur, la voix et la vitesse
+        reellement choisis. Generer plusieurs minutes de parole pour verifier
+        une voix serait une perte de temps."""
+        if self._voice_worker is not None:
+            return
+        source = self.voice_text.toPlainText().strip() or self.transcript_view.selected_text()
+        if not source:
+            source = "Bonjour, voici un aperçu de la voix sélectionnée."
+        extract = tts.preview_text(source)
+        self._start_voice_worker(extract, str(store.audio_dir() / "apercu.wav"),
+                                 "Génération de l'aperçu...")
+
+    def _start_voice_worker(self, text: str, out_path: str, message: str) -> None:
+        self._voice_worker = VoiceWorker(
+            text, out_path, self._current_voice(),
+            rate=self._rate(),
+            volume=self.volume_slider.value() / 100.0,
+            sentence_pause_s=self.pause_slider.value() / 10.0,
+        )
+        self._voice_worker.done.connect(self._on_voice_done)
+        self._voice_worker.failed.connect(self._on_voice_failed)
+        self._voice_worker.finished.connect(self._on_voice_finished)
+        self.generate_btn.setEnabled(False)
+        self.preview_btn.setEnabled(False)
+        self.voice_status.setText(message)
+        self._voice_worker.start()
+
     def _current_voice(self):
         index = self.voice_combo.currentIndex()
         return self._voices[index] if 0 <= index < len(self._voices) else None
@@ -561,20 +662,8 @@ class VoiceStudioPage(QWidget):
         if not text:
             self.voice_status.setText("Écris ou reprends un texte avant de générer la voix.")
             return
-
-        out_path = str(store.audio_dir() / "voix.wav")
-        self._voice_worker = VoiceWorker(
-            text, out_path, self._current_voice(),
-            rate=self.rate_slider.value() / 100.0,
-            volume=self.volume_slider.value() / 100.0,
-            sentence_pause_s=self.pause_slider.value() / 10.0,
-        )
-        self._voice_worker.done.connect(self._on_voice_done)
-        self._voice_worker.failed.connect(self._on_voice_failed)
-        self._voice_worker.finished.connect(self._on_voice_finished)
-        self.generate_btn.setEnabled(False)
-        self.voice_status.setText("Génération de la voix...")
-        self._voice_worker.start()
+        self._start_voice_worker(text, str(store.audio_dir() / "voix.wav"),
+                                 "Génération de la voix...")
 
     def _on_voice_done(self, path: str) -> None:
         self._last_audio = path
@@ -583,11 +672,19 @@ class VoiceStudioPage(QWidget):
             settings = TtsSettings(
                 voice_id=self._current_voice().id if self._current_voice() else "",
                 voice_label=self._current_voice().label if self._current_voice() else "",
-                rate=self.rate_slider.value() / 100.0,
+                rate=self._rate(),
                 volume=self.volume_slider.value() / 100.0,
                 sentence_pause_s=self.pause_slider.value() / 10.0,
             )
             self.project.tts_settings = settings
+            # Le choix devient le defaut : rouvrir Voice Studio retrouve le
+            # moteur, la voix et la vitesse utilises la derniere fois.
+            settings_store.save({
+                **settings_store.load(),
+                "tts_engine": self.engine_combo.currentData() or "",
+                "tts_voice": settings.voice_id,
+                "tts_rate": settings.rate,
+            })
             if path not in self.project.generated_audio:
                 self.project.generated_audio.append(path)
             store.save(self.project)
@@ -599,6 +696,7 @@ class VoiceStudioPage(QWidget):
     def _on_voice_finished(self) -> None:
         self._voice_worker = None
         self.generate_btn.setEnabled(bool(self._voices))
+        self.preview_btn.setEnabled(bool(self._voices))
         self._refresh_state()
 
     def _play_audio(self) -> None:

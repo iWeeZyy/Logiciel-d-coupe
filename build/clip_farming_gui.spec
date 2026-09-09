@@ -51,8 +51,16 @@ hiddenimports = [
     # Voice Studio : importe par la page, elle-meme importee par la fenetre.
     "voice_studio.services",
     "voice_studio.tts",
+    "voice_studio.piper_models",
 ]
 
+# NOTE VOLONTAIRE : "piper" (piper-tts) n'est PAS collecte ici. La bibliotheque
+# est publiee sous GPL-3.0 ; l'inclure dans un executable distribue imposerait
+# ses obligations a toute l'application. Voice Studio sait fonctionner avec le
+# PROGRAMME piper, appele comme processus separe et installe a la demande
+# depuis "Gerer les voix" -- et, en attendant, avec les voix de Windows.
+# Les modeles de voix ne sont pas embarques non plus : ils pesent des dizaines
+# de megaoctets chacun et se telechargent depuis l'application.
 for pkg in [
     "faster_whisper", "ctranslate2", "av", "librosa", "numba",
     "cv2", "onnxruntime", "soundfile", "PIL",

@@ -138,6 +138,7 @@ class SettingsPage(QWidget):
         self._build_general_card()
         self._build_editing_card()
         self._build_video_card()
+        self._build_tts_card()
         self._build_weights_card()
         self._build_keywords_card()
 
@@ -339,6 +340,99 @@ class SettingsPage(QWidget):
         data.setdefault("export", {})["video_bitrate_crf"] = crf
         data["export"]["video_preset"] = preset
         _save_json(_settings_json_path(), data)
+
+    # ---------- Synthese vocale (Voice Studio) ----------
+
+    def _build_tts_card(self) -> None:
+        """Reglages de voix par defaut + acces au gestionnaire de voix.
+
+        Les valeurs sont celles de gui/settings_store.py, les memes que la page
+        Voice Studio ecrit quand on genere une voix : un seul endroit ou le
+        defaut est range, deux endroits ou on peut le changer.
+        """
+        from voice_studio import piper_models, tts
+
+        card = self._card()
+        card.layout().addWidget(_section_title("🎙️ SYNTHÈSE VOCALE"))
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Moteur par défaut"))
+        self.tts_engine_combo = QComboBox()
+        self.tts_engine_combo.addItem("Automatique", "")
+        for engine in tts.all_engines():
+            label = tts.ENGINE_LABELS.get(engine.name, engine.name)
+            if not engine.available():
+                label += " (non disponible)"
+            self.tts_engine_combo.addItem(label, engine.name)
+            index = self.tts_engine_combo.count() - 1
+            self.tts_engine_combo.model().item(index).setEnabled(engine.available())
+        self._select(self.tts_engine_combo, settings_store.get("tts_engine") or "")
+        self.tts_engine_combo.currentIndexChanged.connect(self._save_tts_engine)
+        row.addWidget(self.tts_engine_combo)
+
+        row.addWidget(QLabel("Vitesse"))
+        self.tts_rate_combo = QComboBox()
+        for value in (0.75, 0.85, 1.00, 1.10, 1.25, 1.50):
+            self.tts_rate_combo.addItem(f"{value:.2f}x", value)
+        self._select(self.tts_rate_combo, float(settings_store.get("tts_rate") or 1.0))
+        self.tts_rate_combo.currentIndexChanged.connect(self._save_tts_rate)
+        row.addWidget(self.tts_rate_combo)
+        row.addStretch(1)
+        card.layout().addLayout(row)
+
+        folder = QHBoxLayout()
+        folder.addWidget(QLabel("Dossier des voix Piper"))
+        self.piper_dir_label = QLabel(str(piper_models.models_dir()))
+        self.piper_dir_label.setProperty("role", "muted")
+        self.piper_dir_label.setWordWrap(True)
+        folder.addWidget(self.piper_dir_label, stretch=1)
+        change = QPushButton("Changer...")
+        change.clicked.connect(self._choose_piper_dir)
+        folder.addWidget(change)
+        card.layout().addLayout(folder)
+
+        actions = QHBoxLayout()
+        self.tts_usage_label = QLabel("")
+        self.tts_usage_label.setProperty("role", "muted")
+        actions.addWidget(self.tts_usage_label, stretch=1)
+        manage = QPushButton("Gérer les voix")
+        manage.clicked.connect(self._manage_voices)
+        actions.addWidget(manage)
+        card.layout().addLayout(actions)
+
+        self._refresh_tts_usage()
+
+    def _refresh_tts_usage(self) -> None:
+        from voice_studio import piper_models
+
+        count = len(piper_models.installed_keys())
+        size = piper_models.installed_size_bytes() / 1_000_000
+        self.tts_usage_label.setText(
+            f"{count} voix Piper installée{'s' if count > 1 else ''}  •  {size:.0f} Mo utilisés")
+
+    def _save_tts_engine(self) -> None:
+        settings_store.save({"tts_engine": self.tts_engine_combo.currentData() or None})
+
+    def _save_tts_rate(self) -> None:
+        settings_store.save({"tts_rate": float(self.tts_rate_combo.currentData() or 1.0)})
+
+    def _choose_piper_dir(self) -> None:
+        from voice_studio import piper_models
+
+        folder = QFileDialog.getExistingDirectory(
+            self, "Dossier des voix Piper", str(piper_models.models_dir()))
+        if folder:
+            settings_store.save({"piper_models_dir": folder})
+            self.piper_dir_label.setText(folder)
+            self._refresh_tts_usage()
+
+    def _manage_voices(self) -> None:
+        from gui.voice_studio.voices_dialog import VoicesDialog
+
+        dialog = VoicesDialog(self)
+        dialog.exec()
+        dialog.cleanup()
+        self._refresh_tts_usage()
 
     # ---------- Ponderation du scoring ----------
 

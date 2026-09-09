@@ -101,14 +101,47 @@ transcrite, instant du dernier mot, duree de la video. Si le texte s'arrete
 nettement avant la fin, l'ecran le dit au lieu de laisser croire a une
 transcription complete.
 
-**Voix locales uniquement.** La synthese passe par les voix DEJA installees sur
-la machine (SAPI5 sous Windows, espeak-ng sous Linux), via `pyttsx3` : rien
-n'est telecharge, aucun compte, aucune cle d'API, et ni le texte ni l'audio ne
-quittent l'ordinateur. Piper est prevu mais ne s'active que si un executable et
-une voix sont reellement presents. Aucune voix installee -> le bouton est
-desactive et le dit, plutot que d'echouer au moment de generer. Le clonage de
-voix n'existe pas ici : reproduire la voix d'une personne demande son
-autorisation, que rien dans ce logiciel ne peut verifier.
+**Deux moteurs de voix, tous deux locaux.**
+
+| Moteur | Voix | Installation | Qualite |
+| --- | --- | --- | --- |
+| Voix du systeme | celles de Windows (Hortense...) | aucune, deja la | correcte |
+| Piper | voix neuronales francaises | telechargement a la demande | nettement plus naturelle |
+
+Les voix du systeme passent par `pyttsx3` (SAPI5 sous Windows, espeak-ng sous
+Linux) : rien a telecharger, disponibles immediatement. Piper execute
+localement un modele `.onnx` que l'utilisateur installe depuis **Gerer les
+voix** ; la vitesse et le volume sont geres par le moteur lui-meme
+(`length_scale`), sans reechantillonnage ni passage par ffmpeg, donc sans
+artefact, et la normalisation evite la saturation.
+
+Dans les deux cas : aucun compte, aucune cle d'API, aucun abonnement, et ni le
+texte ni l'audio ne quittent l'ordinateur. Le reseau ne sert qu'a recuperer un
+modele, une seule fois, sur demande explicite -- jamais automatiquement.
+
+**Une voix affichee est une voix utilisable.** La liste ne montre que les
+modeles reellement installes ; un telechargement interrompu (modele sans sa
+configuration) n'y apparait pas. Aucune voix du tout -> le bouton est desactive
+et le dit, plutot que d'echouer au moment de generer.
+
+**Le cache evite de resynthetiser.** Meme texte, meme moteur, meme voix, meme
+vitesse, meme volume, memes pauses : le fichier deja produit est repris.
+
+**L'apercu ne genere qu'un extrait** (une phrase ou deux), avec le moteur, la
+voix et la vitesse reellement choisis -- verifier une voix ne doit pas couter
+plusieurs minutes de synthese.
+
+Le clonage de voix n'existe pas ici : reproduire la voix d'une personne demande
+son autorisation, que rien dans ce logiciel ne peut verifier.
+
+**Licence, et pourquoi l'application compilee n'embarque pas Piper.** La
+bibliotheque Python `piper-tts` est publiee sous GPL-3.0 : l'inclure dans un
+executable distribue imposerait ses obligations a toute l'application. Elle
+n'est donc PAS dans `requirements.txt`. En developpement, `pip install
+piper-tts` suffit et Voice Studio l'utilise directement ; dans l'application
+compilee, le gestionnaire de voix propose d'installer le programme `piper`
+officiel, appele comme processus separe. Le detail est dans
+`docs/voix-piper.md`.
 
 **Ce qui est enregistre**, sous `%LOCALAPPDATA%\ClipFarming\voice_studio_data`
 (un fichier JSON par video) : l'adresse, le titre, la chaine, la duree, la
