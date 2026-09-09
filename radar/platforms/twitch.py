@@ -22,6 +22,7 @@ Endpoints utilises, tous documentes et publics :
     GET /streams  savoir qui est en direct, et avec combien de spectateurs
     GET /videos   VOD recentes d'une chaine
     GET /clips    clips d'une chaine sur une periode
+    GET /games    nom d'un jeu a partir de son identifiant
 """
 from __future__ import annotations
 
@@ -127,6 +128,20 @@ def parse_query(query: str) -> str:
     return text.lstrip("@").strip().lower()
 
 
+def _clip_duration(value) -> int | None:
+    """Duree d'un clip en secondes entieres, ou None si elle est inconnue.
+
+    Twitch la donne en decimales (30,4 s) : on ARRONDIT au lieu de tronquer,
+    sinon un clip de 29,8 s s'affiche 29 s. Une valeur illisible ne doit jamais
+    interrompre un scan -- elle vaut simplement "duree inconnue".
+    """
+    try:
+        seconds = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return seconds or None
+
+
 def _thumbnail(url: str, width: int = 640, height: int = 360) -> str:
     """Twitch renvoie des gabarits avec {width}/{height} a substituer."""
     return (url or "").replace("{width}", str(width)).replace("{height}", str(height))
@@ -142,6 +157,9 @@ class TwitchAdapter(PlatformAdapter):
         self._token = ""
         self._token_expires_at = 0.0
         self.timeout = timeout
+        # Noms de jeux deja resolus, gardes le temps du scan : les clips d'une
+        # meme chaine partagent presque toujours la meme categorie.
+        self._games: dict[str, str] = {}
         # Types de contenu recherches. Les VOD sont ECARTEES par defaut : une
         # rediffusion de quatre heures n'est pas une opportunite exploitable
         # (rien n'y designe le moment fort, et Twitch n'offre aucun moyen
@@ -315,14 +333,41 @@ class TwitchAdapter(PlatformAdapter):
             extra={"language": stream.get("language", "")},
         )]
 
+    def _game_names(self, game_ids) -> dict[str, str]:
+        """Identifiants de jeu -> noms, en une requete pour toute la liste.
+
+        /clips ne renvoie qu'un `game_id` numerique. L'afficher tel quel montre
+        un nombre qui ne veut rien dire (c'est ce que faisait l'application) et
+        en fait meme un hashtag. En cas d'echec de la resolution, on ne renvoie
+        RIEN pour cet identifiant : un clip sans categorie est plus honnete
+        qu'un nombre. Le nom manquant est mis en cache lui aussi, sinon chaque
+        scan redemanderait la meme chose.
+        """
+        wanted = {str(g) for g in game_ids if g}
+        missing = sorted(wanted - set(self._games))
+        for start in range(0, len(missing), 100):        # /games accepte 100 id max
+            chunk = missing[start:start + 100]
+            try:
+                payload = self._get("games", {"id": chunk})
+            except TwitchApiError as error:
+                logger.warning(f"Noms de jeux Twitch indisponibles : {error}")
+                break
+            for game in payload.get("data") or []:
+                self._games[str(game.get("id", ""))] = game.get("name", "") or ""
+            for game_id in chunk:
+                self._games.setdefault(game_id, "")
+        return {game_id: self._games.get(game_id, "") for game_id in wanted}
+
     def _clips(self, creator: Creator, since_iso: str, max_results: int) -> list[Opportunity]:
         data = self._get("clips", {
             "broadcaster_id": creator.platform_id,
             "started_at": since_iso,
             "first": min(100, max(1, max_results)),
         })
+        clips = data.get("data") or []
+        games = self._game_names([clip.get("game_id") for clip in clips])
         out = []
-        for clip in data.get("data") or []:
+        for clip in clips:
             out.append(Opportunity(
                 platform=PLATFORM,
                 content_id=clip.get("id", ""),
@@ -332,8 +377,8 @@ class TwitchAdapter(PlatformAdapter):
                 url=clip.get("url", ""),
                 thumbnail_url=clip.get("thumbnail_url", ""),
                 published_at=clip.get("created_at", ""),
-                duration_s=int(clip.get("duration") or 0) or None,
-                category=clip.get("game_id", ""),
+                duration_s=_clip_duration(clip.get("duration")),
+                category=games.get(str(clip.get("game_id") or ""), ""),
                 view_count=clip.get("view_count"),
                 extra={
                     # Qui a CREE le clip, qui n'est pas forcement le streamer :

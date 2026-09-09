@@ -81,6 +81,20 @@ opportunites et les transmet au pipeline existant.
 statistiques. **Ce qui reste local** : scores, tendances, historique, favoris,
 et evidemment tout le traitement video.
 
+**Ce qu'affiche une fiche.** La duree du clip, son anciennete (« il y a 3 h »,
+puis une date au-dela d'une semaine), son nombre de vues et le JEU. Twitch ne
+renvoie qu'un identifiant numerique de jeu avec un clip : il est resolu en nom
+par `GET /games`, en une requete pour toute la liste et avec un cache. Un nom
+que Twitch ne rend pas laisse la categorie VIDE plutot que d'afficher le
+nombre -- c'est ce que faisait l'application, et ce nombre partait meme en
+hashtag.
+
+**Trois ordres de lecture** : score radar, plus recents (par defaut), plus vus.
+Aucun ne remplace les autres -- un clip qui vient de sortir n'a pas encore de
+vues, un clip tres vu n'est plus une nouveaute. Le tri est fait par la base et
+non apres coup : la liste est coupee a une limite, donc trier ensuite ne
+trierait que ce que le tri precedent a laisse passer.
+
 **Conformite.** Uniquement les APIs officielles -- YouTube Data API v3 et
 Twitch Helix (flux applicatif "client credentials"). Aucun scraping, aucun
 contournement, aucun telechargement automatique. Le Radar lit des metadonnees

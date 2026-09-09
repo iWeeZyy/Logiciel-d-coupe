@@ -85,8 +85,16 @@ def _sentence(text: str) -> str:
 
 
 def _as_hashtag(value: str) -> str:
+    """#MotCle a partir d'une valeur de metadonnee, ou rien.
+
+    Une valeur entierement numerique est refusee : c'est un identifiant
+    technique, pas un mot. Twitch designe le jeu d'un clip par un nombre, et
+    "#132735846" ne veut rien dire pour personne.
+    """
     cleaned = _HASHTAG_CLEAN_RE.sub("", (value or "").strip())
-    return f"#{cleaned}" if len(cleaned) >= 3 else ""
+    if len(cleaned) < 3 or cleaned.isdigit():
+        return ""
+    return f"#{cleaned}"
 
 
 def _starts_mid_thought(sentences) -> bool:

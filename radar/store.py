@@ -21,7 +21,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from core.paths import user_data_dir
+from radar.display import ORDER_RECENT, ORDER_SCORE, ORDER_VIEWS
 from radar.models import Creator, Opportunity, ScanResult, Snapshot
+
+# Ordres proposes par l'interface. Un contenu sans vues connues (-1) tombe en
+# bas plutot que d'etre confondu avec un contenu vu zero fois.
+_ORDER_CLAUSES = {
+    ORDER_SCORE: "COALESCE(radar_score, -1) DESC, published_at DESC",
+    ORDER_RECENT: "published_at DESC, COALESCE(radar_score, -1) DESC",
+    ORDER_VIEWS: "COALESCE(view_count, -1) DESC, published_at DESC",
+}
 
 # 2 : ajout de clip_analyses (analyse de contenu d'un clip). La migration est
 # automatique et sans perte -- chaque table est creee IF NOT EXISTS et aucune
@@ -273,8 +282,8 @@ class RadarStore:
 
     def list_opportunities(self, platform: str | None = None, creator_key: str | None = None,
                            since: str | None = None, limit: int = 500,
-                           kinds=None) -> list[Opportunity]:
-        """Contenus enregistres, du mieux note au moins bien note.
+                           kinds=None, order: str = ORDER_SCORE) -> list[Opportunity]:
+        """Contenus enregistres, dans l'ordre demande (`order`).
 
         `kinds` filtre DANS la requete et non apres coup, et c'est le point
         important : la requete est ordonnee par score puis coupee par LIMIT. Un
@@ -299,7 +308,10 @@ class RadarStore:
             params.append(since)
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY COALESCE(radar_score, -1) DESC, published_at DESC LIMIT ?"
+        # L'ordre est fait par SQL et non apres coup, pour la meme raison que le
+        # filtre par type juste au-dessus : la requete est coupee par LIMIT, donc
+        # trier ensuite ne trierait que ce que le tri precedent a laisse passer.
+        query += f" ORDER BY {_ORDER_CLAUSES.get(order, _ORDER_CLAUSES[ORDER_SCORE])} LIMIT ?"
         params.append(limit)
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()

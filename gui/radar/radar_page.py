@@ -33,6 +33,14 @@ from core.config_loader import load_radar_config
 from radar.analysis import media as analysis_media
 from radar.analysis.models import STATE_DONE, STATE_LABELS, STATE_NONE
 from radar.creators import CreatorAlreadyWatched, CreatorManager
+from radar.display import (
+    ORDER_LABELS,
+    ORDER_RECENT,
+    format_age,
+    format_duration,
+    is_readable_category,
+    sort_key,
+)
 from radar.engine import DEFAULT_PERIOD, PERIODS, RadarEngine
 from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE, PRIORITIES, PRIORITY_LABELS
 from radar.platforms.twitch import TwitchAdapter
@@ -127,6 +135,17 @@ class RadarPage(QWidget):
         self.period_combo.setCurrentIndex(list(PERIODS).index(configured))
         header.addWidget(self.period_combo)
 
+        # Trois lectures d'une meme liste : ce que le radar juge le plus fort,
+        # ce qui vient de sortir, ce qui marche deja. Aucune ne remplace les
+        # autres -- un clip recent n'a pas encore de vues, un clip tres vu n'est
+        # plus une nouveaute.
+        self.order_combo = QComboBox()
+        for key, label in ORDER_LABELS.items():
+            self.order_combo.addItem(f"Trier : {label}", key)
+        self.order_combo.setCurrentIndex(list(ORDER_LABELS).index(ORDER_RECENT))
+        self.order_combo.currentIndexChanged.connect(self._refresh_lists)
+        header.addWidget(self.order_combo)
+
         self.scan_btn = QPushButton("🔄  Scanner maintenant")
         self.scan_btn.setProperty("variant", "primary")
         self.scan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -192,6 +211,12 @@ class RadarPage(QWidget):
             self._refresh_tab(key)
         self._refresh_batch_button()
 
+    def _refresh_lists(self) -> None:
+        """Reaffiche les listes sans relancer de scan : changer l'ordre ne
+        redemande rien a la plateforme, tout est deja enregistre."""
+        for key in self.tab_contents:
+            self._refresh_tab(key)
+
     def _refresh_dashboard(self) -> None:
         data = self.engine.dashboard(period=self.period_combo.currentData())
         self.dashboard_label.setText(
@@ -220,11 +245,13 @@ class RadarPage(QWidget):
         if key != "all":
             layout.addWidget(self._creators_card(key))
 
+        order = self.order_combo.currentData()
         opportunities = []
         for platform in platforms:
             opportunities.extend(self.store.list_opportunities(
-                platform=platform, limit=60, kinds=self.engine.searched_kinds(platform)))
-        opportunities.sort(key=lambda o: o.radar_score or 0, reverse=True)
+                platform=platform, limit=60, kinds=self.engine.searched_kinds(platform),
+                order=order))
+        opportunities.sort(key=sort_key(order), reverse=True)
 
         if not opportunities:
             frame, card_layout = _card()
@@ -334,13 +361,23 @@ class RadarPage(QWidget):
         layout.addWidget(title)
 
         stats = []
+        # Duree et date d'abord : ce sont les deux choses qu'on regarde pour
+        # decider si un clip vaut le detour, avant meme son nombre de vues.
+        duration = format_duration(opportunity.duration_s)
+        if duration:
+            stats.append(f"⏱️ {duration}")
+        age = format_age(opportunity.published_at)
+        if age:
+            stats.append(f"🕒 {age}")
         if opportunity.view_count is not None:
             stats.append(f"👁️ {opportunity.view_count:,}".replace(",", " ") + " vues")
         if opportunity.viewer_count is not None:
             stats.append(f"👥 {opportunity.viewer_count:,}".replace(",", " ") + " spectateurs")
         if opportunity.like_count is not None:
             stats.append(f"❤️ {opportunity.like_count:,}".replace(",", " "))
-        if opportunity.category:
+        # Les fiches enregistrees avant la resolution des noms de jeux portent
+        # encore un identifiant numerique : on ne l'affiche pas.
+        if is_readable_category(opportunity.category):
             stats.append(f"🎮 {opportunity.category}")
         if stats:
             line = QLabel("  •  ".join(stats))

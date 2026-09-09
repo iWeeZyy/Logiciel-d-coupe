@@ -319,3 +319,82 @@ def test_a_broken_configuration_file_never_blocks_the_radar(monkeypatch, tmp_pat
     monkeypatch.setattr(config_loader, "CONFIG_DIR", tmp_path)
 
     assert config_loader.load_radar_config() == {}
+
+
+# ------------------------------------------------------------ nom du jeu
+
+def _clip_payload(clip_id, game_id):
+    return {"id": clip_id, "title": f"Clip {clip_id}", "url": f"https://clips.twitch.tv/{clip_id}",
+            "created_at": _iso(1), "duration": 30.0, "view_count": 10, "game_id": game_id}
+
+
+def test_the_game_is_shown_by_its_name_and_not_by_its_number():
+    # /clips ne renvoie qu'un identifiant numerique. L'afficher tel quel montre
+    # un nombre qui ne dit rien -- et en faisait meme un hashtag.
+    adapter = FakeTwitch({
+        "clips": {"data": [_clip_payload("C1", "132735846")]},
+        "games": {"data": [{"id": "132735846", "name": "Just Chatting"}]},
+    })
+
+    clips = [o for o in adapter.scan(_creator(), _iso(24)) if o.kind == KIND_CLIP]
+
+    assert clips[0].category == "Just Chatting"
+
+
+def test_the_names_of_every_game_are_asked_in_one_request():
+    adapter = FakeTwitch({
+        "clips": {"data": [_clip_payload("C1", "111"), _clip_payload("C2", "222"),
+                           _clip_payload("C3", "111")]},
+        "games": {"data": [{"id": "111", "name": "Jeu A"}, {"id": "222", "name": "Jeu B"}]},
+    })
+
+    adapter.scan(_creator(), _iso(24))
+
+    games_calls = [c for c in adapter.calls if c[0] == "games"]
+    assert len(games_calls) == 1
+    assert sorted(games_calls[0][1]["id"]) == ["111", "222"]
+
+
+def test_a_game_already_resolved_is_not_asked_again():
+    adapter = FakeTwitch({
+        "clips": {"data": [_clip_payload("C1", "111")]},
+        "games": {"data": [{"id": "111", "name": "Jeu A"}]},
+    })
+
+    adapter.scan(_creator(), _iso(24))
+    adapter.scan(_creator(), _iso(24))
+
+    assert len([c for c in adapter.calls if c[0] == "games"]) == 1
+
+
+def test_a_game_name_that_cannot_be_resolved_leaves_no_category():
+    # Mieux vaut un clip sans categorie qu'un nombre presente comme une
+    # categorie -- et l'echec ne doit pas interrompre le scan.
+    adapter = FakeTwitch({
+        "clips": {"data": [_clip_payload("C1", "999")]},
+        "games": TwitchApiError("API indisponible"),
+    })
+
+    clips = [o for o in adapter.scan(_creator(), _iso(24)) if o.kind == KIND_CLIP]
+
+    assert clips and clips[0].category == ""
+
+
+def test_an_unknown_game_id_is_not_asked_again_either():
+    adapter = FakeTwitch({
+        "clips": {"data": [_clip_payload("C1", "999")]},
+        "games": {"data": []},                     # Twitch ne connait pas cet id
+    })
+
+    adapter.scan(_creator(), _iso(24))
+    adapter.scan(_creator(), _iso(24))
+
+    assert len([c for c in adapter.calls if c[0] == "games"]) == 1
+
+
+def test_a_clip_without_a_game_never_triggers_a_lookup():
+    adapter = FakeTwitch({"clips": {"data": [_clip_payload("C1", "")]}})
+
+    adapter.scan(_creator(), _iso(24))
+
+    assert not [c for c in adapter.calls if c[0] == "games"]
