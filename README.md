@@ -147,9 +147,15 @@ editoriale, description courte, version reseaux sociaux, hashtags et trois
 titres, chacun copiable en un clic. Plusieurs clips peuvent etre coches puis
 analyses a la suite ; rien ne demarre sans un clic explicite.
 
-Trois niveaux : rapide (transcription, resume, description courte), standard
-(le tout avec moment cle, titres et hashtags) et approfondie (plus le rythme,
-les silences et plusieurs candidats pour le moment cle).
+Trois niveaux. Le descriptif complet -- moment cle, resume, les trois
+descriptions, hashtags et titres -- est produit dans les TROIS : le niveau ne
+change que ce qui s'ajoute autour.
+
+| Niveau | Ce qu'il change |
+| --- | --- |
+| Rapide | Sans les emotions ni les mots horodates. Prend un modele Whisper plus leger s'il est deja telecharge ; sinon le gain de temps est faible, la transcription representant l'essentiel du travail. |
+| Standard | Emotions et mots horodates. C'est le defaut. |
+| Approfondie | Jusqu'a trois autres passages candidats pour le moment cle, avec leur note. |
 
 - **Tout est local.** La transcription est Faster-Whisper, deja utilise par le
   pipeline. La redaction est EXTRACTIVE : les phrases proposees sont des phrases

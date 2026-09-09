@@ -25,10 +25,19 @@ LEVEL_LABELS = {
     LEVEL_DEEP: "🔬 Approfondie",
 }
 
+# Ces textes DECRIVENT ce que le niveau change reellement, et rien d'autre. Les
+# premiers annoncaient un mode rapide reduit a "transcription, resume et
+# description courte", ce qui laissait croire qu'on y perdait les titres et les
+# hashtags : ils sont produits aux trois niveaux. Une option qui promet plus de
+# difference qu'elle n'en fait pousse a choisir au hasard.
 LEVEL_DESCRIPTIONS = {
-    LEVEL_FAST: "Transcription, résumé et description courte.",
-    LEVEL_STANDARD: "Transcription horodatée, moment clé, descriptions, titres et hashtags.",
-    LEVEL_DEEP: "Standard, plus le rythme, les silences et plusieurs candidats pour le moment clé.",
+    LEVEL_FAST: ("Descriptif complet, sans les émotions ni les mots horodatés. "
+                 "Utilise un modèle plus léger s'il est déjà téléchargé, sinon le "
+                 "gain de temps est faible."),
+    LEVEL_STANDARD: ("Descriptif complet : moment clé, résumé, descriptions, titres, "
+                     "hashtags, émotions et mots horodatés."),
+    LEVEL_DEEP: ("Standard, plus jusqu'à trois autres passages candidats pour le "
+                 "moment clé, avec leur note."),
 }
 
 # Confiance globale (section 10). Trois niveaux nommes, JAMAIS un pourcentage :
