@@ -6,6 +6,7 @@ analyse du transcript, consignes envoyées, vérification de ce qui revient,
 variantes, cache, annulation, gestion des modèles -- est réellement exécuté.
 """
 import json
+import os
 
 import pytest
 
@@ -458,6 +459,12 @@ def test_asking_a_missing_model_says_what_to_do(tmp_path):
     assert "Gérer les modèles" in str(excinfo.value)
 
 
+@pytest.mark.skipif(
+    not os.environ.get("CLIPFARMING_TEST_LLAMA"),
+    reason="charge reellement llama.cpp : mettre CLIPFARMING_TEST_LLAMA=1 pour l'activer. "
+           "Le chargement execute du code natif, et un processeur sans les instructions "
+           "attendues arrete le processus -- ce qui est le cas de la machine de "
+           "developpement.")
 def test_a_damaged_model_gives_a_readable_message(tmp_path):
     if not LlamaCppProvider.library_available():
         pytest.skip("llama-cpp-python n'est pas installé")

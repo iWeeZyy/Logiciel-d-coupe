@@ -122,7 +122,12 @@ class ModelsDialog(QDialog):
             pieces.append(f"Disque libre : {machine.free_disk_gb:.0f} Go")
         self.machine_label.setText("Votre PC — " + "  •  ".join(pieces))
 
-        if LlamaCppProvider.library_available():
+        if machine.avx2 is False:
+            self.runtime_label.setText(
+                "⚠️ Ce processeur ne dispose pas des instructions AVX2, sur lesquelles "
+                "llama.cpp s'appuie. La réécriture risque de ne pas fonctionner sur cet "
+                "ordinateur ; le reste de l'application, lui, n'est pas concerné.")
+        elif LlamaCppProvider.library_available():
             self.runtime_label.setText("Moteur de réécriture présent dans cette version.")
         else:
             self.runtime_label.setText(

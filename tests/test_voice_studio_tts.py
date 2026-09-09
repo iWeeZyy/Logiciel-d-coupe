@@ -465,3 +465,72 @@ def test_the_windows_address_is_the_one_used_on_windows():
     # Le catalogue livre doit couvrir Windows : c'est la cible de l'application.
     assert piper_models.engine_url("win32").endswith(".zip")
     assert "piper" in piper_models.engine_url("win32")
+
+
+# ------------------------------------------- detection du programme piper
+
+def _install_fake_engine(directory, nested: bool = True, name: str = "piper"):
+    """Pose un faux programme piper, comme le fait l'archive officielle."""
+    target = directory / "piper" if nested else directory
+    target.mkdir(parents=True, exist_ok=True)
+    binary = target / name
+    binary.write_text("#!/bin/sh\necho piper\n", encoding="utf-8")
+    binary.chmod(0o755)
+    return binary
+
+
+def test_the_engine_is_found_inside_the_folder_of_the_archive(tmp_path, monkeypatch):
+    """DEFAUT REEL : l'archive officielle range le programme dans un
+    sous-dossier « piper/ ». La recherche ne regardait que la racine, donc
+    l'application proposait d'installer un moteur DEJA installe et les voix
+    telechargees restaient inutilisables."""
+    monkeypatch.setattr(piper_models, "models_dir", lambda: tmp_path / "voix")
+    monkeypatch.delenv("PIPER_BIN", raising=False)
+    monkeypatch.setattr(tts.shutil, "which", lambda name: None)
+    binary = _install_fake_engine(tmp_path / "piper-bin", nested=True)
+
+    engine = tts.PiperEngine()
+
+    assert engine.runtime() in ("library", "binary")
+    assert str(binary) == str(piper_models.engine_binary())
+    assert engine._binary == str(binary)
+
+
+def test_the_engine_is_also_found_at_the_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(piper_models, "models_dir", lambda: tmp_path / "voix")
+    monkeypatch.delenv("PIPER_BIN", raising=False)
+    monkeypatch.setattr(tts.shutil, "which", lambda name: None)
+    binary = _install_fake_engine(tmp_path / "piper-bin", nested=False)
+
+    assert tts.PiperEngine()._binary == str(binary)
+
+
+def test_a_windows_executable_is_recognised_too(tmp_path, monkeypatch):
+    monkeypatch.setattr(piper_models, "models_dir", lambda: tmp_path / "voix")
+    monkeypatch.delenv("PIPER_BIN", raising=False)
+    monkeypatch.setattr(tts.shutil, "which", lambda name: None)
+    binary = _install_fake_engine(tmp_path / "piper-bin", nested=True, name="piper.exe")
+
+    assert tts.PiperEngine()._binary == str(binary)
+
+
+def test_the_environment_variable_wins(tmp_path, monkeypatch):
+    monkeypatch.setattr(piper_models, "models_dir", lambda: tmp_path / "voix")
+    chosen = _install_fake_engine(tmp_path / "ailleurs", nested=False)
+    monkeypatch.setenv("PIPER_BIN", str(chosen))
+
+    assert tts.PiperEngine()._binary == str(chosen)
+
+
+def test_the_dialog_and_the_engine_agree_on_what_is_installed(tmp_path, monkeypatch):
+    # Le desaccord entre les deux recherches est ce qui a produit le bug :
+    # la fenetre voyait le moteur, le moteur ne se voyait pas lui-meme.
+    monkeypatch.setattr(piper_models, "models_dir", lambda: tmp_path / "voix")
+    monkeypatch.delenv("PIPER_BIN", raising=False)
+    monkeypatch.setattr(tts.shutil, "which", lambda name: None)
+    _install_fake_engine(tmp_path / "piper-bin", nested=True)
+
+    seen_by_dialog = piper_models.engine_binary() is not None
+    seen_by_engine = bool(tts.PiperEngine()._binary)
+
+    assert seen_by_dialog == seen_by_engine is True

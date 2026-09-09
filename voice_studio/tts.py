@@ -218,16 +218,25 @@ class PiperEngine:
     # ------------------------------------------------------------ presence
     @staticmethod
     def _find_binary() -> str:
+        """Programme piper : variable d'environnement, PATH, puis installation
+        locale.
+
+        DEFAUT REEL CORRIGE : la recherche locale ne regardait QUE la racine du
+        dossier d'installation. L'archive officielle range son contenu dans un
+        sous-dossier "piper/", donc le programme s'y trouvait et n'etait jamais
+        vu -- l'application proposait encore d'installer un moteur deja
+        installe, et les voix telechargees restaient inutilisables. La
+        recherche recursive de piper_models.engine_binary() est desormais la
+        seule, partagee avec le gestionnaire de voix : deux recherches
+        differentes, c'est exactement ce qui a produit le desaccord.
+        """
         candidate = os.environ.get("PIPER_BIN") or shutil.which("piper") or ""
         if candidate and Path(candidate).exists():
             return candidate
         from voice_studio import piper_models
 
-        for name in ("piper.exe", "piper"):
-            local = piper_models.models_dir().parent / "piper-bin" / name
-            if local.is_file():
-                return str(local)
-        return ""
+        found = piper_models.engine_binary()
+        return str(found) if found else ""
 
     @staticmethod
     def library_available() -> bool:

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from core.cancellation import CancelToken
 from utils.errors import CancelledError
+from gui.voice_studio.workers import VoiceWorker
 from voice_studio import piper_models, tts
 
 
@@ -72,6 +73,7 @@ class VoicesDialog(QDialog):
         self.setWindowTitle("Voix locales — Piper")
         self.resize(720, 520)
         self._worker = None
+        self._voice_worker = None
         self._cancel_token = None
         self._current_key = ""
 
@@ -153,15 +155,21 @@ class VoicesDialog(QDialog):
         engine = tts.PiperEngine()
         runtime = engine.runtime()
         if runtime:
+            where = ("bibliothèque locale" if runtime == "library"
+                     else f"programme {piper_models.engine_binary()}")
             self.engine_label.setText(
-                f"Moteur Piper détecté ({'bibliothèque locale' if runtime == 'library' else 'programme piper'})."
-                f"  Dossier des voix : {piper_models.models_dir()}")
+                f"Moteur Piper détecté ({where}).  "
+                f"Dossier des voix : {piper_models.models_dir()}")
         else:
+            # Dire OU l'on a cherche : sans cela, un moteur installe mais non
+            # detecte laisse l'utilisateur sans aucune prise sur le probleme.
             self.engine_label.setText(
                 "Piper n'est pas encore configuré sur cet ordinateur. Installe le "
                 "moteur ci-dessous : c'est un programme d'une vingtaine de mégaoctets, "
                 "téléchargé une seule fois. Les voix de Windows, elles, restent "
-                "disponibles en attendant.")
+                "disponibles en attendant.\n"
+                f"Dossier vérifié : {piper_models.engine_dir()} "
+                f"({'présent mais aucun programme piper dedans' if piper_models.engine_dir().is_dir() else 'absent'})")
         self.install_engine_btn.setVisible(not runtime)
 
         installed = set(piper_models.installed_keys())
@@ -219,6 +227,11 @@ class VoicesDialog(QDialog):
         actions = QHBoxLayout()
         actions.addStretch(1)
         if installed:
+            test = QPushButton("Tester")
+            test.setToolTip("Génère une phrase avec cette voix et dit ce qui s'est passé.")
+            test.clicked.connect(lambda _c=False, k=voice.key: self._test(k))
+            actions.addWidget(test)
+
             remove = QPushButton("Supprimer")
             remove.clicked.connect(lambda _c=False, k=voice.key: self._remove(k))
             actions.addWidget(remove)
@@ -314,6 +327,53 @@ class VoicesDialog(QDialog):
         self.cancel_btn.setVisible(False)
         self.refresh()
 
+    def _test(self, key: str) -> None:
+        """Essai reel de la voix : c'est la seule facon de savoir si elle
+        fonctionne vraiment sur cette machine, plutot que de le supposer."""
+        if self._voice_worker is not None:
+            return
+        engine = tts.PiperEngine()
+        if not engine.runtime():
+            QMessageBox.warning(
+                self, "Moteur absent",
+                "Le programme Piper n'est pas installé : cette voix ne peut pas "
+                "encore être utilisée.")
+            return
+        voice = next((v for v in engine.voices()
+                      if v.id == str(piper_models.model_path(key))), None)
+        if voice is None:
+            QMessageBox.warning(self, "Voix introuvable",
+                                "Cette voix n'est plus lisible sur le disque.")
+            return
+
+        from voice_studio import store
+
+        self.status.setText("Essai de la voix en cours...")
+        self._voice_worker = VoiceWorker(
+            "Bonjour, ceci est un essai de voix locale.",
+            str(store.audio_dir() / "essai_voix.wav"), voice, 1.0, 1.0, 0.0)
+        self._voice_worker.done.connect(self._on_test_done)
+        self._voice_worker.failed.connect(self._on_test_failed)
+        self._voice_worker.finished.connect(self._on_test_finished)
+        self._voice_worker.start()
+
+    def _on_test_done(self, path: str) -> None:
+        import wave
+
+        try:
+            with wave.open(path) as handle:
+                seconds = handle.getnframes() / handle.getframerate()
+        except Exception:                              # pragma: no cover - fichier illisible
+            seconds = 0.0
+        self.status.setText(f"Voix fonctionnelle : {seconds:.1f} s produites — {path}")
+
+    def _on_test_failed(self, message: str) -> None:
+        self.status.setText("")
+        QMessageBox.warning(self, "Cette voix ne fonctionne pas", message)
+
+    def _on_test_finished(self) -> None:
+        self._voice_worker = None
+
     def _remove(self, key: str) -> None:
         answer = QMessageBox.question(
             self, "Supprimer cette voix",
@@ -329,8 +389,9 @@ class VoicesDialog(QDialog):
     def cleanup(self) -> None:
         if self._cancel_token is not None:
             self._cancel_token.cancel()
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.wait(4000)
+        for worker in (self._worker, self._voice_worker):
+            if worker is not None and worker.isRunning():
+                worker.wait(4000)
 
     def reject(self) -> None:                          # pragma: no cover - interaction
         self.cleanup()

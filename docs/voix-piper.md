@@ -56,8 +56,16 @@ propose, il ne décide pas de ce qui existe.
    Génération dans le processus, sans fichier temporaire. C'est le cas en
    développement (`pip install piper-tts`).
 2. **`binary`** — le programme `piper` officiel, cherché dans `PIPER_BIN`, dans
-   le `PATH`, puis dans `voice_studio_data/piper-bin`. C'est le cas de
-   l'application compilée, qui **n'embarque pas** la bibliothèque Python.
+   le `PATH`, puis **récursivement** dans `voice_studio_data/piper-bin`. C'est le
+   cas de l'application compilée, qui **n'embarque pas** la bibliothèque Python.
+
+   La récursivité n'est pas un détail : l'archive officielle range son contenu
+   dans un sous-dossier `piper/`. Une recherche limitée à la racine ne trouvait
+   rien, et l'application proposait d'installer un moteur déjà installé pendant
+   que les voix téléchargées restaient inutilisables. Une seule fonction fait
+   cette recherche désormais, `piper_models.engine_binary()`, partagée par le
+   moteur et par la fenêtre de gestion : c'est le désaccord entre deux
+   recherches différentes qui avait produit le défaut.
 
 Pourquoi cette séparation : `piper-tts` est publié sous **GPL-3.0**. L'inclure
 dans un exécutable distribué imposerait ses obligations à toute l'application.

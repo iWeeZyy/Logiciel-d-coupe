@@ -118,8 +118,9 @@ def download_file(url: str, target: Path, on_progress: Optional[Callable] = None
 
 def explain_http(error, url: str) -> str:
     if getattr(error, "code", None) == 404:
-        return ("Cette voix n'existe plus à cette adresse. Le catalogue "
-                "(config/piper_voices.json) doit être mis à jour.")
+        return ("Ce fichier n'existe plus à cette adresse (erreur 404). "
+                "Le catalogue, dans le dossier config de l'application, doit "
+                "être mis à jour.")
     if getattr(error, "code", None) in (401, 403):
         return "Le serveur refuse le téléchargement de cette voix."
     return f"Téléchargement refusé par le serveur ({getattr(error, 'code', '?')})."

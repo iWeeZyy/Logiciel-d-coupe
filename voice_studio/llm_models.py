@@ -163,6 +163,10 @@ class Resources:
     gpu_name: str = ""
     vram_gb: Optional[float] = None
     cpu_count: Optional[int] = None
+    # llama.cpp s'appuie sur des instructions vectorielles modernes. Sur un
+    # processeur qui ne les a pas, le chargement d'un modele ne renvoie pas une
+    # erreur : il ARRETE le programme. Mieux vaut donc le dire avant.
+    avx2: Optional[bool] = None
 
     @property
     def ram_known(self) -> bool:
@@ -199,6 +203,28 @@ def _linux_memory() -> tuple[Optional[float], Optional[float]]:
         if len(parts) >= 2 and parts[0].rstrip(":") in ("MemTotal", "MemAvailable"):
             values[parts[0].rstrip(":")] = int(parts[1]) / 1024 ** 2
     return values.get("MemTotal"), values.get("MemAvailable")
+
+
+def _has_avx2() -> Optional[bool]:
+    """Le processeur a-t-il les instructions AVX2 ? None si on ne sait pas."""
+    if sys.platform.startswith("linux"):
+        try:
+            content = Path("/proc/cpuinfo").read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        for line in content.splitlines():
+            if line.lower().startswith("flags"):
+                return " avx2 " in f" {line.lower()} "
+        return None
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            # PF_AVX2_INSTRUCTIONS_AVAILABLE = 40 (documentation Microsoft).
+            return bool(ctypes.windll.kernel32.IsProcessorFeaturePresent(40))
+        except Exception:                              # pragma: no cover - API absente
+            return None
+    return None
 
 
 def _gpu() -> tuple[str, Optional[float]]:
@@ -242,7 +268,8 @@ def resources() -> Resources:
 
     name, vram = _gpu()
     return Resources(total_ram_gb=total, available_ram_gb=available, free_disk_gb=free_disk,
-                     gpu_name=name, vram_gb=vram, cpu_count=os.cpu_count())
+                     gpu_name=name, vram_gb=vram, cpu_count=os.cpu_count(),
+                     avx2=_has_avx2())
 
 
 RECOMMENDED = "recommande"
