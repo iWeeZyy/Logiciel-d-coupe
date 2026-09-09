@@ -26,6 +26,7 @@ from gui import settings_store
 from gui.branding import APP_TAGLINE
 from content_factory import planning
 from video import ffmpeg_utils
+from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
 from gui.controller import AppController
 from gui.widgets.drop_zone import DropZone
 from utils.hardware import cuda_device_count
@@ -183,6 +184,20 @@ class HomePage(QWidget):
         modules_row.addStretch(1)
         card_layout.addLayout(modules_row)
 
+        format_row = QHBoxLayout()
+        format_row.addWidget(_field_label("Format"))
+        self.aspect_combo = QComboBox()
+        self.aspect_combo.addItem("9:16 — vertical (Reels, Shorts, TikTok)", ASPECT_PORTRAIT)
+        self.aspect_combo.addItem("16:9 — horizontal (image d'origine)", ASPECT_LANDSCAPE)
+        format_row.addWidget(self.aspect_combo)
+        self.aspect_hint = QLabel()
+        self.aspect_hint.setProperty("role", "muted")
+        self.aspect_hint.setWordWrap(True)
+        format_row.addWidget(self.aspect_hint, stretch=1)
+        self.aspect_combo.currentIndexChanged.connect(self._on_aspect_changed)
+        card_layout.addLayout(format_row)
+        self._on_aspect_changed()
+
         modules_hint = QLabel(
             "Cadrage suivi, contexte, silences et zooms se règlent dans Paramètres."
         )
@@ -242,8 +257,25 @@ class HomePage(QWidget):
             return self.custom_duration_spin.value()
         return _AUTO_DURATION if data == 0 else int(data)
 
+    def _on_aspect_changed(self) -> None:
+        """En 16:9 l'image n'est pas recadree, donc rien a cadrer intelligemment.
+
+        La case reste visible mais devient inoperante : la griser et le dire est
+        plus honnete que de la laisser cochee sans effet.
+        """
+        portrait = self.aspect_combo.currentData() == ASPECT_PORTRAIT
+        self.aspect_hint.setText(
+            "" if portrait else "L'image d'origine est conservée : aucun recadrage, "
+                                "donc pas de cadrage intelligent.")
+        box = self._module_boxes.get("framing")
+        if box is not None:
+            box.setEnabled(portrait)
+
     def _editing_overrides(self) -> dict:
-        return {key: box.isChecked() for key, box in self._module_boxes.items()}
+        overrides = {key: box.isChecked() for key, box in self._module_boxes.items()}
+        if self.aspect_combo.currentData() != ASPECT_PORTRAIT:
+            overrides["framing"] = False
+        return overrides
 
     def _confirm_heavy_model(self) -> bool:
         """Sans GPU, un gros modele peut transcrire plus lentement que la duree
@@ -286,6 +318,7 @@ class HomePage(QWidget):
             device=settings_store.get("default_device"),
             no_cache=False,
             debug_scores=False,
+            aspect=self.aspect_combo.currentData(),
         )
         name = Path(self.selected_video_path).stem
         self.controller.start_analysis(

@@ -490,6 +490,32 @@ Le tri `--sort potential` utilise le **Video Potential Score** (`youtube/ranking
 
 Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique -- l'information vient de YouTube telle quelle. `--youtube` refuse d'agir sans `--confirm-rights`, qui n'est qu'une confirmation de ta part : le logiciel ne verifie ni ne peut verifier tes droits reels.
 
+## Options de production
+
+Quatre choix, faits AVANT de lancer un traitement -- sur la page Accueil, ou en
+ligne de commande.
+
+| Option | Accueil | Ligne de commande |
+| --- | --- | --- |
+| Sous-titres | case "Sous-titres" | `--no-subtitles` |
+| Format | menu "Format" | `--aspect 9:16` / `--aspect 16:9` |
+| Cadrage intelligent | case "Cadrage intelligent" | `--no-smart-framing` |
+| Montage auto | case "Montage auto" | `--no-auto-montage` |
+
+- **Sous-titres decoches** : aucun fichier de sous-titres n'est produit, aucun
+  n'est incruste. Jusqu'a la version qui introduit ce tableau, la case coupait
+  l'export du fichier `.srt` mais les sous-titres restaient incrustes dans
+  l'image -- c'etait un defaut, pas un choix.
+- **16:9** : l'image d'origine est conservee, sans aucun recadrage. Une source
+  qui n'est pas deja au format est completee par des bandes plutot que
+  deformee ou rognee. Le cadrage intelligent n'a alors plus d'objet et la case
+  se grise : il sert a choisir QUOI garder dans un cadre plus etroit que la
+  source, ce qui ne se pose pas ici.
+- Ces interrupteurs ne peuvent que DESACTIVER. Un module coupe dans
+  `config/editing.json` (page Parametres) ne se rallume pas en cochant une
+  case : la configuration reste la source, la case est un interrupteur
+  par-dessus, le temps d'un traitement.
+
 ## Sortie
 
 ```

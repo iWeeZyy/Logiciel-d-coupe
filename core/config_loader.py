@@ -28,6 +28,14 @@ def _load_json(name: str) -> dict:
         raise ConfigError(f"JSON invalide dans {path} : {e}") from e
 
 
+# Interrupteurs de production : nom du module d'edition -> champ de Settings.
+_MODULE_SWITCHES = {
+    "framing": "smart_framing",
+    "montage": "auto_montage",
+    "captions": "subtitles_enabled",
+}
+
+
 @dataclass
 class Settings:
     # Options CLI
@@ -45,6 +53,16 @@ class Settings:
     overwrite: bool = False
     no_cache: bool = False
     debug_scores: bool = False
+
+    # Options de production, choisies avant de lancer un traitement. Elles ne
+    # remplacent pas config/editing.json : elles ne peuvent que DESACTIVER un
+    # module deja actif. Un module coupe dans la configuration ne se rallume pas
+    # en cochant une case -- la configuration reste la source, la case est un
+    # interrupteur par-dessus.
+    subtitles_enabled: bool = True
+    aspect_ratio: str = "9:16"
+    smart_framing: bool = True
+    auto_montage: bool = True
 
     # Chargés depuis settings.json
     weights: dict = field(default_factory=dict)
@@ -67,7 +85,22 @@ class Settings:
         return block if isinstance(block, dict) else {}
 
     def editing_module_enabled(self, name: str) -> bool:
-        return bool(self.editing_module(name).get("enabled", False))
+        """Un module d'edition est-il actif pour CE traitement ?
+
+        Point de passage unique : la configuration d'abord, puis l'interrupteur
+        choisi par l'utilisateur. Le faire ici plutot qu'a chaque appel evite
+        qu'un endroit du pipeline honore la case et un autre l'ignore.
+        """
+        if not self.editing_module(name).get("enabled", False):
+            return False
+        switch = _MODULE_SWITCHES.get(name)
+        return True if switch is None else bool(getattr(self, switch, True))
+
+    def target_size(self) -> tuple[int, int]:
+        """Definition de sortie correspondant au format demande."""
+        from video.cropper import target_size
+
+        return target_size(self.aspect_ratio)
 
     def max_clip_duration(self) -> float:
         """Duree maximale autorisee pour un clip, marge de depassement comprise.
@@ -145,6 +178,14 @@ def load_settings(cli_args: Any) -> Settings:
         overwrite=bool(getattr(cli_args, "overwrite", False)),
         no_cache=bool(getattr(cli_args, "no_cache", False)),
         debug_scores=bool(getattr(cli_args, "debug_scores", False)),
+        # Options de production. Formulees en NEGATIF sur la ligne de commande
+        # (--no-subtitles) : sans option, le comportement reste exactement celui
+        # d'avant, ce qui evite de casser une commande deja ecrite quelque part.
+        subtitles_enabled=not bool(getattr(cli_args, "no_subtitles", False)),
+        aspect_ratio=(getattr(cli_args, "aspect", None)
+                      or defaults.get("aspect_ratio") or "9:16"),
+        smart_framing=not bool(getattr(cli_args, "no_smart_framing", False)),
+        auto_montage=not bool(getattr(cli_args, "no_auto_montage", False)),
         weights=weights,
         scoring_params=settings_json.get("scoring_params", {}),
         hook_detection=settings_json.get("hook_detection", {}),

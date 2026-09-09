@@ -270,7 +270,13 @@ def run(
             )
 
             out_mp4_path = str(Path(settings.output) / relative_path)
-            ass_path = str(Path(tmp_dir) / f"{clip_stem(i)}.ass")
+            # DEFAUT REEL CORRIGE : la case "Sous-titres" de l'accueil coupait
+            # bien le module captions, mais le .ass etait construit et incruste
+            # quoi qu'il arrive -- seul l'export du fichier .srt etait supprime.
+            # Decocher la case ne changeait donc rien a l'image. Le meme test
+            # decide desormais de l'incrustation ET de l'export.
+            ass_path = (str(Path(tmp_dir) / f"{clip_stem(i)}.ass")
+                        if settings.editing_module_enabled("captions") else None)
 
             try:
                 build_clip(
@@ -294,6 +300,7 @@ def run(
                     zoom_track=zoom_track,
                     audio_cfg=settings.editing_module("montage").get("audio"),
                     fps=source_fps,
+                    target_size=settings.target_size(),
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -304,7 +311,10 @@ def run(
 
             captions_cfg = settings.editing_module("captions")
             subtitle_files = []
-            if caption_groups and captions_cfg.get("enabled", False):
+            # editing_module_enabled et non captions_cfg["enabled"] : c'est lui
+            # qui applique l'interrupteur "sous-titres". Sans cela, un clip sans
+            # sous-titres incrustes exportait quand meme un fichier .srt.
+            if caption_groups and settings.editing_module_enabled("captions"):
                 subtitle_files = [
                     str(Path(p).relative_to(Path(settings.output)).as_posix())
                     for p in write_subtitles(

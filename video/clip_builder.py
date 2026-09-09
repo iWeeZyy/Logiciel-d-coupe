@@ -27,7 +27,7 @@ def build_clip(
     words,
     subtitle_style: dict,
     out_mp4_path: str,
-    ass_path: str,
+    ass_path: str | None,
     export_settings: dict,
     clip_label: str,
     cancel_token: Optional[CancelToken] = None,
@@ -38,16 +38,22 @@ def build_clip(
     zoom_track=None,
     audio_cfg: Optional[dict] = None,
     fps: float = 25.0,
+    target_size: Optional[tuple] = None,
 ) -> None:
     """`edit_list`, `framing_plan`, `zoom_track` et `audio_cfg` viennent des
     modules d'edition automatique. Tous absents, le rendu est exactement celui
     d'avant leur ajout : decoupe simple, cadrage fixe, sous-titres incrustes."""
     edit_list = edit_list or EditList.identity(start, end)
 
-    render_ass_file(
-        words, clip_start=start, style=subtitle_style, out_ass_path=ass_path,
-        caption_groups=caption_groups, margin_v=subtitle_margin_v,
-    )
+    # ass_path a None = sous-titres desactives. On ne fabrique alors AUCUN
+    # fichier de sous-titres : produire un .ass pour ne pas s'en servir
+    # laisserait croire, en lisant le dossier de travail, qu'ils ont ete
+    # incrustes.
+    if ass_path:
+        render_ass_file(
+            words, clip_start=start, style=subtitle_style, out_ass_path=ass_path,
+            caption_groups=caption_groups, margin_v=subtitle_margin_v,
+        )
 
     args = build_ffmpeg_args(
         video_path=video_path,
@@ -62,5 +68,6 @@ def build_clip(
         audio_cfg=audio_cfg,
         export_settings=export_settings,
         out_mp4_path=out_mp4_path,
+        **({"target_size": tuple(target_size)} if target_size else {}),
     )
     run_ffmpeg(args, description=f"generation du clip {clip_label}", cancel_token=cancel_token)

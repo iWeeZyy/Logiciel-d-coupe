@@ -19,6 +19,23 @@ TARGET_W = 1080
 TARGET_H = 1920
 _TARGET_ASPECT = TARGET_W / TARGET_H
 
+# Les deux formats de sortie proposes. Le 9:16 reste la valeur par defaut :
+# c'est le format des Reels, des Shorts et de TikTok, et la raison d'etre du
+# logiciel. Le 16:9 sert a garder un clip tel qu'il a ete tourne -- pour une
+# chaine YouTube classique, ou simplement pour ne rien perdre de l'image.
+ASPECT_PORTRAIT = "9:16"
+ASPECT_LANDSCAPE = "16:9"
+ASPECTS = (ASPECT_PORTRAIT, ASPECT_LANDSCAPE)
+
+PORTRAIT_SIZE = (TARGET_W, TARGET_H)
+LANDSCAPE_SIZE = (1920, 1080)
+
+
+def target_size(aspect: str = ASPECT_PORTRAIT) -> tuple[int, int]:
+    """Definition de sortie pour un format. Un format inconnu rend le portrait,
+    qui est le comportement historique."""
+    return LANDSCAPE_SIZE if aspect == ASPECT_LANDSCAPE else PORTRAIT_SIZE
+
 
 def _even(n: int) -> int:
     return n - (n % 2)

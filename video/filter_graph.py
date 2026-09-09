@@ -98,9 +98,29 @@ def build_video_chain(
     fps: float,
     face_hint=None,
     ass_path: str | None = None,
+    target_size: tuple[int, int] = (TARGET_W, TARGET_H),
 ) -> str:
     """Chaine video (sans le montage, applique en amont) : cadrage, zoom,
-    mise a l'echelle, sous-titres."""
+    mise a l'echelle, sous-titres.
+
+    `target_size` porte le format demande. En PAYSAGE, aucun recadrage n'est
+    fait : recadrer une source deja horizontale vers un cadre horizontal ne
+    ferait que rogner l'image pour rien. Le suivi de visage et le zoom ne
+    s'appliquent donc qu'au portrait, ou ils servent a choisir QUOI garder dans
+    un cadre bien plus etroit que la source.
+    """
+    out_w, out_h = target_size
+    if out_w >= out_h:
+        chain = [
+            # decrease + pad : l'image entiere est conservee, et le cadre est
+            # complete par des bandes plutot que de deformer ou de rogner.
+            f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease",
+            f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2",
+        ]
+        if ass_path:
+            chain.append(subtitle_filter(ass_path))
+        return ",".join(chain)
+
     moving = framing_plan is not None and not framing_plan.is_static and len(framing_plan.keyframes) >= 2
     zooming = zoom_track is not None and not zoom_track.is_empty
 
@@ -125,17 +145,17 @@ def build_video_chain(
         # taille cible multipliee par le zoom maximal, pour que l'agrandissement
         # prenne des pixels reels au lieu d'etirer une image deja reduite.
         max_zoom = max(kf.zoom for kf in zoom_track.keyframes)
-        stage_w = _even(TARGET_W * max_zoom)
-        stage_h = _even(TARGET_H * max_zoom)
+        stage_w = _even(out_w * max_zoom)
+        stage_h = _even(out_h * max_zoom)
         points = [(edit_list.to_output_time_clamped(kf.t), kf.zoom) for kf in zoom_track.keyframes]
         z_expr = piecewise_expression(points, variable="it")
         chain.append(f"scale={stage_w}:{stage_h}")
         chain.append(
             f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d=1:s={TARGET_W}x{TARGET_H}:fps={fps:.4f}"
+            f":d=1:s={out_w}x{out_h}:fps={fps:.4f}"
         )
     else:
-        chain.append(f"scale={TARGET_W}:{TARGET_H}")
+        chain.append(f"scale={out_w}:{out_h}")
 
     if ass_path:
         chain.append(subtitle_filter(ass_path))
@@ -179,6 +199,7 @@ def build_ffmpeg_args(
     audio_cfg: dict | None,
     export_settings: dict,
     out_mp4_path: str,
+    target_size: tuple[int, int] = (TARGET_W, TARGET_H),
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -187,6 +208,7 @@ def build_ffmpeg_args(
     video_chain = build_video_chain(
         edit_list=edit_list, framing_plan=framing_plan, zoom_track=zoom_track,
         src_w=src_w, src_h=src_h, fps=fps, face_hint=face_hint, ass_path=ass_path,
+        target_size=target_size,
     )
     audio_chain = build_audio_chain(audio_cfg)
 

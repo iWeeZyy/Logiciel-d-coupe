@@ -84,6 +84,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", action="store_true",
                          help="Affiche la trace complete en cas d'erreur inattendue.")
 
+    production = parser.add_argument_group("Options de production")
+    production.add_argument("--no-subtitles", dest="no_subtitles", action="store_true",
+                            help="Ne pas incruster de sous-titres et ne pas exporter de fichier de sous-titres.")
+    production.add_argument("--aspect", dest="aspect", choices=["9:16", "16:9"], default=None,
+                            help="Format de sortie. 9:16 par defaut (Reels, Shorts, TikTok) ; "
+                                 "16:9 conserve l'image d'origine sans recadrage.")
+    production.add_argument("--no-smart-framing", dest="no_smart_framing", action="store_true",
+                            help="Desactive le cadrage intelligent (suivi du visage) : recadrage centre.")
+    production.add_argument("--no-auto-montage", dest="no_auto_montage", action="store_true",
+                            help="Desactive le montage automatique (coupe des silences, zooms).")
+
     yt = parser.add_argument_group("Filtres de recherche YouTube (--search uniquement)")
     yt.add_argument("--max-results", dest="max_results", type=int, default=10,
                      help="Nombre de resultats (max 50, defaut: 10).")
