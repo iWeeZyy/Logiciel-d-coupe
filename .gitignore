@@ -36,3 +36,6 @@ ClipFarming-windows.zip
 # version installee, elles vivent dans le dossier de donnees de l'utilisateur).
 whisper-models/
 clips/
+
+# Voice Studio : projets et voix generees (donnees locales, jamais du code).
+voice_studio_data/

@@ -31,11 +31,13 @@ from gui.pages.projects_page import ProjectsPage
 from gui.pages.results_page import ResultsPage
 from gui.pages.search_page import SearchPage
 from gui.pages.settings_page import SettingsPage
+from gui.voice_studio.page import VoiceStudioPage
 
 _NAV_ITEMS = [
     ("home", "🎬  Accueil"),
     ("search", "🔎  Recherche"),
     ("radar", "📡  Radar"),
+    ("voice", "🎙️  Voice Studio"),
     ("projects", "📁  Projets"),
     ("learning", "🧠  Apprentissage"),
     ("settings", "⚙️  Paramètres"),
@@ -109,6 +111,7 @@ class MainWindow(QMainWindow):
         self.pages["results"] = ResultsPage(self.controller)
         self.pages["search"] = SearchPage(self.controller)
         self.pages["radar"] = RadarPage(self.controller)
+        self.pages["voice"] = VoiceStudioPage(self.controller)
         self.pages["projects"] = ProjectsPage(self.controller)
         self.pages["learning"] = LearningPage(self.controller)
         self.pages["settings"] = SettingsPage(self.controller)

@@ -442,11 +442,20 @@ def transcribe(
     cancel_token: Optional[CancelToken] = None,
     on_segment_progress: Optional[Callable[[float, float], None]] = None,
     on_download_progress: Optional[Callable[[float, Optional[float]], None]] = None,
+    vad_filter: bool = True,
 ) -> Transcript:
     """Transcrit wav_path (mono 16kHz, produit par video/audio_extractor.py).
 
     Renvoie un Transcript avec segments + mots horodates. La detection de langue
     est automatique si language est None (comportement natif de Whisper).
+
+    `vad_filter` : le detecteur de voix ecarte les zones jugees sans parole
+    AVANT la reconnaissance. C'est ce qu'il faut pour decouper des clips -- on
+    y cherche des passages parles, et sauter les blancs fait gagner du temps.
+    Ce n'est PAS ce qu'il faut pour une retranscription integrale : un mot
+    prononce dans une zone jugee muette disparait du texte sans que rien ne le
+    signale. Voice Studio le met donc a False. Le defaut reste True, le
+    comportement du pipeline video ne change pas.
     """
     if model_name not in _VALID_MODELS:
         logger.warning(
@@ -488,13 +497,14 @@ def transcribe(
     logger.info(f"Transcription en cours (modele={model_name}, device={device}, compute_type={compute_type})...")
 
     try:
-        segments_iter, info = model.transcribe(
-            wav_path,
-            language=language,
-            word_timestamps=True,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-        )
+        options = {
+            "language": language,
+            "word_timestamps": True,
+            "vad_filter": bool(vad_filter),
+        }
+        if vad_filter:
+            options["vad_parameters"] = {"min_silence_duration_ms": 500}
+        segments_iter, info = model.transcribe(wav_path, **options)
     except Exception as e:
         raise NoAudioError(
             f"Echec de la transcription -- l'audio extrait est peut-etre vide ou "

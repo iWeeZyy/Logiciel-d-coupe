@@ -37,6 +37,12 @@ tzdata>=2024.1
 # Tests
 pytest>=8.0
 
+# Synthese vocale LOCALE de Voice Studio : pilote les voix DEJA installees sur
+# le systeme (SAPI5 sous Windows, espeak-ng sous Linux, NSSpeechSynthesizer
+# sous macOS). Rien n'est telecharge, rien n'est envoye : le texte ne quitte
+# pas la machine. Sous Windows, pyttsx3 tire lui-meme comtypes et pywin32.
+pyttsx3>=2.90
+
 # Coffre de mots de passe du systeme (Gestionnaire d'identifiants sous Windows).
 # Sert UNIQUEMENT a ranger les jetons de connexion aux reseaux sociaux. Sans
 # lui, l'application refuse d'enregistrer un jeton -- elle ne l'ecrit jamais en

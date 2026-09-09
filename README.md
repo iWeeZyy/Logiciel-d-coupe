@@ -71,6 +71,55 @@ GitHub Actions restent disponibles en parallele (historique build par build),
 mais leur URL change a chaque compilation et ils expirent au bout de 30 jours.
 Le depot etant prive, il faut etre connecte a GitHub pour telecharger.
 
+### Voice Studio
+
+Onglet independant : une adresse YouTube en entree, la transcription INTEGRALE
+de ce qui est dit en sortie, puis une voix locale lisant le texte choisi.
+
+**Verbatim, jamais un resume.** Le texte affiche est celui qui a ete prononce :
+rien n'est resume, reformule, corrige, ni filtre. Les hesitations, les
+repetitions et les tics de langage restent. Deux consequences techniques :
+
+- la reconnaissance tourne **sans detecteur de voix** (`vad_filter=False`).
+  Le detecteur ecarte des zones jugees muettes AVANT la reconnaissance : utile
+  pour chercher un passage a clipper, inacceptable ici, ou un mot mal juge
+  disparaitrait sans que rien ne le signale. Le pipeline video, lui, garde le
+  detecteur -- son comportement ne change pas ;
+- la vue **« version nettoyee »** ne fait que de la MISE EN PAGE (espaces,
+  majuscule de debut de paragraphe, paragraphes sur les silences). Elle ne
+  remplace jamais la version brute, accessible d'un clic, et un test verifie
+  que les deux disent exactement les memes mots dans le meme ordre.
+
+**Trois sources, dans cet ordre** : les sous-titres publies par la chaine, les
+sous-titres generes automatiquement par YouTube, puis la transcription locale
+par Faster-Whisper. Les deux premieres ne recuperent que du texte deja publie
+avec la video. La troisieme demande la piste audio, donc une case a cocher
+explicite : sans elle, Voice Studio s'arrete et explique pourquoi.
+
+**La couverture est mesuree et affichee** : nombre de segments, duree de parole
+transcrite, instant du dernier mot, duree de la video. Si le texte s'arrete
+nettement avant la fin, l'ecran le dit au lieu de laisser croire a une
+transcription complete.
+
+**Voix locales uniquement.** La synthese passe par les voix DEJA installees sur
+la machine (SAPI5 sous Windows, espeak-ng sous Linux), via `pyttsx3` : rien
+n'est telecharge, aucun compte, aucune cle d'API, et ni le texte ni l'audio ne
+quittent l'ordinateur. Piper est prevu mais ne s'active que si un executable et
+une voix sont reellement presents. Aucune voix installee -> le bouton est
+desactive et le dit, plutot que d'echouer au moment de generer. Le clonage de
+voix n'existe pas ici : reproduire la voix d'une personne demande son
+autorisation, que rien dans ce logiciel ne peut verifier.
+
+**Ce qui est enregistre**, sous `%LOCALAPPDATA%\ClipFarming\voice_studio_data`
+(un fichier JSON par video) : l'adresse, le titre, la chaine, la duree, la
+langue, la source du texte, le modele utilise, la transcription avec ses
+minutages, les reglages de voix. Rouvrir la meme video propose la transcription
+deja faite plutot que de la refaire.
+
+**Exports** : TXT (avec ou sans minutages), SRT et VTT. Les deux derniers
+passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
+un seul formateur de minutage dans tout le projet.
+
 ### Radar YouTube et Twitch
 
 Veille de contenu sur une liste personnalisable de createurs, YouTube et Twitch

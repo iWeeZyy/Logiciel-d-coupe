@@ -40,6 +40,17 @@ hiddenimports = [
     "keyring.backends.Windows",
     "keyring.backends.SecretService",
     "keyring.backends.fail",
+    # pyttsx3 choisit son pilote a l'execution (importlib) : l'analyse statique
+    # de PyInstaller ne voit donc jamais le pilote Windows, et l'exe compile
+    # sans lui annoncerait a tort qu'aucune voix n'est installee.
+    "pyttsx3.drivers",
+    "pyttsx3.drivers.sapi5",
+    "pyttsx3.drivers.dummy",
+    "comtypes",
+    "comtypes.client",
+    # Voice Studio : importe par la page, elle-meme importee par la fenetre.
+    "voice_studio.services",
+    "voice_studio.tts",
 ]
 
 for pkg in [
