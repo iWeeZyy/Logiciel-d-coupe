@@ -20,7 +20,7 @@ import pytest
 
 from core.cancellation import CancelToken
 from utils.errors import CancelledError
-from voice_studio import piper_models, tts
+from voice_studio import downloads, piper_models, tts
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 
@@ -367,7 +367,9 @@ def test_a_missing_voice_on_the_server_is_explained(served, monkeypatch):
 
 
 def test_a_full_disk_is_announced_before_writing(served, monkeypatch):
-    monkeypatch.setattr(piper_models, "_free_space", lambda directory: 1024)
+    # Le controle vit dans voice_studio/downloads.py, partage avec le
+    # gestionnaire des modeles de langue.
+    monkeypatch.setattr(downloads, "free_space", lambda directory: 1024)
 
     with pytest.raises(piper_models.PiperModelError) as excinfo:
         piper_models.install("fr_FR-essai-medium")

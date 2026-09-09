@@ -1,0 +1,27 @@
+{
+  "_comment": "Modeles de reecriture (format GGUF, executes par llama.cpp). Fichier de CONFIGURATION : une adresse ou une taille qui change se corrige ici, sans reconstruire l'application. IMPORTANT : ces adresses et ces tailles N'ONT PAS PU ETRE VERIFIEES depuis l'environnement de developpement, ou huggingface.co est bloque. Elles sont donnees d'apres la publication habituelle de ces modeles ; verifie-les au premier telechargement. La taille reellement recue est de toute facon annoncee par le serveur et controlee avant d'ecrire.",
+  "models": [
+    {
+      "key": "qwen2.5-7b-instruct-q4_k_m",
+      "label": "Modèle léger — Qwen2.5 7B Instruct",
+      "parameters": "7B",
+      "quantization": "Q4_K_M",
+      "size_gb": 4.7,
+      "ram_gb": 8,
+      "licence": "Apache 2.0",
+      "notes": "Rapide, bon français, tient sur un PC avec 8 Go de mémoire libre.",
+      "url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+    },
+    {
+      "key": "mistral-nemo-instruct-2407-q4_k_m",
+      "label": "Modèle qualité — Mistral Nemo 12B Instruct",
+      "parameters": "12B",
+      "quantization": "Q4_K_M",
+      "size_gb": 7.5,
+      "ram_gb": 12,
+      "licence": "Apache 2.0",
+      "notes": "Meilleure tenue du français et des scripts longs, plus lent, demande 12 Go de mémoire libre.",
+      "url": "https://huggingface.co/bartowski/Mistral-Nemo-Instruct-2407-GGUF/resolve/main/Mistral-Nemo-Instruct-2407-Q4_K_M.gguf"
+    }
+  ]
+}

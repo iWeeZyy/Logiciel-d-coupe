@@ -149,6 +149,47 @@ langue, la source du texte, le modele utilise, la transcription avec ses
 minutages, les reglages de voix. Rouvrir la meme video propose la transcription
 deja faite plutot que de la refaire.
 
+**Réécriture originale.** Une fois la transcription obtenue, Voice Studio peut
+en tirer un NOUVEAU script : mêmes informations, formulation, transitions et
+souvent structure différentes. Ce n'est pas un outil "anti-plagiat" et rien
+dans l'interface ne le presente comme tel -- une reformulation reste une oeuvre
+derivee, et l'ecran le dit.
+
+Deux moities, separees a dessein :
+
+- **ce qui se calcule sans modele** : accroche, resultat final, niche, chiffres,
+  dates et noms propres avec leur phrase d'origine, repetitions, duree estimee.
+  Toujours disponible, meme sans modele installe, et c'est ce qui s'affiche
+  alors pendant que la generation reste desactivee ;
+- **la generation**, confiee a un modele de langue local execute par
+  **llama.cpp**. Aucun appel reseau pendant la generation : le modele est un
+  fichier sur le disque. Le telechargement est une etape separee et volontaire.
+
+**Ce qui protege les faits.** La consigne interdit d'inventer, et donne au
+modele la liste des chiffres et des noms a conserver -- tiree du texte, jamais
+d'ailleurs. Surtout, le resultat est VERIFIE avant d'etre montre : chiffres
+perdus, chiffres, dates ou noms qui n'existent pas dans la source, longueur
+hors cible. Une information qui semble ajoutee est signalee avec la phrase
+concernee, la confiance baisse, et un bouton propose de regenerer avec une
+consigne renforcee. Cette detection n'est pas parfaite (une affirmation fausse
+sans chiffre ni nom passera) et l'interface ne pretend pas le contraire.
+
+La "difference de formulation estimee" mesure la part des groupes de quatre
+mots du script absents de la source. Ce n'est pas une preuve d'originalite
+juridique, et elle n'est jamais presentee comme telle.
+
+**Modeles** (catalogue dans `config/rewrite_models.json`, corrigeable sans
+reconstruire) : un modele leger 7B et un modele qualite 12B, tous deux en
+quantification Q4_K_M et sous licence Apache 2.0. Ils sont ranges sous
+`%LOCALAPPDATA%\ClipFarming\voice_studio_data\llm`, jamais dans l'executable.
+Avant de proposer un telechargement, l'application lit la memoire disponible et
+l'espace disque quand le systeme les donne, et affiche une recommandation ; sans
+mesure possible, elle affiche "ressources non mesurables" plutot qu'une
+estimation inventee. Un seul modele reste charge en memoire a la fois.
+
+**Le script choisi part vers le systeme de voix DEJA present** : il n'y a pas de
+second moteur de synthese, seulement un champ qui se remplit.
+
 **Exports** : TXT (avec ou sans minutages), SRT et VTT. Les deux derniers
 passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
 un seul formateur de minutage dans tout le projet.

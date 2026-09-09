@@ -43,6 +43,12 @@ pytest>=8.0
 # pas la machine. Sous Windows, pyttsx3 tire lui-meme comtypes et pywin32.
 pyttsx3>=2.90
 
+# Reecriture originale de Voice Studio : execution LOCALE d'un modele GGUF par
+# llama.cpp. La bibliotheque seule ne pese que quelques dizaines de megaoctets ;
+# les modeles, eux, ne sont jamais embarques -- ils se telechargent depuis
+# l'application, sur demande explicite. Licence MIT.
+llama-cpp-python>=0.3.0
+
 # Coffre de mots de passe du systeme (Gestionnaire d'identifiants sous Windows).
 # Sert UNIQUEMENT a ranger les jetons de connexion aux reseaux sociaux. Sans
 # lui, l'application refuse d'enregistrer un jeton -- elle ne l'ecrit jamais en

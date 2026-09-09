@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from core.cancellation import CancelToken
 from gui import settings_store
+from gui.voice_studio.rewrite_panel import RewritePanel
 from gui.voice_studio.transcript_view import TranscriptView
 from gui.voice_studio.voices_dialog import VoicesDialog
 from gui.voice_studio.workers import AnalysisWorker, VoiceWorker
@@ -100,6 +101,7 @@ class VoiceStudioPage(QWidget):
 
         self.body.addWidget(self._build_source_card())
         self.body.addWidget(self._build_transcript_card(), stretch=1)
+        self.body.addWidget(self._build_rewrite_card())
         self.body.addWidget(self._build_voice_card())
         self.body.addStretch(0)
 
@@ -252,6 +254,28 @@ class VoiceStudioPage(QWidget):
             setattr(self, f"export_{fmt}_btn", button)
         layout.addLayout(actions)
         return frame
+
+    # ---------------------------------------------------------- reecriture
+    def _build_rewrite_card(self) -> QFrame:
+        """Bloc de reecriture. Masque tant qu'aucun transcript n'existe : il
+        n'aurait rien a analyser ni a reecrire."""
+        frame, layout = _card()
+        self.rewrite_panel = RewritePanel()
+        self.rewrite_panel.setVisible(False)
+        # Le texte choisi part vers le bloc de voix EXISTANT : il n'y a pas de
+        # second systeme de synthese, seulement un champ qui se remplit.
+        self.rewrite_panel.send_to_voice.connect(self._use_script)
+        layout.addWidget(self.rewrite_panel)
+        self.rewrite_card = frame
+        frame.setVisible(False)
+        return frame
+
+    def _use_script(self, text: str) -> None:
+        if not text.strip():
+            return
+        self.voice_text.setPlainText(text.strip())
+        self.voice_status.setText("Script repris : choisis une voix puis génère.")
+        self._refresh_state()
 
     # --------------------------------------------------------------- voix
     def _build_voice_card(self) -> QFrame:
@@ -538,6 +562,10 @@ class VoiceStudioPage(QWidget):
         self.video_label.setText("  •  ".join(p for p in pieces if p))
         self.source_label.setText(SOURCE_LABELS.get(project.transcription_source, ""))
 
+        self.rewrite_panel.set_transcript(
+            self.transcript_view.plain_text(with_timestamps=False))
+        self.rewrite_card.setVisible(self.rewrite_panel.isVisible())
+
         covered = coverage(project.transcript, project.duration_s or 0.0)
         segments = len(project.transcript.segments) if project.transcript else 0
         text = (f"{segments} segments  •  parole transcrite : "
@@ -731,6 +759,8 @@ class VoiceStudioPage(QWidget):
     # ------------------------------------------------------------ fermeture
     def cleanup(self) -> None:
         """Arrete proprement les fils avant la destruction de la fenetre."""
+        if getattr(self, "rewrite_panel", None) is not None:
+            self.rewrite_panel.cleanup()
         if self._cancel_token is not None:
             self._cancel_token.cancel()
         for worker in (self._worker, self._voice_worker):

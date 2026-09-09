@@ -29,6 +29,7 @@ from core.cancellation import CancelToken
 from core.config_loader import CONFIG_DIR
 from core.logging_setup import get_logger
 from core.paths import user_data_dir
+from voice_studio import downloads
 from utils.errors import CancelledError
 
 logger = get_logger()
@@ -36,9 +37,7 @@ logger = get_logger()
 CATALOGUE_FILE = "piper_voices.json"
 MODEL_SUFFIX = ".onnx"
 CONFIG_SUFFIX = ".onnx.json"
-# Marge exigee en plus de la taille annoncee : un disque rempli a l'octet pres
-# fait echouer l'ecriture au dernier moment.
-FREE_SPACE_MARGIN = 50 * 1024 * 1024
+FREE_SPACE_MARGIN = downloads.FREE_SPACE_MARGIN
 
 
 class PiperModelError(Exception):
@@ -168,105 +167,22 @@ def remove(key: str) -> bool:
     return removed
 
 
-def _free_space(directory: Path) -> int:
+# Le telechargement lui-meme vit dans voice_studio/downloads.py : le
+# gestionnaire des modeles de langue en a besoin a l'identique, et deux copies
+# auraient fini par diverger. Les noms locaux sont conserves : ils sont
+# utilises par les tests et par le reste du module.
+_free_space = downloads.free_space
+_explain_http = downloads.explain_http
+
+
+def _download_file(url: str, target: Path, on_progress=None, cancel_token=None,
+                   opener=None, allow_resume: bool = True) -> None:
     try:
-        return shutil.disk_usage(directory).free
-    except OSError:                                    # pragma: no cover - chemin illisible
-        return 0
-
-
-def _download_file(url: str, target: Path, on_progress: Optional[Callable] = None,
-                   cancel_token: Optional[CancelToken] = None, opener=None,
-                   allow_resume: bool = True) -> None:
-    """Telecharge une adresse vers un fichier, en reprenant si possible.
-
-    L'ecriture se fait dans `<cible>.part` : tant que le transfert n'est pas
-    fini, rien ne porte le nom du fichier final, donc rien ne peut etre pris
-    pour une voix installee.
-    """
-    import urllib.error
-    import urllib.request
-
-    opener = opener or urllib.request.urlopen
-    target.parent.mkdir(parents=True, exist_ok=True)
-    partial = target.with_suffix(target.suffix + ".part")
-    already = partial.stat().st_size if (allow_resume and partial.is_file()) else 0
-    if not allow_resume and partial.is_file():
-        partial.unlink()
-
-    request = urllib.request.Request(url, headers={"User-Agent": "ClipFarming"})
-    if already:
-        request.add_header("Range", f"bytes={already}-")
-
-    try:
-        response = opener(request)
-    except urllib.error.HTTPError as error:
-        if already and error.code in (416, 400):
-            # Le serveur refuse la reprise : on repart de zero plutot que de
-            # rester bloque sur un fichier partiel.
-            partial.unlink(missing_ok=True)
-            return _download_file(url, target, on_progress, cancel_token, opener,
-                                  allow_resume=False)
-        raise PiperModelError(_explain_http(error, url)) from error
-    except urllib.error.URLError as error:
-        raise PiperModelError(
-            "Impossible de joindre le serveur des voix. Vérifie ta connexion internet, "
-            f"puis réessaie. Détail : {error.reason}"
-        ) from error
-
-    resuming = getattr(response, "status", 200) == 206
-    if already and not resuming:
-        already = 0                                    # le serveur renvoie tout depuis le debut
-
-    total = None
-    length = response.headers.get("Content-Length") if hasattr(response, "headers") else None
-    if length:
-        total = int(length) + (already if resuming else 0)
-
-    if total and _free_space(target.parent) < (total - already) + FREE_SPACE_MARGIN:
-        raise PiperModelError(
-            f"Espace disque insuffisant : il faut environ {total / 1_000_000:.0f} Mo "
-            f"libres dans {target.parent}."
-        )
-
-    mode = "ab" if (already and resuming) else "wb"
-    done = already if resuming else 0
-    try:
-        with open(partial, mode) as handle:
-            while True:
-                if cancel_token is not None:
-                    cancel_token.check()
-                chunk = response.read(256 * 1024)
-                if not chunk:
-                    break
-                handle.write(chunk)
-                done += len(chunk)
-                if on_progress:
-                    on_progress(done / total if total else None, done, total)
-    except CancelledError:
-        # Le .part est conserve : la reprise repartira de la.
-        raise
-    finally:
-        close = getattr(response, "close", None)
-        if close:
-            close()
-
-    if total and partial.stat().st_size != total:
-        partial.unlink(missing_ok=True)
-        raise PiperModelError(
-            "Le fichier reçu est incomplet (transfert interrompu). Relance le "
-            "téléchargement : il reprendra depuis le début."
-        )
-    partial.replace(target)
-
-
-def _explain_http(error, url: str) -> str:
-    if getattr(error, "code", None) == 404:
-        return ("Cette voix n'existe plus à cette adresse. Le catalogue "
-                "(config/piper_voices.json) doit être mis à jour.")
-    if getattr(error, "code", None) in (401, 403):
-        return "Le serveur refuse le téléchargement de cette voix."
-    return f"Téléchargement refusé par le serveur ({getattr(error, 'code', '?')})."
+        downloads.download_file(url, target, on_progress=on_progress,
+                                cancel_token=cancel_token, opener=opener,
+                                allow_resume=allow_resume)
+    except downloads.DownloadError as error:
+        raise PiperModelError(str(error)) from error
 
 
 def install(key: str, on_progress: Optional[Callable] = None,

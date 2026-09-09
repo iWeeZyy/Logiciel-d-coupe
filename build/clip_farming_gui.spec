@@ -52,6 +52,10 @@ hiddenimports = [
     "voice_studio.services",
     "voice_studio.tts",
     "voice_studio.piper_models",
+    # Reecriture : les fournisseurs sont choisis a l'execution.
+    "voice_studio.llm_models",
+    "voice_studio.rewriting.service",
+    "voice_studio.rewriting.providers.llama_cpp_provider",
 ]
 
 # NOTE VOLONTAIRE : "piper" (piper-tts) n'est PAS collecte ici. La bibliotheque
@@ -65,6 +69,10 @@ for pkg in [
     "faster_whisper", "ctranslate2", "av", "librosa", "numba",
     "cv2", "onnxruntime", "soundfile", "PIL",
     "requests", "yt_dlp", "tzdata",
+    # llama_cpp embarque sa bibliotheque native (llama.dll) dans son paquet :
+    # sans collect_all, l'exe se construit mais le chargement d'un modele
+    # echoue a l'execution, faute de DLL.
+    "llama_cpp",
 ]:
     d, b, h = collect_all(pkg)
     datas += d
