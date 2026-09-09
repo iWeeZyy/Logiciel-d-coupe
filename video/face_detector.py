@@ -240,17 +240,29 @@ def detect_crop_hint(
 
     Construite a partir de la meme passe de detection que le suivi : il n'y a
     qu'une implementation de la detection, pas deux."""
+    # max_faces=4 et non 1 : garder le plus gros visage de CHAQUE image ne dit
+    # pas s'il s'agit toujours de la meme personne. Sur un clip Twitch, le plus
+    # gros bascule entre le sujet et l'incrustation webcam selon que le sujet
+    # est de face ou non, et la moyenne qui suivait ne designait personne. Il
+    # faut voir les visages ENSEMBLE pour savoir lequel est au premier plan.
     samples = detect_face_track(
         video_path, start, end,
         sample_interval_s=sample_interval_s,
         max_samples=max_samples,
         confidence_threshold=confidence_threshold,
-        max_faces=1,
+        max_faces=4,
     )
     return crop_hint_from_track(samples)
 
 
 def crop_hint_from_track(samples: list[FaceSample]) -> FaceCropHint | None:
+    # Les incrustations sont ecartees AVANT la moyenne. Moyenner la position du
+    # sujet et celle d'une vignette webcam donne un point qui ne designe ni l'un
+    # ni l'autre : c'est ce qui coupait le sujet en deux dans le clip vertical.
+    from editing.subject import keep_subject_faces
+
+    samples = keep_subject_faces(samples)
+
     weighted_x = weighted_y = weight_sum = 0.0
     used = 0
     for sample in samples:

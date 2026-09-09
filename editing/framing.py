@@ -74,6 +74,14 @@ def choose_targets(
     aux deux cinquiemes) : un visage exactement centre en 9:16 laisse un vide
     au-dessus de la tete et coupe le buste.
     """
+    # Meme regle que pour le cadrage fixe : une incrustation webcam n'est pas un
+    # participant. Sans ce filtre, deux visages eloignes -- le sujet et la
+    # vignette -- declenchaient le cadrage "groupe", qui cadrait le vide entre
+    # les deux.
+    from editing.subject import keep_subject_faces
+
+    samples = keep_subject_faces(samples)
+
     targets: list[FramingKeyframe] = []
     modes: list[str] = []
 
