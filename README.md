@@ -431,7 +431,7 @@ Produit une **EditList** (la liste des segments conserves) sur laquelle sous-tit
 - **Hesitations** : liste configurable ("euh", "hmm"...) et faux departs (repetition immediate d'un mot court). Une repetition volontaire espacee est conservee.
 - **Plafond** : si le montage retirait plus de `max_removed_ratio` du clip, **rien n'est applique** -- a ce niveau ce n'est plus un nettoyage, c'est une reecriture du rythme du locuteur.
 - **Zooms dynamiques** : legers, sur les moments forts deja identifies par les sous-titres intelligents, bornes en amplitude, en nombre par clip et en ecart minimal. Aucun mot marquant -> aucun zoom.
-- **Audio** : normalisation du volume (`loudnorm`) et limitation des pics. La reduction de bruit reste desactivee par defaut : trop agressive, elle degrade la voix plus que le bruit qu'elle retire.
+- **Audio** : normalisation du volume (`loudnorm`) et limitation des pics. La reduction de bruit reste desactivee par defaut : trop agressive, elle degrade la voix plus que le bruit qu'elle retire. Le son fait partie du module : decocher « Montage auto » rend aussi l'audio d'origine, intact.
 
 Tout est assemble en **un seul encodage ffmpeg** par clip (montage, cadrage, zoom, mise a l'echelle, sous-titres, audio) : aucune perte de qualite due a des passes successives.
 

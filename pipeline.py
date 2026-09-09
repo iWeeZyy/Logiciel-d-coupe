@@ -89,6 +89,13 @@ def run(
 
     watermark = (watermark_from_config(settings.editing_module("watermark"))
                  if settings.editing_module_enabled("watermark") else None)
+    # Le traitement du son fait partie du montage automatique : il est decrit
+    # dans son bloc de configuration, et la case "Montage auto" doit donc le
+    # couper aussi. Le lire directement, comme c'etait le cas, laissait le
+    # volume normalise sur un clip que l'utilisateur avait demande intact --
+    # exactement le defaut deja corrige sur la case des sous-titres.
+    montage_audio_cfg = (settings.editing_module("montage").get("audio")
+                         if settings.editing_module_enabled("montage") else None)
     # La source EST deja le clip (Radar) : il n'y a pas de passage a chercher
     # dedans, donc pas de recadrage temporel non plus. La detection du contexte
     # deplacerait des bornes choisies par la personne qui a decoupe le clip.
@@ -324,7 +331,7 @@ def run(
                     edit_list=edit_list,
                     framing_plan=framing_plan,
                     zoom_track=zoom_track,
-                    audio_cfg=settings.editing_module("montage").get("audio"),
+                    audio_cfg=montage_audio_cfg,
                     fps=source_fps,
                     target_size=settings.target_size(),
                     watermark=watermark,

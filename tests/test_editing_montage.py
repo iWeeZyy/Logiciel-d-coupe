@@ -222,3 +222,28 @@ def test_audio_chain_is_empty_unless_explicitly_enabled():
     assert build_audio_chain(None) == ""
     assert build_audio_chain({"enabled": False, "loudnorm": True}) == ""
     assert "loudnorm" in build_audio_chain({"enabled": True})
+
+
+# ------------------------------------------------- la case coupe TOUT le module
+
+def test_unchecking_the_montage_also_leaves_the_sound_alone():
+    """La case « Montage auto » doit couper le traitement du son aussi.
+
+    Le son est decrit DANS le bloc montage de config/editing.json. Le pipeline
+    le lisait directement, sans passer par l'interrupteur : decocher la case
+    laissait donc le volume normalise sur un clip demande intact. Meme defaut
+    que celui deja corrige sur la case des sous-titres.
+    """
+    from core.config_loader import Settings
+
+    config = {"montage": {"enabled": True, "audio": {"enabled": True, "loudnorm": True}}}
+
+    actif = Settings(editing=config)
+    coupe = Settings(editing=config, auto_montage=False)
+
+    def audio_cfg(settings):
+        return (settings.editing_module("montage").get("audio")
+                if settings.editing_module_enabled("montage") else None)
+
+    assert build_audio_chain(audio_cfg(actif)) != ""
+    assert build_audio_chain(audio_cfg(coupe)) == ""
