@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -29,6 +30,8 @@ from PySide6.QtWidgets import (
 
 from core.cancellation import CancelToken
 from core.config_loader import load_radar_config
+from radar.analysis import media as analysis_media
+from radar.analysis.models import STATE_DONE, STATE_LABELS, STATE_NONE
 from radar.creators import CreatorAlreadyWatched, CreatorManager
 from radar.engine import DEFAULT_PERIOD, PERIODS, RadarEngine
 from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE, PRIORITIES, PRIORITY_LABELS
@@ -98,6 +101,12 @@ class RadarPage(QWidget):
         self.creators = CreatorManager(self.store)
         self._thread: ScanThread | None = None
         self._cancel_token: CancelToken | None = None
+        # Contenus deja analyses, relus en UNE requete a chaque rafraichissement
+        # plutot qu'une par carte. Selection multiple : l'analyse ne demarre
+        # jamais seule, cocher ne fait que preparer (section 19).
+        self._analyzed: set = set()
+        self._selected: set = set()
+        self._opportunities: dict = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 32, 40, 24)
@@ -129,6 +138,13 @@ class RadarPage(QWidget):
         self.cancel_btn.clicked.connect(self._cancel_scan)
         header.addWidget(self.cancel_btn)
         outer.addLayout(header)
+
+        # Visible seulement quand des clips sont coches : un bouton "Analyser 0
+        # clip" en permanence n'aiderait personne.
+        self.batch_btn = QPushButton()
+        self.batch_btn.setVisible(False)
+        self.batch_btn.clicked.connect(self._analyze_selection)
+        outer.addWidget(self.batch_btn)
 
         self.subtitle = QLabel("Surveille tes créateurs et découvre les contenus "
                                "les plus intéressants du moment.")
@@ -170,9 +186,11 @@ class RadarPage(QWidget):
 
     # ------------------------------------------------------------ rendu
     def on_shown(self) -> None:
+        self._analyzed = self.store.analyzed_ids()
         self._refresh_dashboard()
         for key in self.tab_contents:
             self._refresh_tab(key)
+        self._refresh_batch_button()
 
     def _refresh_dashboard(self) -> None:
         data = self.engine.dashboard(period=self.period_combo.currentData())
@@ -285,10 +303,24 @@ class RadarPage(QWidget):
     def _opportunity_card(self, opportunity) -> QFrame:
         frame, layout = _card()
         creator = self.creators.get(opportunity.creator_key)
+        self._opportunities[opportunity.key] = opportunity
+        analyzable = analysis_media.can_analyze(opportunity)
         header = QHBoxLayout()
+        if analyzable:
+            select = QCheckBox()
+            select.setToolTip("Sélectionner ce clip pour une analyse groupée")
+            select.setChecked(opportunity.key in self._selected)
+            select.toggled.connect(
+                lambda checked, key=opportunity.key: self._toggle_selection(key, checked))
+            header.addWidget(select)
         header.addWidget(QLabel(f"{_PLATFORM_LABELS.get(opportunity.platform, opportunity.platform)}"
                                 f"  •  {creator.label if creator else opportunity.creator_key}"))
         header.addStretch(1)
+        if analyzable:
+            state = STATE_DONE if opportunity.key in self._analyzed else STATE_NONE
+            badge = QLabel(STATE_LABELS[state])
+            badge.setProperty("role", "muted")
+            header.addWidget(badge)
         if opportunity.radar_score is not None:
             score = QLabel(f"📡 {opportunity.radar_score:.0f}/100")
             score.setStyleSheet("font-weight: 700;")
@@ -336,6 +368,15 @@ class RadarPage(QWidget):
         fav_btn = QPushButton("⭐ Favori" if not favorite else "★ Retirer des favoris")
         fav_btn.clicked.connect(lambda: self._toggle_favorite(opportunity))
         actions.addWidget(fav_btn)
+
+        # Bouton d'analyse affiche UNIQUEMENT quand l'analyse est possible
+        # (section 2). Un direct en cours n'a pas de media fige : proposer de
+        # l'analyser promettrait quelque chose d'irrealisable.
+        if analyzable:
+            analyzed = opportunity.key in self._analyzed
+            analyze_btn = QPushButton("👁️ Voir l'analyse" if analyzed else "🔊 Analyser le contenu")
+            analyze_btn.clicked.connect(lambda: self._open_analysis([opportunity]))
+            actions.addWidget(analyze_btn)
 
         send_btn = QPushButton("🏭 Envoyer au Content Factory")
         send_btn.clicked.connect(lambda: self._send_to_factory(opportunity))
@@ -413,6 +454,40 @@ class RadarPage(QWidget):
         else:
             self.store.add_favorite(opportunity)
         self.on_shown()
+
+    # ---------------------------------------------------- analyse de contenu
+    def _toggle_selection(self, key: str, checked: bool) -> None:
+        if checked:
+            self._selected.add(key)
+        else:
+            self._selected.discard(key)
+        self._refresh_batch_button()
+
+    def _refresh_batch_button(self) -> None:
+        count = len(self._selected)
+        self.batch_btn.setVisible(count > 0)
+        if count:
+            self.batch_btn.setText(f"🔊 Analyser les {count} clips" if count > 1
+                                   else "🔊 Analyser le clip sélectionné")
+
+    def _analyze_selection(self) -> None:
+        chosen = [self._opportunities[key] for key in self._selected
+                  if key in self._opportunities]
+        if chosen:
+            self._open_analysis(chosen)
+
+    def _open_analysis(self, opportunities) -> None:
+        """Ouvre la fenetre d'analyse. Rien ne demarre avant le bouton dedie."""
+        from gui.radar.analysis_dialog import ClipAnalysisDialog
+
+        dialog = ClipAnalysisDialog(opportunities, self.store, creators=self.creators, parent=self)
+        dialog.analysis_saved.connect(self._on_analysis_saved)
+        dialog.exec()
+        self._selected.clear()
+        self.on_shown()
+
+    def _on_analysis_saved(self, content_id: str) -> None:
+        self._analyzed.add(content_id)
 
     def _send_to_factory(self, opportunity) -> None:
         from radar.bridge import RIGHTS_NOTICE, SourceNotAvailable, build_request

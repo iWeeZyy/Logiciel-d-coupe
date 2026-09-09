@@ -289,6 +289,7 @@ def run(request: AnalysisRequest, *, store=None, cancel_token: CancelToken | Non
             processing_time_s=round(time.monotonic() - started, 2),
             model_used=model,
             media_fingerprint=source.fingerprint,
+            media_path=source.path if not source.temporary else "",
         )
 
         if from_cache:

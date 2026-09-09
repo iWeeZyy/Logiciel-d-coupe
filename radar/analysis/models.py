@@ -160,6 +160,10 @@ class ClipAnalysis:
     processing_time_s: Optional[float] = None
     model_used: str = ""
     media_fingerprint: str = ""
+    # Chemin du fichier analyse. Memorise pour ne pas redemander le meme fichier
+    # a chaque reanalyse d'un clip Twitch ; verifie avant reutilisation, un
+    # fichier deplace ou supprime redemande simplement.
+    media_path: str = ""
 
     @property
     def confidence_label(self) -> str:

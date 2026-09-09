@@ -1,0 +1,403 @@
+"""Fenetre d'analyse d'un ou plusieurs clips (sections 3, 16, 19).
+
+Trois etats, une seule fenetre : preparation (choisir le niveau et le fichier),
+analyse en cours (progression et annulation), resultat. Passer d'un etat a
+l'autre change le contenu, jamais la fenetre -- ouvrir une seconde fenetre pour
+afficher le resultat ferait perdre le fil.
+
+Le travail tourne dans un QThread construit sur le meme modele que ScanThread de
+la page Radar, avec le meme CancelToken que le pipeline video. L'interface reste
+donc utilisable pendant l'analyse, et le bouton Annuler arrete reellement le
+traitement au lieu de se contenter de fermer la fenetre.
+
+L'analyse ne demarre JAMAIS toute seule : ni a l'ouverture de la fenetre, ni a
+la selection de plusieurs clips. C'est le bouton "Lancer l'analyse" qui decide.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
+)
+
+from core.cancellation import CancelToken
+from gui import settings_store
+from gui.radar.analysis_view import ClipAnalysisView
+from radar.analysis import media, runner
+from radar.analysis.models import (
+    LEVEL_DESCRIPTIONS,
+    LEVEL_LABELS,
+    LEVEL_STANDARD,
+    LEVELS,
+    format_timestamp,
+)
+from utils.errors import CancelledError, ClipFarmingError
+
+MEDIA_FILTER = ("Vidéos et audio (*.mp4 *.mkv *.mov *.avi *.webm *.wav *.mp3 *.m4a *.flac);;"
+                "Tous les fichiers (*)")
+
+
+class AnalysisThread(QThread):
+    """Une ou plusieurs analyses, hors du fil de l'interface.
+
+    Sequentiel et non parallele : la transcription sature deja le processeur, et
+    lancer trois modeles Whisper a la fois sur une machine ordinaire les rendrait
+    tous les trois plus lents, en risquant de manquer de memoire (section 19).
+    """
+
+    progressed = Signal(object)          # ProgressEvent
+    item_started = Signal(int, int, str)  # index, total, titre
+    item_done = Signal(object)           # ClipAnalysis
+    item_failed = Signal(str, str)       # titre, message
+    finished_all = Signal()
+
+    def __init__(self, requests, store, cancel_token):
+        super().__init__()
+        self.requests = list(requests)
+        self.store = store
+        self.cancel_token = cancel_token
+
+    def run(self) -> None:
+        total = len(self.requests)
+        for index, request in enumerate(self.requests, start=1):
+            if self.cancel_token.is_cancelled:
+                break
+            title = getattr(request.opportunity, "title", "") or request.opportunity.key
+            self.item_started.emit(index, total, title)
+            try:
+                analysis = runner.run(request, store=self.store,
+                                      cancel_token=self.cancel_token,
+                                      on_progress=lambda event: self.progressed.emit(event))
+            except CancelledError:
+                break
+            except ClipFarmingError as error:
+                self.item_failed.emit(title, str(error))
+            except Exception as error:      # noqa: BLE001
+                self.item_failed.emit(title, f"Erreur inattendue : {error}")
+            else:
+                self.item_done.emit(analysis)
+        self.finished_all.emit()
+
+
+class ClipAnalysisDialog(QDialog):
+    """Analyse d'un clip, ou d'une selection de clips."""
+
+    analysis_saved = Signal(str)     # content_id, pour rafraichir la carte du Radar
+
+    def __init__(self, opportunities, store, creators=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Analyse du contenu")
+        self.setMinimumSize(560, 520)
+
+        self.opportunities = list(opportunities)
+        self.store = store
+        self.creators = creators or {}
+        self.media_paths: dict[str, str] = {}
+        self.results: list = []
+        self.errors: list[tuple[str, str]] = []
+        self._thread: AnalysisThread | None = None
+        self._cancel_token: CancelToken | None = None
+
+        outer = QVBoxLayout(self)
+        outer.setSpacing(12)
+
+        self.header = QLabel()
+        self.header.setWordWrap(True)
+        self.header.setStyleSheet("font-weight: 700; font-size: 15px;")
+        outer.addWidget(self.header)
+
+        self.facts = QLabel()
+        self.facts.setWordWrap(True)
+        self.facts.setProperty("role", "muted")
+        outer.addWidget(self.facts)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QScrollArea.NoFrame)
+        outer.addWidget(self.scroll, 1)
+
+        self.progress_label = QLabel()
+        self.progress_label.setWordWrap(True)
+        self.progress_label.setVisible(False)
+        outer.addWidget(self.progress_label)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setVisible(False)
+        outer.addWidget(self.progress)
+
+        buttons = QHBoxLayout()
+        self.start_button = QPushButton("▶ Lancer l'analyse")
+        self.start_button.clicked.connect(self._start)
+        buttons.addWidget(self.start_button)
+
+        self.reanalyze_button = QPushButton("🔄 Réanalyser")
+        self.reanalyze_button.clicked.connect(lambda: self._start(force=True))
+        self.reanalyze_button.setVisible(False)
+        buttons.addWidget(self.reanalyze_button)
+
+        self.cancel_button = QPushButton("Annuler l'analyse")
+        self.cancel_button.clicked.connect(self._cancel)
+        self.cancel_button.setVisible(False)
+        buttons.addWidget(self.cancel_button)
+
+        buttons.addStretch(1)
+        self.close_button = QPushButton("Fermer")
+        self.close_button.clicked.connect(self.reject)
+        buttons.addWidget(self.close_button)
+        outer.addLayout(buttons)
+
+        self._build_preparation()
+
+    # ------------------------------------------------------- preparation
+    @property
+    def is_batch(self) -> bool:
+        return len(self.opportunities) > 1
+
+    def _creator_label(self, opportunity) -> str:
+        creator = self.creators.get(getattr(opportunity, "creator_key", ""))
+        return getattr(creator, "label", "") if creator else ""
+
+    def _existing_analysis(self, opportunity):
+        return self.store.get_analysis(opportunity.key) if self.store is not None else None
+
+    def _build_preparation(self) -> None:
+        first = self.opportunities[0]
+        if self.is_batch:
+            self.header.setText(f"🎬 Analyse de {len(self.opportunities)} clips")
+            self.facts.setText("Chaque clip est analysé l'un après l'autre.")
+        else:
+            self.header.setText("🎬 " + (first.title or first.content_id))
+            self.facts.setText(self._facts_line(first))
+
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+
+        existing = None if self.is_batch else self._existing_analysis(first)
+        if existing is not None:
+            done = QLabel("✓ Déjà analysé le "
+                          + existing.analyzed_at.replace("T", " à ")[:19])
+            done.setStyleSheet("font-weight: 600;")
+            layout.addWidget(done)
+
+        layout.addWidget(QLabel("Niveau d'analyse"))
+        self.level_combo = QComboBox()
+        for level in LEVELS:
+            self.level_combo.addItem(LEVEL_LABELS[level], level)
+        self.level_combo.setCurrentIndex(LEVELS.index(LEVEL_STANDARD))
+        self.level_combo.currentIndexChanged.connect(self._update_level_hint)
+        layout.addWidget(self.level_combo)
+
+        self.level_hint = QLabel(LEVEL_DESCRIPTIONS[LEVEL_STANDARD])
+        self.level_hint.setWordWrap(True)
+        self.level_hint.setProperty("role", "muted")
+        layout.addWidget(self.level_hint)
+
+        explanation = QLabel(media.explanation_for(first))
+        explanation.setWordWrap(True)
+        explanation.setProperty("role", "muted")
+        layout.addWidget(explanation)
+
+        self.media_label = QLabel()
+        self.media_label.setWordWrap(True)
+        layout.addWidget(self.media_label)
+
+        pick = QPushButton("📁 Choisir le fichier du clip…")
+        pick.clicked.connect(self._pick_media)
+        layout.addWidget(pick)
+
+        # Fichier deja utilise lors d'une precedente analyse : repropose s'il
+        # existe toujours, pour ne pas redemander le meme fichier a chaque fois.
+        for opportunity in self.opportunities:
+            previous = self._existing_analysis(opportunity)
+            path = getattr(previous, "media_path", "") if previous else ""
+            if path and Path(path).is_file():
+                self.media_paths[opportunity.key] = path
+        self._refresh_media_label()
+
+        layout.addStretch(1)
+        self.scroll.setWidget(panel)
+
+        if existing is not None:
+            self.start_button.setText("👁️ Voir l'analyse")
+            self.reanalyze_button.setVisible(True)
+
+    def _facts_line(self, opportunity) -> str:
+        parts = []
+        label = self._creator_label(opportunity)
+        if label:
+            parts.append(label)
+        if opportunity.duration_s:
+            parts.append("⏱️ " + format_timestamp(opportunity.duration_s))
+        if opportunity.published_at:
+            parts.append("📅 " + opportunity.published_at[:10])
+        if opportunity.view_count is not None:
+            parts.append(f"👁️ {opportunity.view_count:,}".replace(",", " ") + " vues")
+        if opportunity.radar_score is not None:
+            parts.append(f"📡 {opportunity.radar_score:.0f}/100")
+        return "  •  ".join(parts)
+
+    def _update_level_hint(self) -> None:
+        level = self.level_combo.currentData()
+        self.level_hint.setText(LEVEL_DESCRIPTIONS.get(level, ""))
+
+    def _refresh_media_label(self) -> None:
+        chosen = len(self.media_paths)
+        total = len(self.opportunities)
+        if chosen == 0:
+            self.media_label.setText("Aucun fichier choisi pour l'instant.")
+        elif total == 1:
+            self.media_label.setText("Fichier : " + Path(next(iter(self.media_paths.values()))).name)
+        else:
+            self.media_label.setText(f"{chosen} fichier(s) choisi(s) sur {total}.")
+
+    def _pick_media(self) -> None:
+        for opportunity in self.opportunities:
+            if opportunity.key in self.media_paths:
+                continue
+            caption = "Fichier du clip : " + (opportunity.title or opportunity.content_id)
+            path, _ = QFileDialog.getOpenFileName(self, caption, "", MEDIA_FILTER)
+            if not path:
+                break
+            self.media_paths[opportunity.key] = path
+        self._refresh_media_label()
+
+    # ------------------------------------------------------------ analyse
+    def _requests(self, force: bool) -> list:
+        level = self.level_combo.currentData()
+        model = settings_store.get("default_model") or "small"
+        requests = []
+        for opportunity in self.opportunities:
+            requests.append(runner.AnalysisRequest(
+                opportunity=opportunity,
+                level=level,
+                local_path=self.media_paths.get(opportunity.key),
+                model=model,
+                creator_label=self._creator_label(opportunity),
+                force=force,
+            ))
+        return requests
+
+    def _start(self, force: bool = False) -> None:
+        if self._thread is not None and self._thread.isRunning():
+            return
+
+        missing = [o for o in self.opportunities if o.key not in self.media_paths]
+        if missing:
+            existing = None if self.is_batch else self._existing_analysis(self.opportunities[0])
+            if existing is not None and not force:
+                self._show_result(existing)      # rien a recalculer : on affiche
+                return
+            QMessageBox.information(
+                self, "Fichier manquant",
+                "Indiquez d'abord le fichier du clip.\n\n"
+                + media.explanation_for(missing[0]))
+            return
+
+        self._cancel_token = CancelToken()
+        self._thread = AnalysisThread(self._requests(force), self.store, self._cancel_token)
+        self._thread.progressed.connect(self._on_progress)
+        self._thread.item_started.connect(self._on_item_started)
+        self._thread.item_done.connect(self._on_item_done)
+        self._thread.item_failed.connect(self._on_item_failed)
+        self._thread.finished_all.connect(self._on_finished)
+
+        self.start_button.setVisible(False)
+        self.reanalyze_button.setVisible(False)
+        self.cancel_button.setVisible(True)
+        self.progress.setVisible(True)
+        self.progress.setValue(0)
+        self.progress_label.setVisible(True)
+        self.progress_label.setText("Préparation…")
+        self._thread.start()
+
+    def _cancel(self) -> None:
+        if self._cancel_token is not None:
+            self._cancel_token.cancel()
+        self.cancel_button.setEnabled(False)
+        self.progress_label.setText("Annulation en cours…")
+
+    def _on_item_started(self, index: int, total: int, title: str) -> None:
+        if total > 1:
+            self.header.setText(f"🎬 Analyse {index} / {total} — {title}")
+
+    def _on_progress(self, event) -> None:
+        fraction = event.step_fraction if event.step_fraction is not None else 0.0
+        steps = max(1, event.total_steps)
+        overall = ((event.step_index - 1) + fraction) / steps
+        self.progress.setValue(int(max(0.0, min(1.0, overall)) * 100))
+        detail = f" — {event.sub_label}" if event.sub_label else ""
+        self.progress_label.setText(f"{event.label}{detail}")
+
+    def _on_item_done(self, analysis) -> None:
+        self.results.append(analysis)
+        self.analysis_saved.emit(analysis.content_id)
+
+    def _on_item_failed(self, title: str, message: str) -> None:
+        self.errors.append((title, message))
+
+    def _on_finished(self) -> None:
+        self.progress.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.cancel_button.setVisible(False)
+        self.cancel_button.setEnabled(True)
+        self._thread = None
+
+        if self._cancel_token is not None and self._cancel_token.is_cancelled and not self.results:
+            self.header.setText("Analyse annulée")
+            self.start_button.setText("▶ Relancer l'analyse")
+            self.start_button.setVisible(True)
+            return
+
+        if self.errors and not self.results:
+            title, message = self.errors[0]
+            QMessageBox.warning(self, "Analyse impossible", f"{title}\n\n{message}")
+            self.start_button.setVisible(True)
+            return
+
+        if self.results:
+            self._show_result(self.results[-1])
+
+        if self.errors:
+            details = "\n\n".join(f"{title} : {message}" for title, message in self.errors)
+            QMessageBox.warning(self, "Certains clips n'ont pas pu être analysés", details)
+
+    def _show_result(self, analysis) -> None:
+        self.header.setText("🎬 " + (analysis.clip_title or analysis.content_id))
+        self.facts.setText("")
+        self.scroll.setWidget(ClipAnalysisView(analysis))
+        self.start_button.setVisible(False)
+        self.reanalyze_button.setVisible(True)
+        self.cancel_button.setVisible(False)
+
+    # ------------------------------------------------------------ fermeture
+    def reject(self) -> None:
+        self.cleanup()
+        super().reject()
+
+    def cleanup(self) -> None:
+        """Arrete proprement le fil s'il tourne encore.
+
+        Meme nom que sur les pages de l'application : un QThread encore actif a
+        la destruction de la fenetre fait planter Qt.
+        """
+        if self._cancel_token is not None:
+            self._cancel_token.cancel()
+        thread = self._thread
+        if thread is not None and thread.isRunning():
+            thread.wait(5000)
+        self._thread = None
