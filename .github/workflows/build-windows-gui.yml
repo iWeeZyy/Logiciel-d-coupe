@@ -71,15 +71,9 @@ jobs:
           Copy-Item "$env:FFMPEG_BIN_DIR\ffmpeg.exe" "dist\ClipFarming\ffmpeg.exe"
           Copy-Item "$env:FFMPEG_BIN_DIR\ffprobe.exe" "dist\ClipFarming\ffprobe.exe"
 
-      - name: Zip the distributable (fallback if the installer step fails)
+      - name: Zip the distributable (version portable, jointe a la Release)
         shell: pwsh
         run: Compress-Archive -Path "dist\ClipFarming\*" -DestinationPath "ClipFarming-windows.zip"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ClipFarming-windows
-          path: ClipFarming-windows.zip
-          retention-days: 30
 
       - name: Install Inno Setup
         shell: pwsh
@@ -90,18 +84,17 @@ jobs:
         run: |
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "build\installer.iss"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ClipFarming-Setup
-          path: build/installer_output/ClipFarming-Setup.exe
-          retention-days: 30
-
-      # Les artifacts ci-dessus gardent l'historique build par build, mais leur
-      # URL change a chaque compilation et ils expirent au bout de 30 jours. La
-      # Release, elle, donne une adresse qui ne bouge jamais :
+      # AUCUN upload-artifact ici, volontairement. Les deux fichiers produits
+      # (l'installateur et le zip portable) sont attaches a la Release juste
+      # apres, qui donne en plus une adresse qui ne bouge jamais :
       #   https://github.com/<owner>/<repo>/releases/latest
-      # C'est celle a partager. Publiee uniquement sur main, et jamais depuis un
-      # workflow_dispatch de test sur une autre branche.
+      # Les uploader AUSSI en artifacts stockait environ 650 Mo par commit
+      # pendant 30 jours pour des fichiers deja publies ailleurs. Le quota de
+      # stockage Actions a fini par etre atteint, et comme l'upload se faisait
+      # AVANT la publication, un quota plein empechait la Release de sortir --
+      # un build parfaitement reussi ne produisait plus aucun telechargement.
+      # Si un artifact redevient necessaire un jour, le remettre APRES l'etape
+      # de publication, jamais avant.
       - name: Publish the installer as a Release
         if: github.ref == 'refs/heads/main'
         shell: pwsh

@@ -66,12 +66,11 @@ jobs:
           Copy-Item "$env:FFMPEG_BIN_DIR\ffmpeg.exe" "dist\clip_farming\ffmpeg.exe"
           Copy-Item "$env:FFMPEG_BIN_DIR\ffprobe.exe" "dist\clip_farming\ffprobe.exe"
 
-      - name: Zip the distributable
-        shell: pwsh
-        run: Compress-Archive -Path "dist\clip_farming\*" -DestinationPath "clip_farming-windows.zip"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: clip_farming-windows
-          path: clip_farming-windows.zip
-          retention-days: 30
+      # Ce workflow verifie que la version ligne de commande compile toujours ;
+      # il ne publie rien. Le zip produit ici n'etait telecharge par personne --
+      # l'application distribuee est la version graphique, publiee en Release par
+      # build-windows-gui.yml -- mais il occupait 390 Mo de stockage Actions par
+      # commit, ce qui a fini par saturer le quota et faire echouer le workflow
+      # qui, lui, publie vraiment. Pour recuperer ponctuellement l'executable en
+      # ligne de commande, relancer ce workflow avec une etape upload-artifact
+      # temporaire.
