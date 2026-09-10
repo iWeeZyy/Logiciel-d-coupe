@@ -1,22 +1,25 @@
 name: Build Windows GUI (.exe + installateur)
 
+# DECLENCHEMENT MANUEL UNIQUEMENT, ET C'EST DELIBERE.
+#
+# Ce depot est PRIVE : les minutes d'execution sont comptees, et un runner
+# Windows est facture DEUX FOIS le temps reel. Un build de cette application
+# prend environ 22 minutes, soit 44 minutes facturees. Avec un declenchement
+# a chaque poussee sur main, et DEUX workflows qui se declenchaient ensemble,
+# trois jours de travail ont consomme une centaine de builds et epuise le
+# quota mensuel.
+#
+# Un installateur ne sert que quand quelqu'un veut l'installer : il se demande
+# donc, depuis l'onglet Actions ("Run workflow") ou par l'API. Pour revenir au
+# declenchement automatique, remettre le bloc `push:` retire ici.
 on:
   workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths:
-      - "**.py"
-      - "config/**"
-      - "assets/**"
-      - "requirements.txt"
-      - "build/clip_farming_gui.spec"
-      - "build/installer.iss"
-      - ".github/workflows/build-windows-gui.yml"
 
-# Necessaire pour publier la Release : le GITHUB_TOKEN par defaut est en
-# lecture seule sur les contenus.
-permissions:
-  contents: write
+# Une seule execution a la fois par workflow : deux builds du meme commit
+# ont ete observes, et le second ne servait a rien.
+concurrency:
+  group: build-windows-gui.yml
+  cancel-in-progress: true
 
 jobs:
   build:

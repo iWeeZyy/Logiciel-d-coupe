@@ -1,15 +1,28 @@
 name: Build Windows .exe
 
+# DECLENCHEMENT MANUEL UNIQUEMENT, ET C'EST DELIBERE.
+#
+# Ce depot est PRIVE : les minutes d'execution sont comptees, et un runner
+# Windows est facture DEUX FOIS le temps reel. Un build de cette application
+# prend environ 22 minutes, soit 44 minutes facturees. Avec un declenchement
+# a chaque poussee sur main, et DEUX workflows qui se declenchaient ensemble,
+# trois jours de travail ont consomme une centaine de builds et epuise le
+# quota mensuel.
+#
+# Un installateur ne sert que quand quelqu'un veut l'installer : il se demande
+# donc, depuis l'onglet Actions ("Run workflow") ou par l'API. Pour revenir au
+# declenchement automatique, remettre le bloc `push:` retire ici.
+# Ce workflow construit la version EN LIGNE DE COMMANDE, dont personne ne
+# se sert aujourd'hui : l'application utilisee est la version graphique.
+# Il doublait la facture a chaque poussee.
 on:
   workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths:
-      - "**.py"
-      - "config/**"
-      - "requirements.txt"
-      - "build/**"
-      - ".github/workflows/build-windows-exe.yml"
+
+# Une seule execution a la fois par workflow : deux builds du meme commit
+# ont ete observes, et le second ne servait a rien.
+concurrency:
+  group: build-windows-exe.yml
+  cancel-in-progress: true
 
 jobs:
   build:

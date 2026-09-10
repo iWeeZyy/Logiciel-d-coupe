@@ -55,6 +55,22 @@ pip install -r requirements.txt
 
 L'installation tire `faster-whisper`, `librosa`/`numba` (analyse audio), `opencv-python-headless` (detection de visage) et `PySide6` (interface graphique, `gui_main.py`) -- prevoir quelques minutes et ~400-500 Mo.
 
+### Les compilations Windows se demandent, elles ne partent plus toutes seules
+
+Les deux workflows GitHub Actions ne se declenchent plus a chaque poussee :
+ils s'executent a la demande (onglet Actions, bouton « Run workflow »).
+
+La raison est mesurable. Ce depot est prive, donc les minutes d'execution sont
+comptees, et un runner Windows est facture DEUX fois le temps reel. Un build
+prend environ 22 minutes, soit 44 minutes facturees -- et DEUX workflows
+partaient ensemble a chaque commit, celui de la version graphique et celui de
+la version en ligne de commande dont personne ne se sert. Trois jours de
+travail ont ainsi consomme une centaine de builds et epuise le quota mensuel.
+
+Un installateur ne sert que quand quelqu'un veut l'installer. Pour revenir au
+comportement precedent, il suffit de remettre le bloc `push:` retire dans
+`.github/workflows/*.yml`.
+
 ### Telecharger l'application
 
 Adresse permanente, toujours la derniere version :
