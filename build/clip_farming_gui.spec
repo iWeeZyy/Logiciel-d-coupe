@@ -22,6 +22,12 @@ ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 datas = [
     (os.path.join(ROOT, "config"), "config"),
     (os.path.join(ROOT, "assets"), "assets"),
+    # Le programme de generation Chatterbox est livre comme FICHIER SOURCE, pas
+    # comme module : il n'est jamais importe par l'application, il est execute
+    # par l'interpreteur d'un autre environnement (voir
+    # voice_studio/chatterbox_runtime.py). Compile dans l'archive PyInstaller,
+    # il n'existerait plus sur le disque et rien ne pourrait le lancer.
+    (os.path.join(ROOT, "voice_studio", "chatterbox_worker.py"), "voice_studio"),
 ]
 binaries = []
 
@@ -59,11 +65,24 @@ hiddenimports = [
     # Creation video : le service et le montage sont importes par le panneau,
     # lui-meme importe par la page Voice Studio.
     "voice_studio.align",
+    # Chatterbox : le moteur est charge a l'execution par tts._known_engines().
+    "voice_studio.chatterbox_catalogue",
+    "voice_studio.chatterbox_engine",
+    "voice_studio.chatterbox_models",
+    "voice_studio.chatterbox_runtime",
     "voice_studio.narration",
     "voice_studio.video_edit",
     "voice_studio.video_service",
 ]
 
+# NOTE VOLONTAIRE : ni torch, ni transformers, ni chatterbox ne sont collectes.
+# Chatterbox epingle torch==2.6.0 (environ 195 Mo pour la seule roue Windows),
+# transformers==5.2.0 et diffusers==0.29.0 : les embarquer imposerait ces
+# versions a toute l'application et pres d'un demi-gigaoctet a chaque
+# utilisateur, y compris ceux qui n'utiliseront jamais cette voix. Chatterbox
+# vit donc dans un environnement Python separe, installe a la demande depuis
+# l'application, et l'executable n'a aucune dependance PyTorch.
+#
 # NOTE VOLONTAIRE : "piper" (piper-tts) n'est PAS collecte ici. La bibliotheque
 # est publiee sous GPL-3.0 ; l'inclure dans un executable distribue imposerait
 # ses obligations a toute l'application. Voice Studio sait fonctionner avec le

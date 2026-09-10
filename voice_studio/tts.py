@@ -140,7 +140,13 @@ class SystemVoiceEngine:
         return found
 
     def synthesize(self, text: str, out_wav: str, voice_id: str = "", rate: float = 1.0,
-                   volume: float = 1.0, sentence_pause_s: float = 0.0) -> str:
+                   volume: float = 1.0, sentence_pause_s: float = 0.0,
+                   params=None, on_progress=None, cancel_token=None) -> str:
+        # `params`, `on_progress` et `cancel_token` existent pour Chatterbox,
+        # dont une generation dure et se regle. Ici il n'y a rien a regler et
+        # rien a suivre : une voix du systeme rend la main en quelques
+        # secondes. Les accepter sans s'en servir garde UNE seule signature
+        # pour les trois moteurs.
         driver = self._driver()
         if voice_id:
             try:
@@ -342,7 +348,10 @@ class PiperEngine:
         return voice
 
     def synthesize(self, text: str, out_wav: str, voice_id: str = "", rate: float = 1.0,
-                   volume: float = 1.0, sentence_pause_s: float = 0.0) -> str:
+                   volume: float = 1.0, sentence_pause_s: float = 0.0,
+                   params=None, on_progress=None, cancel_token=None) -> str:
+        # Voir SystemVoiceEngine.synthesize : signature commune aux trois
+        # moteurs, extras ignores ici.
         runtime = self.runtime()
         if not runtime:
             raise TtsError(
@@ -469,7 +478,7 @@ def engines() -> list:
     neuve, la generation fonctionne immediatement avec les voix de Windows, et
     Piper vient s'ajouter quand l'utilisateur telecharge une voix.
     """
-    return [engine for engine in (SystemVoiceEngine(), PiperEngine()) if engine.available()]
+    return [engine for engine in _known_engines() if engine.available()]
 
 
 def all_engines() -> list:
@@ -478,10 +487,38 @@ def all_engines() -> list:
     Sert a l'interface : un moteur indisponible doit pouvoir etre montre AVEC
     la raison, plutot que disparaitre sans explication.
     """
-    return [SystemVoiceEngine(), PiperEngine()]
+    return list(_known_engines())
 
 
-ENGINE_LABELS = {"system": "Voix du système (Windows)", "piper": "Piper — voix locales"}
+def _known_engines() -> tuple:
+    """Les trois moteurs, dans l'ordre d'apparition.
+
+    Le systeme d'abord parce qu'il est toujours la ; Chatterbox en dernier
+    parce qu'il demande une installation. L'import est fait ici et non en tete
+    de fichier : chatterbox_engine importe ce module a l'execution, l'importer
+    au chargement ferait un cycle.
+    """
+    from voice_studio.chatterbox_engine import ChatterboxEngine
+
+    return (SystemVoiceEngine(), PiperEngine(), ChatterboxEngine())
+
+
+def chatterbox_name() -> str:
+    """Nom du moteur Chatterbox, pour l'interface.
+
+    Une fonction plutot qu'une chaine recopiee dans les ecrans : le jour ou le
+    nom change, il ne change qu'ici.
+    """
+    from voice_studio import chatterbox_catalogue
+
+    return chatterbox_catalogue.ENGINE_NAME
+
+
+ENGINE_LABELS = {
+    "system": "Voix du système (Windows)",
+    "piper": "Piper — voix locales",
+    "chatterbox": "Chatterbox — voix expressive",
+}
 
 
 def available_voices(engine_name: str = "") -> list[Voice]:
@@ -517,25 +554,49 @@ def cache_dir() -> Path:
     return path
 
 
+def params_signature(params) -> str:
+    """Empreinte des reglages propres a un moteur, vide s'il n'en a pas.
+
+    Chatterbox en a (expressivite, guidage, temperature, graine, voix de
+    reference) et ils changent le son : deux generations qui ne different que
+    par l'expressivite ne doivent jamais se renvoyer le meme fichier.
+    """
+    if not params:
+        return ""
+    try:
+        from voice_studio import chatterbox_catalogue as chatterbox
+
+        if isinstance(params, chatterbox.Params):
+            return chatterbox.signature(params)
+        if isinstance(params, dict):
+            return chatterbox.signature(chatterbox.params_for(**params))
+    except Exception as error:                         # pragma: no cover - garde-fou
+        logger.warning(f"Réglages de moteur non signés ({error}).")
+    return repr(params)
+
+
 def cache_key(text: str, voice: Voice | None, rate: float, volume: float,
-              sentence_pause_s: float) -> str:
+              sentence_pause_s: float, params=None) -> str:
     """Empreinte de TOUT ce qui change le son produit.
 
     Le moteur et la voix en font partie : le meme texte lu par Hortense et par
-    une voix Piper ne donne evidemment pas le meme fichier.
+    une voix Piper ne donne evidemment pas le meme fichier. Les reglages du
+    moteur aussi, depuis Chatterbox.
     """
     import hashlib
 
     parts = [text or "", voice.engine if voice else "", voice.id if voice else "",
              f"{clamp(rate, MIN_RATE, MAX_RATE):.3f}",
              f"{clamp(volume, MIN_VOLUME, MAX_VOLUME):.3f}",
-             f"{clamp(sentence_pause_s, 0.0, MAX_PAUSE_S):.2f}"]
+             f"{clamp(sentence_pause_s, 0.0, MAX_PAUSE_S):.2f}",
+             params_signature(params)]
     return hashlib.sha256("\u0000".join(parts).encode("utf-8")).hexdigest()[:32]
 
 
 def synthesize(text: str, out_wav: str, voice: Voice | None = None, rate: float = 1.0,
                volume: float = 1.0, sentence_pause_s: float = 0.0,
-               use_cache: bool = True) -> str:
+               use_cache: bool = True, params=None, on_progress=None,
+               cancel_token=None) -> str:
     """Genere le fichier et renvoie son chemin.
 
     Le cache est garde a part et RECOPIE vers la destination demandee : deux
@@ -546,7 +607,7 @@ def synthesize(text: str, out_wav: str, voice: Voice | None = None, rate: float 
         raise TtsError("Il n'y a pas de texte à lire.")
     engine = engine_for(voice)
 
-    cached = cache_dir() / f"{cache_key(text, voice, rate, volume, sentence_pause_s)}.wav"
+    cached = cache_dir() / f"{cache_key(text, voice, rate, volume, sentence_pause_s, params)}.wav"
     if use_cache and cached.is_file() and cached.stat().st_size > 128:
         Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
         if str(cached) != str(out_wav):
@@ -554,7 +615,8 @@ def synthesize(text: str, out_wav: str, voice: Voice | None = None, rate: float 
         return out_wav
 
     engine.synthesize(text, out_wav, voice_id=voice.id if voice else "",
-                      rate=rate, volume=volume, sentence_pause_s=sentence_pause_s)
+                      rate=rate, volume=volume, sentence_pause_s=sentence_pause_s,
+                      params=params, on_progress=on_progress, cancel_token=cancel_token)
     if use_cache:
         try:
             shutil.copyfile(out_wav, cached)

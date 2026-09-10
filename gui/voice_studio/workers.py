@@ -51,12 +51,21 @@ class AnalysisWorker(QThread):
 
 
 class VoiceWorker(QThread):
-    """Texte -> fichier audio."""
+    """Texte -> fichier audio.
+
+    `params`, `progress` et l'annulation existent pour Chatterbox : une
+    generation y prend des dizaines de secondes et se regle. Les voix du
+    systeme et Piper les ignorent -- une seule signature pour les trois
+    moteurs, plutot qu'un fil par moteur.
+    """
 
     done = Signal(str)                   # chemin du WAV produit
     failed = Signal(str)
+    progress = Signal(object)            # evenement du moteur (dict)
+    cancelled = Signal()
 
-    def __init__(self, text, out_path, voice, rate, volume, sentence_pause_s):
+    def __init__(self, text, out_path, voice, rate, volume, sentence_pause_s,
+                 params=None, cancel_token=None):
         super().__init__()
         self.text = text
         self.out_path = out_path
@@ -64,12 +73,19 @@ class VoiceWorker(QThread):
         self.rate = rate
         self.volume = volume
         self.sentence_pause_s = sentence_pause_s
+        self.params = params
+        self.cancel_token = cancel_token
 
     def run(self) -> None:
         try:
             path = tts.synthesize(self.text, self.out_path, voice=self.voice,
                                   rate=self.rate, volume=self.volume,
-                                  sentence_pause_s=self.sentence_pause_s)
+                                  sentence_pause_s=self.sentence_pause_s,
+                                  params=self.params,
+                                  on_progress=lambda event: self.progress.emit(event),
+                                  cancel_token=self.cancel_token)
+        except CancelledError:
+            self.cancelled.emit()
         except tts.TtsError as error:
             self.failed.emit(str(error))
         except Exception as error:                     # pragma: no cover - garde-fou

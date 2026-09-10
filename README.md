@@ -200,6 +200,66 @@ second moteur de synthese, seulement un champ qui se remplit.
 passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
 un seul formateur de minutage dans tout le projet.
 
+#### Chatterbox — la voix expressive (optionnelle)
+
+Troisieme moteur de synthese, a cote des voix du systeme et de Piper. Il est
+propose dans la meme liste, il produit le meme WAV, et il traverse le meme
+enchainement ensuite (Faster-Whisper, sous-titres, video) : ce n'est pas un
+second systeme de voix.
+
+**Ce qui est utilise, exactement.** `ChatterboxMultilingualTTS` du depot
+officiel `resemble-ai/chatterbox`, avec `t3_model="v3"` (poids
+`t3_mtl23ls_v3.safetensors`) et `language_id="fr"`. Le paquet publie sur PyPI
+(0.1.7) n'expose PAS le choix du modele et retomberait silencieusement sur la
+V2 : l'installation vise donc le depot git, epingle sur un commit precis, ecrit
+dans `config/chatterbox.json`. Licence du code : MIT.
+
+**Il vit dans un environnement Python separe**, installe a la demande, jamais
+embarque dans l'executable. Chatterbox epingle `torch==2.6.0`,
+`transformers==5.2.0` et `diffusers==0.29.0` -- des versions exactes qui
+figeraient tout le projet, et pres de 195 Mo pour la seule roue PyTorch de
+Windows. L'application, elle, n'a aucune dependance PyTorch : la transcription
+passe par CTranslate2, et cela ne change pas. Consequence directe : elle
+demarre et fonctionne sans Chatterbox, et une casse de son cote ne peut pas
+empecher Piper ou Faster-Whisper de fonctionner.
+
+**Deux telechargements distincts, tous deux declenches par un bouton** dans
+« Installer / gerer Chatterbox » : l'environnement (Python + PyTorch +
+Chatterbox), puis les poids du modele. Les poids passent par le telechargeur
+deja utilise pour les voix Piper -- reprise apres coupure, annulation,
+verification de l'espace disque. Rien ne part au demarrage de l'application.
+
+**Reglages exposes** (les noms techniques sont ceux du modele) :
+
+| Dans l'interface | Parametre reel | Defaut |
+|---|---|---|
+| Style | prereglage (Naturel, Storytelling, Dynamique, Calme, Shorts) | Naturel |
+| Expressivite | `exaggeration` | 0,5 |
+| Rythme | `cfg_weight` | 0,5 |
+| Temperature (avance) | `temperature` | 0,8 |
+| Graine (avance) | `torch.manual_seed` | aleatoire |
+| Voix | integree, ou fichier de reference | integree |
+
+Les prereglages sont des points de depart documentes dans
+`config/chatterbox.json`, pas des optima : ils n'ont pas ete compares a
+l'oreille. Tout reste modifiable a la main.
+
+**Ce que ce moteur ne sait pas faire, et qui est dit plutot que masque** : il
+n'expose aucun reglage de debit, donc le curseur de vitesse est grise quand il
+est choisi. Il ne propose qu'UNE voix integree par langue -- il n'existe pas de
+catalogue de voix dans le modele ; pour en changer, il faut fournir son propre
+fichier audio de reference, choisi a la main, jamais recupere automatiquement.
+
+**Textes longs.** La bibliotheque genere au plus 1000 jetons de parole par
+appel (environ 40 s) : au-dela, la fin du texte ne serait tout simplement pas
+prononcee. Un script est donc decoupe entre les phrases -- a defaut apres une
+virgule, jamais a l'interieur d'un mot -- puis les morceaux sont concatenes en
+une seule narration continue.
+
+**Filigrane.** Chaque audio genere porte un filigrane inaudible
+(`resemble-perth`), applique sans condition par la bibliotheque officielle. Il
+n'impose aucune restriction d'usage et n'est pas contourne.
+
 #### Creer une video narree
 
 Dernier bloc de la page : une video, un script de narration, et un MP4 en

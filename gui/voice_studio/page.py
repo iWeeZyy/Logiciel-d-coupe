@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from core.cancellation import CancelToken
 from gui import settings_store
 from gui.voice_studio.rewrite_panel import RewritePanel
+from gui.voice_studio.chatterbox_panel import ChatterboxPanel
 from gui.voice_studio.transcript_view import TranscriptView
 from gui.voice_studio.video_panel import VideoPanel
 from gui.voice_studio.voices_dialog import VoicesDialog
@@ -317,6 +318,23 @@ class VoiceStudioPage(QWidget):
         engine_row.addWidget(self.manage_btn)
         layout.addLayout(engine_row)
 
+        # Reglages propres a Chatterbox : caches pour les autres moteurs, qui
+        # n'ont ni expressivite ni voix de reference.
+        self.chatterbox_panel = ChatterboxPanel()
+        self.chatterbox_panel.setVisible(False)
+        layout.addWidget(self.chatterbox_panel)
+
+        self.chatterbox_notice = QLabel("")
+        self.chatterbox_notice.setProperty("role", "muted")
+        self.chatterbox_notice.setWordWrap(True)
+        self.chatterbox_notice.setVisible(False)
+        layout.addWidget(self.chatterbox_notice)
+
+        self.chatterbox_btn = QPushButton("Installer / gérer Chatterbox")
+        self.chatterbox_btn.setVisible(False)
+        self.chatterbox_btn.clicked.connect(self._manage_chatterbox)
+        layout.addWidget(self.chatterbox_btn)
+
         settings = QHBoxLayout()
         settings.addWidget(QLabel("Vitesse"))
         self.rate_combo = QComboBox()
@@ -479,9 +497,14 @@ class VoiceStudioPage(QWidget):
         self.engine_combo.blockSignals(True)
         self.engine_combo.clear()
         for engine in tts.all_engines():
+            label = tts.ENGINE_LABELS.get(engine.name, engine.name)
             if engine.available():
-                self.engine_combo.addItem(tts.ENGINE_LABELS.get(engine.name, engine.name),
-                                          engine.name)
+                self.engine_combo.addItem(label, engine.name)
+            elif engine.name == tts.chatterbox_name():
+                # Chatterbox se telecharge : le cacher tant qu'il n'est pas la
+                # reviendrait a ne jamais le proposer. Il est donc montre AVEC
+                # son etat, et la generation reste desactivee.
+                self.engine_combo.addItem(f"{label} — non installé", engine.name)
         if previous is not None:
             index = self.engine_combo.findData(previous)
             if index >= 0:
@@ -526,6 +549,51 @@ class VoiceStudioPage(QWidget):
 
     def _on_engine_changed(self) -> None:
         self._load_voices_for_engine()
+        self._refresh_chatterbox()
+
+    def _selected_engine(self):
+        name = self.engine_combo.currentData() or ""
+        return next((e for e in tts.all_engines() if e.name == name), None)
+
+    def _refresh_chatterbox(self) -> None:
+        """Montre les reglages du moteur choisi, et dit ce qui manque.
+
+        La vitesse est grisee pour Chatterbox : le modele n'expose aucun
+        reglage de debit, et un curseur sans effet est un mensonge.
+        """
+        if getattr(self, "chatterbox_panel", None) is None:
+            return
+        engine = self._selected_engine()
+        is_chatterbox = bool(engine) and engine.name == tts.chatterbox_name()
+        available = bool(engine) and engine.available()
+
+        self.chatterbox_panel.setVisible(is_chatterbox and available)
+        self.chatterbox_btn.setVisible(is_chatterbox)
+        reason = engine.unavailable_reason() if (is_chatterbox and not available) else ""
+        self.chatterbox_notice.setText(reason)
+        self.chatterbox_notice.setVisible(bool(reason))
+
+        supports_rate = getattr(engine, "supports_rate", True) if engine else True
+        self.rate_combo.setEnabled(supports_rate)
+        self.rate_combo.setToolTip("" if supports_rate else
+                                   "Chatterbox n'expose aucun réglage de débit : "
+                                   "la vitesse ne s'applique pas à ce moteur.")
+
+    def _manage_chatterbox(self) -> None:
+        from gui.voice_studio.chatterbox_dialog import ChatterboxDialog
+
+        dialog = ChatterboxDialog(self)
+        dialog.exec()
+        dialog.cleanup()
+        self._load_voices()
+        self._refresh_chatterbox()
+
+    def _engine_params(self):
+        """Reglages a passer au moteur, ou None pour ceux qui n'en ont pas."""
+        engine = self._selected_engine()
+        if engine is not None and engine.name == tts.chatterbox_name():
+            return self.chatterbox_panel.params()
+        return None
 
     def _manage_voices(self) -> None:
         dialog = VoicesDialog(self)
@@ -553,6 +621,7 @@ class VoiceStudioPage(QWidget):
         self.export_wav_btn.setEnabled(ready)
         self.export_mp3_btn.setEnabled(ready)
         self._update_voice_labels()
+        self._refresh_chatterbox()
         return has_text
 
     def _update_voice_labels(self) -> None:
@@ -758,14 +827,19 @@ class VoiceStudioPage(QWidget):
                                  "Génération de l'aperçu...")
 
     def _start_voice_worker(self, text: str, out_path: str, message: str) -> None:
+        self._voice_cancel = CancelToken()
         self._voice_worker = VoiceWorker(
             text, out_path, self._current_voice(),
             rate=self._rate(),
             volume=self.volume_slider.value() / 100.0,
             sentence_pause_s=self.pause_slider.value() / 10.0,
+            params=self._engine_params(),
+            cancel_token=self._voice_cancel,
         )
         self._voice_worker.done.connect(self._on_voice_done)
         self._voice_worker.failed.connect(self._on_voice_failed)
+        self._voice_worker.progress.connect(self._on_voice_progress)
+        self._voice_worker.cancelled.connect(self._on_voice_cancelled)
         self._voice_worker.finished.connect(self._on_voice_finished)
         self.generate_btn.setEnabled(False)
         self.preview_btn.setEnabled(False)
@@ -809,6 +883,23 @@ class VoiceStudioPage(QWidget):
             if path not in self.project.generated_audio:
                 self.project.generated_audio.append(path)
             store.save(self.project)
+
+    def _on_voice_progress(self, event: dict) -> None:
+        """Compte rendu d'un moteur qui prend du temps. Chatterbox est le seul
+        a en emettre : les autres finissent avant qu'on ait lu la phrase."""
+        kind = (event or {}).get("event")
+        if kind == "loading":
+            self.voice_status.setText("Chargement du modèle Chatterbox…")
+        elif kind == "chunk":
+            self.voice_status.setText(
+                f"Génération de la narration… {event.get('index')}/{event.get('total')}")
+        elif kind == "done":
+            self.voice_status.setText(
+                f"Voix générée en {event.get('seconds', '?')} s "
+                f"({event.get('duration', '?')} s d'audio).")
+
+    def _on_voice_cancelled(self) -> None:
+        self.voice_status.setText("Génération annulée.")
 
     def _on_voice_failed(self, message: str) -> None:
         self.voice_status.setText("")

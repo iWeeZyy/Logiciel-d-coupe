@@ -1,0 +1,65 @@
+{
+  "_comment": "Catalogue Chatterbox (voice_studio/chatterbox_*.py). Modifiable sans toucher au code : chemins du modele, epinglage du runtime, prereglages. Les valeurs viennent du depot officiel resemble-ai/chatterbox, lues dans son code source -- pas d'une documentation recopiee. La TAILLE des fichiers du modele n'est volontairement pas renseignee : elle n'a pas pu etre verifiee a la source au moment de l'ecriture, et le telechargeur affiche de toute facon la taille reelle annoncee par le serveur.",
+
+  "model": {
+    "key": "multilingual-v3",
+    "label": "Chatterbox Multilingual V3",
+    "repo_id": "ResembleAI/chatterbox",
+    "revision": "main",
+    "t3_model": "v3",
+    "files": [
+      "ve.pt",
+      "t3_mtl23ls_v3.safetensors",
+      "s3gen.pt",
+      "grapheme_mtl_merged_expanded_v1.json",
+      "conds.pt",
+      "Cangjie5_TC.json"
+    ],
+    "url_template": "https://huggingface.co/{repo_id}/resolve/{revision}/{file}",
+    "size_bytes": null,
+    "sample_rate": 24000,
+    "languages": ["ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it",
+                  "ja", "ko", "ms", "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh"],
+    "code_license": "MIT (Resemble AI)",
+    "weights_license": "",
+    "watermark": "Chaque audio genere porte un filigrane inaudible (resemble-perth). Il est applique sans condition par la bibliotheque officielle et n'impose aucune restriction d'usage.",
+    "notes": "Poids V3 (t3_mtl23ls_v3.safetensors). Le paquet publie sur PyPI (0.1.7) n'expose PAS le choix du modele et retomberait sur la V2 : le runtime installe donc le depot git epingle ci-dessous."
+  },
+
+  "runtime": {
+    "_comment": "Environnement Python separe, installe a la demande. Separe et non embarque : chatterbox epingle torch==2.6.0, transformers==5.2.0 et diffusers==0.29.0 -- des versions exactes qui figeraient tout le reste de l'application, et pres de 200 Mo de roue PyTorch pour Windows que ceux qui n'utilisent pas Chatterbox n'ont aucune raison de telecharger.",
+    "python_min": [3, 10],
+    "python_max": [3, 13],
+    "torch_index_url": "https://download.pytorch.org/whl/cpu",
+    "packages": [
+      "torch==2.6.0",
+      "torchaudio==2.6.0"
+    ],
+    "source": "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox@5de7a54aa4e5e2baadb0182dde554908b48b85c2",
+    "commit": "5de7a54aa4e5e2baadb0182dde554908b48b85c2",
+    "estimated_download_mb": 700
+  },
+
+  "defaults": {
+    "language": "fr",
+    "preset": "naturel",
+    "seed": 0
+  },
+
+  "presets": {
+    "_comment": "Valeurs de depart, pas des optima : aucune n'a ete comparee a l'oreille au moment de l'ecriture. 'exaggeration' et 'cfg_weight' valent 0.5 par defaut dans le code officiel ; les ecarts ci-dessous sont volontairement modestes, une voix surjouee etant plus penible qu'une voix sobre. Tout est modifiable dans l'interface.",
+    "naturel": {"label": "Naturel", "exaggeration": 0.5, "cfg_weight": 0.5, "temperature": 0.8},
+    "storytelling": {"label": "Storytelling", "exaggeration": 0.6, "cfg_weight": 0.4, "temperature": 0.8},
+    "dynamique": {"label": "Dynamique", "exaggeration": 0.75, "cfg_weight": 0.35, "temperature": 0.9},
+    "calme": {"label": "Calme", "exaggeration": 0.4, "cfg_weight": 0.6, "temperature": 0.7},
+    "shorts": {"label": "Shorts / TikTok", "exaggeration": 0.65, "cfg_weight": 0.4, "temperature": 0.85}
+  },
+
+  "limits": {
+    "_comment": "Le modele genere au plus 1000 jetons de parole par appel (max_new_tokens code en dur dans mtl_tts.py), soit environ 40 s d'audio. Un script plus long est donc decoupe. La limite ci-dessous est exprimee en CARACTERES, mesurable avant generation, et prise volontairement basse par rapport a la limite reelle.",
+    "max_chars_per_chunk": 320,
+    "exaggeration": [0.25, 2.0],
+    "cfg_weight": [0.0, 1.0],
+    "temperature": [0.05, 5.0]
+  }
+}
