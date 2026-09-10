@@ -278,13 +278,15 @@ def _watermark_for(settings) -> object | None:
             return None
         chosen = str(block.get("voice_studio_image") or "").strip()
         block["image"] = chosen or str(watermark_module.voice_studio_image_path())
-        # Taille et opacite propres a ce logo : il porte du texte, qui
-        # disparait a la taille du pictogramme des clips. Une valeur mise dans
-        # la configuration gagne, sinon on prend celle de Voice Studio.
-        block["size_percent"] = (block.get("voice_studio_size_percent")
-                                 or watermark_module.VOICE_STUDIO_SIZE_PERCENT)
-        block["opacity"] = (block.get("voice_studio_opacity")
-                            or watermark_module.VOICE_STUDIO_OPACITY)
+        # Taille et opacite : celles du bloc commun. Le logo de Voice Studio est
+        # un medaillon sans texte, comme la marque des clips -- il tient donc a
+        # la meme taille, et il n'y a aucune raison d'avoir deux valeurs a
+        # tenir a jour. Les deux cles ne servent qu'a le regler separement si
+        # un jour c'est necessaire.
+        for key, override in (("size_percent", "voice_studio_size_percent"),
+                              ("opacity", "voice_studio_opacity")):
+            if block.get(override):
+                block[key] = block[override]
         return watermark_module.from_config(block)
     except Exception as error:                    # pragma: no cover - config abimee
         logger.warning(f"Filigrane ignoré ({error}).")

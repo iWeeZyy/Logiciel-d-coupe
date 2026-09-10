@@ -515,8 +515,10 @@ class TestFiligrane:
             "le logo doit être dans assets/, sinon l'exe compilé ne l'aura pas"
 
     def test_le_logo_est_un_disque_detoure(self):
-        """Un carre opaque poserait un rectangle sur la video. Les coins
-        doivent etre transparents et le centre opaque."""
+        """Un carre opaque poserait un rectangle sur la video, et l'image
+        fournie montrait le medaillon pose sur une photo : ce sont les deux
+        raisons du detourage. Les coins doivent etre transparents et le centre
+        opaque."""
         from PIL import Image
 
         from video.watermark import voice_studio_image_path
@@ -530,19 +532,17 @@ class TestFiligrane:
                 assert pixels[corner][3] == 0, f"coin {corner} non transparent"
             assert pixels[w // 2, h // 2][3] == 255
 
-    def test_il_est_pose_plus_grand_et_plus_opaque_que_celui_des_clips(self, monkeypatch):
-        """Ce logo porte du texte : a la taille du pictogramme des clips, ce
-        texte n'est plus lisible."""
-        from video import watermark as watermark_module
+    def test_seule_l_image_change_par_rapport_aux_clips(self, monkeypatch):
+        """Taille et opacite viennent du bloc commun : le medaillon tient a la
+        meme taille que la marque des clips, et deux valeurs a tenir a jour
+        finiraient par diverger."""
         from voice_studio.video_service import _watermark_for
 
-        block = self._block()
+        block = self._block(size_percent=14, opacity=0.7)
         self._patch(monkeypatch, block)
         chosen = _watermark_for(VideoSettings(watermark_enabled=True))
-        assert chosen.size_percent == watermark_module.VOICE_STUDIO_SIZE_PERCENT
-        assert chosen.opacity == watermark_module.VOICE_STUDIO_OPACITY
-        assert chosen.size_percent > block["size_percent"]
-        assert chosen.opacity > block["opacity"]
+        assert chosen.size_percent == 14
+        assert chosen.opacity == pytest.approx(0.7)
 
     def test_la_position_et_la_marge_restent_celles_de_la_configuration(self, monkeypatch):
         """Un seul bloc de reglages : seuls l'image, la taille et l'opacite

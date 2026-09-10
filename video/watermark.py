@@ -27,13 +27,6 @@ DEFAULT_IMAGE = "branding/watermark.png"
 # transparent) donc mêmes reglages de taille, de marge et d'opacite -- seule
 # l'image change.
 VOICE_STUDIO_IMAGE = "branding/watermark-landscapesfr.png"
-# Ce logo-la porte du TEXTE (un nom sur l'anneau, une baseline en bas). A 14 %
-# de la largeur, comme la marque des clips, ce texte n'est plus lisible : un
-# ecusson detaille a besoin de plus de place et de plus d'opacite qu'un
-# pictogramme. D'ou deux valeurs propres a Voice Studio, remplacables dans
-# config/editing.json.
-VOICE_STUDIO_SIZE_PERCENT = 18.0
-VOICE_STUDIO_OPACITY = 0.85
 
 POSITIONS = ("haut-gauche", "haut-centre", "haut-droite",
              "bas-gauche", "bas-centre", "bas-droite")
