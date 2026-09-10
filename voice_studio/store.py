@@ -83,6 +83,22 @@ def list_projects() -> list[VoiceStudioProject]:
     return sorted(projects, key=lambda p: p.updated_at or "", reverse=True)
 
 
+def key_for_video_path(path) -> str:
+    """Cle de projet pour une video ouverte depuis le disque.
+
+    Une video telechargee depuis Recherche porte son identifiant YouTube, qui
+    sert de cle. Un fichier ouvert a la main n'en a pas : on derive alors une
+    cle du chemin. Le chemin et non le contenu : hacher plusieurs centaines de
+    megaoctets pour nommer un fichier JSON couterait plus longtemps que tout le
+    reste de l'ecran.
+    """
+    import hashlib
+
+    absolute = str(Path(path).resolve()) if path else ""
+    digest = hashlib.sha256(absolute.encode("utf-8")).hexdigest()[:12]
+    return f"local-{digest}"
+
+
 def audio_dir() -> Path:
     """Ou vont les voix generees. Un dossier visible et nomme : un fichier
     audio produit sans dire ou il est n'existe pas pour l'utilisateur."""

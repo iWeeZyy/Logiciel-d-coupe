@@ -32,6 +32,7 @@ def _format_duration(seconds) -> str:
 
 class SearchResultCard(QFrame):
     analyze_requested = Signal(object)  # RankedVideo
+    download_requested = Signal(object)  # RankedVideo -- video complete, sans decoupage
 
     def __init__(self, ranked_video, parent=None):
         super().__init__(parent)
@@ -78,6 +79,12 @@ class SearchResultCard(QFrame):
         analyze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         analyze_btn.clicked.connect(lambda: self.analyze_requested.emit(self.ranked_video))
         actions.addWidget(analyze_btn)
+
+        download_btn = QPushButton("⬇  Télécharger")
+        download_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        download_btn.setToolTip("Récupérer la vidéo entière, sans la découper en clips.")
+        download_btn.clicked.connect(lambda: self.download_requested.emit(self.ranked_video))
+        actions.addWidget(download_btn)
 
         open_btn = QPushButton("Ouvrir sur YouTube")
         open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(video.url)))

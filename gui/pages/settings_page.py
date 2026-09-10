@@ -283,6 +283,18 @@ class SettingsPage(QWidget):
         clips_btn.clicked.connect(self._browse_clips_dir)
         clips_row.addWidget(clips_btn)
         grid.addLayout(clips_row, row, 1)
+        row += 1
+
+        grid.addWidget(QLabel("Dossier des vidéos téléchargées"), row, 0)
+        videos_row = QHBoxLayout()
+        self.videos_label = QLabel(str(settings_store.videos_dir()))
+        self.videos_label.setProperty("role", "mono")
+        self.videos_label.setWordWrap(True)
+        videos_row.addWidget(self.videos_label, stretch=1)
+        videos_btn = QPushButton("Parcourir…")
+        videos_btn.clicked.connect(self._browse_videos_dir)
+        videos_row.addWidget(videos_btn)
+        grid.addLayout(videos_row, row, 1)
 
         card.layout().addLayout(grid)
 
@@ -305,6 +317,14 @@ class SettingsPage(QWidget):
         if folder:
             settings_store.save({"clips_dir": folder})
             self.clips_label.setText(folder)
+
+    def _browse_videos_dir(self) -> None:
+        """Comme pour les clips : rien de deja telecharge n'est deplace."""
+        folder = QFileDialog.getExistingDirectory(
+            self, "Dossier des vidéos téléchargées", str(settings_store.videos_dir()))
+        if folder:
+            settings_store.save({"videos_dir": folder})
+            self.videos_label.setText(folder)
 
     # ---------- Video ----------
 

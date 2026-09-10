@@ -17,7 +17,11 @@ from pathlib import Path
 
 from core.config_loader import load_youtube_config
 from core.logging_setup import get_logger
-from utils.errors import RightsNotConfirmedError, YouTubeDownloadError
+from utils.errors import (
+    CancelledError,
+    RightsNotConfirmedError,
+    YouTubeDownloadError,
+)
 from video.ffmpeg_utils import FFMPEG_BIN
 # Helpers yt-dlp communs a YouTube et Twitch, ranges hors de ce paquet depuis
 # que le telechargement des clips Twitch les utilise aussi. Reexportes ici :
@@ -56,7 +60,19 @@ def resolve_watch_url(video_id_or_url: str) -> str:
     return value  # deja une URL -- yt-dlp gere youtube.com/watch, youtu.be, shorts, etc.
 
 
-def download_video(video_id_or_url: str, out_dir: str, consent_confirmed: bool) -> str:
+def download_video(video_id_or_url: str, out_dir: str, consent_confirmed: bool, *,
+                   max_height: int | None = None, on_progress=None,
+                   cancel_token=None) -> str:
+    """Telecharge la video et renvoie le chemin du fichier produit.
+
+    Les trois arguments nommes sont ARRIVES APRES : le telechargement ne servait
+    qu'a une analyse en ligne de commande, ou personne ne regarde une barre de
+    progression et ou il n'y a pas de bouton Annuler. Ils sont donc optionnels,
+    et sans eux le comportement est exactement celui d'avant.
+
+    `max_height` a None laisse le plafond de config/youtube.json decider ; une
+    valeur explicite (0 = aucune limite) le remplace pour cet appel seulement.
+    """
     if not consent_confirmed:
         raise RightsNotConfirmedError(
             "Telechargement refuse : les droits necessaires n'ont pas ete "
@@ -74,14 +90,31 @@ def download_video(video_id_or_url: str, out_dir: str, consent_confirmed: bool) 
     url = resolve_watch_url(video_id_or_url)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
+    def _hook(status: dict) -> None:
+        # Seul moment ou le code reprend la main pendant un transfert : c'est
+        # donc ici que l'annulation est vue, et nulle part ailleurs. Meme
+        # crochet que radar/clip_download.py, pour la meme raison.
+        if cancel_token is not None:
+            cancel_token.check()
+        if on_progress is None or status.get("status") != "downloading":
+            return
+        total = status.get("total_bytes") or status.get("total_bytes_estimate")
+        done = status.get("downloaded_bytes") or 0
+        # Une fraction quand la taille totale est connue, None sinon : une barre
+        # qui avance au hasard vaut moins qu'une barre qui assume ne pas savoir.
+        on_progress(min(1.0, done / total) if total else None,
+                    done / 1_000_000, (total / 1_000_000) if total else None)
+
+    ceiling = configured_max_height() if max_height is None else int(max_height)
     ydl_opts = {
-        "format": build_format(configured_max_height()),
+        "format": build_format(ceiling),
         "outtmpl": str(Path(out_dir) / "%(id)s.%(ext)s"),
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
         "restrictfilenames": True,
+        "progress_hooks": [_hook],
     }
     if Path(FFMPEG_BIN).exists():
         ydl_opts["ffmpeg_location"] = str(Path(FFMPEG_BIN).resolve().parent)
@@ -90,6 +123,11 @@ def download_video(video_id_or_url: str, out_dir: str, consent_confirmed: bool) 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
+    except CancelledError:
+        # Une annulation demandee par l'utilisateur n'est pas un echec de
+        # telechargement : la presenter comme tel afficherait un message
+        # d'erreur reseau a quelqu'un qui vient d'appuyer sur Annuler.
+        raise
     except yt_dlp.utils.DownloadError as e:
         raise YouTubeDownloadError(_explain_download_error(str(e))) from e
 

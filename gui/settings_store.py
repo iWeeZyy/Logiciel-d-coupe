@@ -31,6 +31,10 @@ _DEFAULTS = {
     # Piper. None -> l'emplacement par defaut sous les donnees de
     # l'application ; l'utilisateur peut le deplacer, les modeles pesent
     # plusieurs dizaines de megaoctets chacun.
+    # Videos completes telechargees depuis la page Recherche. Distinct des
+    # clips : une video entiere pese des centaines de megaoctets, la ranger
+    # avec des clips de trente secondes rend le dossier des clips illisible.
+    "videos_dir": None,
     "tts_engine": None,
     "tts_voice": None,
     "tts_rate": 1.0,
@@ -76,3 +80,11 @@ def clips_dir() -> Path:
 
     value = get("clips_dir")
     return Path(value) if value else user_data_dir() / "clips"
+
+
+def videos_dir() -> Path:
+    """Ou sont gardees les videos completes telechargees depuis Recherche."""
+    from core.paths import user_data_dir
+
+    value = get("videos_dir")
+    return Path(value) if value else user_data_dir() / "videos"

@@ -40,15 +40,27 @@ def _format_time(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-def _header(style: dict, margin_v: int | None = None) -> str:
+def _header(style: dict, margin_v: int | None = None,
+            play_res: tuple[int, int] | None = None) -> str:
+    """En-tete ASS.
+
+    `play_res` est la toile sur laquelle les coordonnees du style sont
+    exprimees. Par defaut 1080x1920, la valeur historique : les styles de
+    config/subtitles.json y sont calibres, et le rendu des clips ne doit pas
+    changer d'un pixel. Un appelant qui produit une image d'un AUTRE format la
+    passe explicitement -- sinon libass etire le texte horizontalement (une
+    toile portrait posee sur une image paysage) et les marges ne veulent plus
+    rien dire.
+    """
     bold = -1 if style.get("bold", True) else 0
     if margin_v is None:
         margin_v = style.get("margin_v", 300)
+    res_x, res_y = play_res if play_res else (1080, 1920)
     return (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
-        "PlayResX: 1080\n"
-        "PlayResY: 1920\n"
+        f"PlayResX: {int(res_x)}\n"
+        f"PlayResY: {int(res_y)}\n"
         "ScaledBorderAndShadow: yes\n\n"
         "[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
@@ -153,6 +165,7 @@ def render_ass_file(
     out_ass_path: str,
     caption_groups: list[CaptionGroup] | None = None,
     margin_v: int | None = None,
+    play_res: tuple[int, int] | None = None,
 ) -> str:
     """Ecrit out_ass_path et le renvoie. Vide (mais valide) si words est vide,
     pour ne jamais faire echouer ffmpeg a cause d'un clip sans mot detecte.
@@ -183,7 +196,7 @@ def render_ass_file(
         body = _render_progressive(words, clip_start, style)
 
     with open(out_ass_path, "w", encoding="utf-8") as f:
-        f.write(_header(style, margin_v=margin_v))
+        f.write(_header(style, margin_v=margin_v, play_res=play_res))
         f.write(body)
         f.write("\n")
     return out_ass_path

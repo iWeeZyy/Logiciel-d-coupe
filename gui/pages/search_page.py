@@ -3,11 +3,14 @@ fonctionnalite de l'app dans ce cas, le traitement lui-meme reste local
 (section 15)."""
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QMessageBox,
+    QProgressBar,
     QComboBox,
     QDateEdit,
     QHBoxLayout,
@@ -24,6 +27,7 @@ from gui.controller import AppController
 from gui.thumbnails import RemoteThumbnailThread
 from gui.widgets.search_result_card import SearchResultCard
 from gui.widgets.youtube_analyze_dialog import YoutubeAnalyzeDialog
+from gui.widgets.youtube_download_dialog import YoutubeDownloadDialog
 from youtube.models import SearchFilters
 
 _SORT_CHOICES = [("potential", "Potentiel"), ("relevance", "Pertinence"), ("views", "Vues"), ("date", "Date")]
@@ -37,6 +41,9 @@ class SearchPage(QWidget):
         self.controller = controller
         self._thumb_thread: RemoteThumbnailThread | None = None
         self._cards: dict[str, SearchResultCard] = {}
+        self._download_thread = None
+        self._download_video = None
+        self._open_in_voice_studio = False
 
         controller.search_finished.connect(self._on_search_finished)
 
@@ -119,6 +126,26 @@ class SearchPage(QWidget):
         self.status_label.setProperty("role", "muted")
         outer.addWidget(self.status_label)
 
+        # Bande de telechargement : cachee tant qu'aucun transfert n'est en
+        # cours. Placee ici, au-dessus des resultats, pour rester visible quand
+        # la liste defile -- un transfert de plusieurs centaines de megaoctets
+        # ne doit pas disparaitre de l'ecran parce qu'on a scrolle.
+        self.download_row = QWidget()
+        download_layout = QHBoxLayout(self.download_row)
+        download_layout.setContentsMargins(0, 0, 0, 0)
+        self.download_label = QLabel("")
+        self.download_label.setProperty("role", "muted")
+        self.download_label.setWordWrap(True)
+        download_layout.addWidget(self.download_label, stretch=1)
+        self.download_progress = QProgressBar()
+        self.download_progress.setFixedWidth(220)
+        download_layout.addWidget(self.download_progress)
+        self.download_cancel_btn = QPushButton("Annuler")
+        self.download_cancel_btn.clicked.connect(self._cancel_download)
+        download_layout.addWidget(self.download_cancel_btn)
+        self.download_row.setVisible(False)
+        outer.addWidget(self.download_row)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         outer.addWidget(scroll, stretch=1)
@@ -166,6 +193,7 @@ class SearchPage(QWidget):
         for ranked in ranked_videos:
             card = SearchResultCard(ranked)
             card.analyze_requested.connect(self._on_analyze_requested)
+            card.download_requested.connect(self._on_download_requested)
             self.results_layout.addWidget(card)
             self._cards[ranked.video.video_id] = card
             thumb_urls[ranked.video.video_id] = ranked.video.thumbnail_url
@@ -174,6 +202,104 @@ class SearchPage(QWidget):
             self._thumb_thread = RemoteThumbnailThread(thumb_urls)
             self._thumb_thread.thumbnail_ready.connect(self._on_thumbnail_ready)
             self._thumb_thread.start()
+
+    # ------------------------------------------------- telechargement complet
+    def _on_download_requested(self, ranked_video) -> None:
+        """Recuperer la video ENTIERE, sans analyse ni decoupage.
+
+        Aucune etape du pipeline n'est lancee : ni transcription, ni scoring,
+        ni rendu. C'est tout l'interet de ce bouton -- une video complete sert
+        a autre chose qu'a produire des clips (montage, narration dans Voice
+        Studio, archive), et lui faire traverser l'analyse serait payer
+        plusieurs minutes de calcul pour un resultat dont on ne veut pas.
+        """
+        if self._download_thread is not None and self._download_thread.isRunning():
+            QMessageBox.information(
+                self, "Téléchargement en cours",
+                "Un téléchargement est déjà en cours. Attends qu'il finisse, "
+                "ou annule-le avant d'en lancer un autre.")
+            return
+
+        video = ranked_video.video
+        dialog = YoutubeDownloadDialog(video.title, video.duration_seconds, parent=self)
+        if dialog.exec() != YoutubeDownloadDialog.DialogCode.Accepted:
+            return
+
+        self._download_video = video
+        self._open_in_voice_studio = dialog.open_in_voice_studio()
+        self._download_thread = self.controller.start_video_download(
+            video.url, dialog.destination(), dialog.max_height())
+        self._download_thread.progress.connect(self._on_download_progress)
+        self._download_thread.finished_ok.connect(self._on_download_finished)
+        self._download_thread.failed.connect(self._on_download_failed)
+        self._download_thread.cancelled.connect(self._on_download_cancelled)
+        self._download_thread.finished.connect(self._on_download_thread_finished)
+
+        self.download_row.setVisible(True)
+        self.download_cancel_btn.setEnabled(True)
+        self.download_progress.setRange(0, 0)
+        self.download_label.setText(f"Téléchargement : {video.title}")
+        self._download_thread.start()
+
+    def _on_download_progress(self, fraction, done_mb: float, total_mb) -> None:
+        if fraction is None:
+            self.download_progress.setRange(0, 0)
+        else:
+            self.download_progress.setRange(0, 100)
+            self.download_progress.setValue(int(max(0.0, min(1.0, fraction)) * 100))
+        size = (f"{done_mb:.0f} / {total_mb:.0f} Mo" if total_mb else f"{done_mb:.0f} Mo")
+        title = self._download_video.title if self._download_video else ""
+        self.download_label.setText(f"Téléchargement : {title}  —  {size}")
+
+    def _cancel_download(self) -> None:
+        self.controller.cancel_video_download()
+        self.download_cancel_btn.setEnabled(False)
+        self.download_label.setText("Annulation en cours…")
+
+    def _on_download_finished(self, path: str) -> None:
+        video = self._download_video
+        self.download_label.setText(f"Vidéo téléchargée : {path}")
+        if video is not None and self._open_in_voice_studio:
+            self._send_to_voice_studio(path, video)
+            return
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Téléchargement terminé")
+        box.setText(f"La vidéo est enregistrée ici :\n{path}")
+        voice_btn = box.addButton("Ouvrir dans Voice Studio", QMessageBox.ButtonRole.AcceptRole)
+        folder_btn = box.addButton("Ouvrir le dossier", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Fermer", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+
+        if box.clickedButton() is voice_btn and video is not None:
+            self._send_to_voice_studio(path, video)
+        elif box.clickedButton() is folder_btn:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+
+    def _send_to_voice_studio(self, path: str, video) -> None:
+        self.controller.open_in_voice_studio.emit({
+            "path": path,
+            "title": video.title,
+            "video_id": video.video_id,
+            "url": video.url,
+            "duration_s": video.duration_seconds,
+        })
+
+    def _on_download_failed(self, message: str) -> None:
+        self.download_row.setVisible(False)
+        QMessageBox.warning(self, "Téléchargement impossible", message)
+
+    def _on_download_cancelled(self) -> None:
+        self.download_row.setVisible(False)
+        self.status_label.setText("Téléchargement annulé.")
+
+    def _on_download_thread_finished(self) -> None:
+        self._download_thread = None
+        self.download_progress.setRange(0, 100)
+        self.download_progress.setValue(100)
 
     def cleanup(self) -> None:
         """A la fermeture de l'appli -- voir AppController.shutdown()."""

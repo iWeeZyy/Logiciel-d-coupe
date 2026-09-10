@@ -56,6 +56,11 @@ hiddenimports = [
     "voice_studio.llm_models",
     "voice_studio.rewriting.service",
     "voice_studio.rewriting.providers.llama_cpp_provider",
+    # Creation video : le service et le montage sont importes par le panneau,
+    # lui-meme importe par la page Voice Studio.
+    "voice_studio.narration",
+    "voice_studio.video_edit",
+    "voice_studio.video_service",
 ]
 
 # NOTE VOLONTAIRE : "piper" (piper-tts) n'est PAS collecte ici. La bibliotheque

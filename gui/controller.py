@@ -104,6 +104,53 @@ class SearchThread(QThread):
             self.failed.emit(f"Erreur inattendue : {e}")
 
 
+class VideoDownloadThread(QThread):
+    """Telechargement d'une video complete depuis la page Recherche.
+
+    Un fil a part, et non le fil de l'analyse : il n'y a ici aucun pipeline,
+    aucun modele a charger, rien a annuler d'autre que le transfert lui-meme.
+    Le jeton d'annulation est le meme que partout ailleurs
+    (core/cancellation.py), verifie par le crochet de progression de yt-dlp.
+    """
+
+    progress = Signal(object, float, object)   # fraction (ou None), Mo recus, Mo total (ou None)
+    finished_ok = Signal(str)                  # chemin du fichier telecharge
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, url: str, out_dir: str, max_height: int,
+                 cancel_token: CancelToken, parent=None):
+        super().__init__(parent)
+        self.url = url
+        self.out_dir = out_dir
+        self.max_height = max_height
+        self.cancel_token = cancel_token
+
+    def run(self) -> None:
+        from youtube.downloader import download_video
+
+        try:
+            path = download_video(
+                self.url, self.out_dir, consent_confirmed=True,
+                max_height=self.max_height,
+                on_progress=lambda fraction, done_mb, total_mb: self.progress.emit(
+                    fraction, done_mb, total_mb),
+                cancel_token=self.cancel_token,
+            )
+        except CancelledError:
+            self.cancelled.emit()
+        except ClipFarmingError as error:
+            # Ces erreurs portent deja un message ecrit pour un humain.
+            self.failed.emit(str(error))
+        except Exception as error:  # noqa: BLE001 - garde-fou : jamais de trace Python a l'ecran
+            self.failed.emit(
+                "Le téléchargement s'est interrompu de façon inattendue. "
+                f"Détail technique : {type(error).__name__} — {error}"
+            )
+        else:
+            self.finished_ok.emit(path)
+
+
 class AppController(QObject):
     navigate_requested = Signal(str)         # cle de page ("home"/"analysis"/"results"/...)
     progress_updated = Signal(object)         # ProgressEvent
@@ -114,10 +161,17 @@ class AppController(QObject):
     search_finished = Signal(list)            # list[RankedVideo]
     search_failed = Signal(str)
 
+    # Une video telechargee depuis Recherche que l'utilisateur veut ouvrir dans
+    # Voice Studio. La page Recherche ne connait pas Voice Studio et n'a pas a
+    # le connaitre : elle emet, la fenetre principale aiguille.
+    open_in_voice_studio = Signal(object)     # dict {path, title, video_id, url}
+
     def __init__(self):
         super().__init__()
         self._analysis_thread: Optional[AnalysisThread] = None
         self._search_thread: Optional[SearchThread] = None
+        self._download_thread: Optional[VideoDownloadThread] = None
+        self._download_token: Optional[CancelToken] = None
         self._cancel_token: Optional[CancelToken] = None
         # Threads qu'on a renonce a attendre (terminate() n'a pas suffi -- bloques
         # dans un appel systeme non interruptible). Garde une reference forte
@@ -267,6 +321,18 @@ class AppController(QObject):
         self._search_thread.failed.connect(self.search_failed)
         self._search_thread.start()
 
+    def start_video_download(self, url: str, out_dir: str, max_height: int) -> VideoDownloadThread:
+        """Lance le telechargement et renvoie le fil, pour que la page branche
+        ses propres signaux : la progression n'interesse qu'elle."""
+        self._download_token = CancelToken()
+        self._download_thread = VideoDownloadThread(url, out_dir, max_height,
+                                                    self._download_token)
+        return self._download_thread
+
+    def cancel_video_download(self) -> None:
+        if self._download_token is not None:
+            self._download_token.cancel()
+
     # ---------- Projets ----------
 
     def list_projects(self) -> list[ProjectSummary]:
@@ -288,10 +354,12 @@ class AppController(QObject):
         temporaires dans son propre finally/), laisse une poignee de
         secondes, puis force l'arret plutot que de bloquer indefiniment la
         fermeture de la fenetre."""
-        for thread in (self._analysis_thread, self._search_thread):
+        for thread in (self._analysis_thread, self._search_thread, self._download_thread):
             if thread is not None and thread.isRunning():
                 if thread is self._analysis_thread and self._cancel_token is not None:
                     self._cancel_token.cancel()
+                if thread is self._download_thread and self._download_token is not None:
+                    self._download_token.cancel()
                 thread.wait(5000)
                 if thread.isRunning():
                     thread.terminate()

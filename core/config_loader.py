@@ -268,6 +268,43 @@ def load_clip_analysis_config() -> dict:
         return {}
 
 
+def load_subtitles_config() -> dict:
+    """config/subtitles.json, sans lever d'exception.
+
+    Meme raison que load_keywords_config : load_settings() le charge deja, mais
+    il exige des arguments de ligne de commande. Voice Studio a besoin des
+    memes styles pour la creation video, et n'a pas de ligne de commande.
+    """
+    path = CONFIG_DIR / "subtitles.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def load_export_settings() -> dict:
+    """Bloc `export` de config/settings.json (CRF, preset, debit audio).
+
+    Un seul reglage d'encodage dans l'application : le rendu d'une video narree
+    doit sortir avec la meme qualite que les clips, sans qu'on ait a recopier
+    des valeurs par defaut ailleurs.
+    """
+    path = CONFIG_DIR / "settings.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        export = data.get("export", {}) if isinstance(data, dict) else {}
+        return export if isinstance(export, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def load_keywords_config() -> dict:
     """config/hooks_keywords.json, sans lever d'exception.
 

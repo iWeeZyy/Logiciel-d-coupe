@@ -33,6 +33,7 @@ from core.cancellation import CancelToken
 from gui import settings_store
 from gui.voice_studio.rewrite_panel import RewritePanel
 from gui.voice_studio.transcript_view import TranscriptView
+from gui.voice_studio.video_panel import VideoPanel
 from gui.voice_studio.voices_dialog import VoicesDialog
 from gui.voice_studio.workers import AnalysisWorker, VoiceWorker
 from voice_studio import exporters, piper_models, services, store, tts
@@ -103,6 +104,7 @@ class VoiceStudioPage(QWidget):
         self.body.addWidget(self._build_transcript_card(), stretch=1)
         self.body.addWidget(self._build_rewrite_card())
         self.body.addWidget(self._build_voice_card())
+        self.body.addWidget(self._build_video_card())
         self.body.addStretch(0)
 
         self._refresh_state()
@@ -147,6 +149,8 @@ class VoiceStudioPage(QWidget):
         configured = settings_store.get("default_model") or "small"
         if configured in MODELS:
             self.model_combo.setCurrentIndex(MODELS.index(configured))
+        self.model_combo.currentIndexChanged.connect(lambda _i: self._sync_video_options())
+        self.language_combo.currentIndexChanged.connect(lambda _i: self._sync_video_options())
         options.addWidget(self.model_combo)
         options.addStretch(1)
         layout.addLayout(options)
@@ -375,10 +379,96 @@ class VoiceStudioPage(QWidget):
         layout.addWidget(self.voice_status)
         return frame
 
+    # -------------------------------------------------------------- video
+    def _build_video_card(self) -> QFrame:
+        """Bloc de creation video.
+
+        Il lit la voix, la vitesse, le volume et la pause du bloc precedent au
+        lieu d'en proposer une deuxieme serie : deux jeux de reglages sur le
+        meme ecran finiraient par ne plus dire la meme chose.
+        """
+        frame, layout = _card()
+        self.video_panel = VideoPanel(
+            voice_provider=lambda: (self._current_voice(), self._rate(),
+                                    self.volume_slider.value() / 100.0,
+                                    self.pause_slider.value() / 10.0),
+            script_provider=lambda: self.voice_text.toPlainText(),
+        )
+        self.video_panel.status_changed.connect(self._on_video_created)
+        layout.addWidget(self.video_panel)
+        self.video_card = frame
+        return frame
+
+    def open_source_video(self, payload: dict) -> None:
+        """Appelee quand une video telechargee depuis Recherche arrive ici.
+
+        Le projet Voice Studio de cette video est charge s'il existe deja (sa
+        transcription et son script de narration reviennent avec lui), sinon il
+        est cree : la video reste rattachee a son identifiant YouTube, pas a un
+        chemin de fichier qui peut changer.
+        """
+        payload = payload or {}
+        path = payload.get("path") or ""
+        video_id = payload.get("video_id") or ""
+        title = payload.get("title") or ""
+
+        key = video_id or store.key_for_video_path(path)
+        project = store.load(key)
+        if project is None:
+            from voice_studio.models import VoiceStudioProject
+
+            project = VoiceStudioProject(youtube_video_id=key)
+        project.youtube_url = payload.get("url") or project.youtube_url
+        project.title = title or project.title
+        project.duration_s = payload.get("duration_s") or project.duration_s
+        project.source_video_path = path
+        project.source_video_title = title
+        store.save(project)
+
+        if project.has_transcript:
+            self._show_project(project, notes=[])
+        else:
+            self.project = project
+            self.video_label.setText(title or path)
+
+        self.video_panel.set_source(path, title, payload.get("duration_s"))
+        if project.narration_script and not self.video_panel.script():
+            self.video_panel.script_edit.setPlainText(project.narration_script)
+        self._sync_video_options()
+        self.status_label.setText(
+            "Vidéo prête dans le bloc « Créer une vidéo » ci-dessous.")
+        self._refresh_state()
+
+    def _sync_video_options(self) -> None:
+        """Le modele, la langue et le peripherique choisis en haut de la page
+        servent aussi a analyser la voix generee : un seul choix, pas deux."""
+        if getattr(self, "video_panel", None) is None:
+            return
+        self.video_panel.set_transcription_options(
+            self.model_combo.currentData() or "small",
+            self.language_combo.currentData(),
+            settings_store.get("default_device") or "auto",
+        )
+
+    def _on_video_created(self, message: str) -> None:
+        """Enregistre ce qui a servi au rendu : script, reglages, fichier."""
+        if self.project is None:
+            return
+        self.project.narration_script = self.video_panel.script()
+        self.project.video_settings = self.video_panel.settings()
+        self.project.source_video_path = self.video_panel.source_path()
+        path = message.split(" : ", 1)[-1].strip()
+        if path and not message.startswith("Aperçu") and path not in self.project.video_exports:
+            # Un apercu n'est pas un export : il vit dans le dossier de travail
+            # et sera ecrase au prochain essai.
+            self.project.video_exports.append(path)
+        store.save(self.project)
+
     # ------------------------------------------------------------- etats
     def on_shown(self) -> None:
         if not self._voices:
             self._load_voices()
+        self._sync_video_options()
 
     def _load_voices(self) -> None:
         """Recharge moteurs et voix. Aucun moteur indisponible n'est propose."""
@@ -761,6 +851,8 @@ class VoiceStudioPage(QWidget):
         """Arrete proprement les fils avant la destruction de la fenetre."""
         if getattr(self, "rewrite_panel", None) is not None:
             self.rewrite_panel.cleanup()
+        if getattr(self, "video_panel", None) is not None:
+            self.video_panel.cleanup()
         if self._cancel_token is not None:
             self._cancel_token.cancel()
         for worker in (self._worker, self._voice_worker):

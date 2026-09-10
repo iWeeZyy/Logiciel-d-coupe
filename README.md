@@ -146,8 +146,14 @@ officiel, appele comme processus separe. Le detail est dans
 **Ce qui est enregistre**, sous `%LOCALAPPDATA%\ClipFarming\voice_studio_data`
 (un fichier JSON par video) : l'adresse, le titre, la chaine, la duree, la
 langue, la source du texte, le modele utilise, la transcription avec ses
-minutages, les reglages de voix. Rouvrir la meme video propose la transcription
-deja faite plutot que de la refaire.
+minutages, les reglages de voix. S'y ajoutent, pour la creation video, le
+chemin de la video source, le script de narration, les reglages de rendu et la
+transcription de la VOIX GENEREE -- gardee separement de celle de la video, les
+confondre ferait afficher les sous-titres de l'une sur l'audio de l'autre.
+Rouvrir la meme video propose la transcription deja faite plutot que de la
+refaire. Les voix de narration et les apercus vivent dans le sous-dossier
+`video_work`, les videos telechargees depuis Recherche dans
+`%LOCALAPPDATA%\ClipFarming\videos` (modifiable dans Parametres).
 
 **Réécriture originale.** Une fois la transcription obtenue, Voice Studio peut
 en tirer un NOUVEAU script : mêmes informations, formulation, transitions et
@@ -193,6 +199,55 @@ second moteur de synthese, seulement un champ qui se remplit.
 **Exports** : TXT (avec ou sans minutages), SRT et VTT. Les deux derniers
 passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
 un seul formateur de minutage dans tout le projet.
+
+#### Creer une video narree
+
+Dernier bloc de la page : une video, un script de narration, et un MP4 en
+sortie. La video vient de l'onglet **Recherche** (bouton « Telecharger », puis
+« Ouvrir dans Voice Studio ») ou d'un fichier deja present sur le disque.
+
+**Les sous-titres sont cales sur la voix REELLEMENT generee.** C'est le coeur de
+la fonction : le fichier audio produit par la synthese est repasse dans
+Faster-Whisper -- le meme moteur que le reste de l'application -- pour obtenir
+les instants ou chaque mot est vraiment prononce. Rien n'est estime a partir du
+nombre de mots ou de caracteres : une voix qui marque une pause, allonge un
+chiffre ou avale une liaison reste synchrone. La duree de la narration est
+mesuree sur le fichier (ffprobe), jamais calculee. L'estimation affichee sous le
+script, elle, est annoncee comme une estimation et ne sert qu'a prevenir avant
+de generer.
+
+**Aucun nouveau systeme.** La voix vient du bloc « Generer une voix » juste
+au-dessus (meme moteur, meme voix, meme vitesse, meme cache) ; les styles de
+sous-titres sont ceux de `config/subtitles.json`, decoupes par
+`editing/captions.py` et rendus par `video/subtitle_renderer.py` ; le recadrage
+9:16, le remplissage flou du 16:9 et le filigrane sont ceux du rendu des clips.
+Un seul encodage ffmpeg.
+
+**Les quatre decisions, toutes explicites** :
+
+| Choix | Ce qui se passe |
+|---|---|
+| Format | `16:9` garde l'image entiere et remplit les bords (flou ou noir) ; `9:16` recadre, au centre ou en suivant le visage detecte. |
+| Son | remplacer par la narration, garder celui de la video, ou melanger (le son d'origine est *baisse*, pas supprime). |
+| Duree | couper au plus court, garder toute la video (silence apres la narration), ou figer la derniere image si la narration est plus longue. |
+| Sous-titres | incrustes ou non, dans le style choisi, avec le filigrane par-dessus ou non. |
+
+Rien n'est jamais accelere ni ralenti pour faire coincider deux durees : etirer
+une voix ou une image s'entend et se voit. Une video muette melangee a la
+narration n'est pas presentee comme un melange -- le mode reellement applique
+est annonce.
+
+**Ce qui n'est pas recalcule** : changer le style de sous-titres, le cadrage, le
+son ou la duree ne re-synthetise pas la voix et ne relance pas son analyse. La
+voix et ses minutages sont gardes tant que le script, la voix ou ses reglages
+n'ont pas change. L'apercu (15 s) est le MEME rendu, simplement plus court : ce
+qu'on voit est ce qui sortira.
+
+**Sous-titres en 16:9** : les styles sont calibres pour un cadre 1080x1920. En
+paysage, la toile ASS vaut la taille de sortie et les valeurs en pixels
+(police, contour, marge) sont mises a l'echelle de la hauteur reelle -- sans
+cela le texte serait etire horizontalement et passerait derriere le logo, ce
+qu'un premier rendu a effectivement montre.
 
 ### Radar YouTube et Twitch
 
@@ -360,6 +415,7 @@ reecrits, par la page Parametres. Trois emplacements distincts :
 | Quoi | Ou | Survit a une desinstallation |
 |---|---|---|
 | Projets et clips generes | `Documents\ClipFarming` (modifiable dans Parametres) | oui |
+| Videos completes telechargees | `%LOCALAPPDATA%\ClipFarming\videos` (modifiable dans Parametres) | oui |
 | Caches, reglages, cle YouTube | `%LOCALAPPDATA%\ClipFarming` | oui |
 | Modele Whisper | `%HF_HOME%` si defini, sinon `~/.cache/huggingface` | oui |
 | Application elle-meme et `config/` | `Program Files\ClipFarming` | non, supprimee |
@@ -663,6 +719,17 @@ python main.py --search "podcast entrepreneuriat francais" --max-results 10 --so
 # Analyser une video trouvee (telecharge puis lance le pipeline normal)
 python main.py --youtube <id_ou_url> --confirm-rights --clip-duration 45 --nb-clips 5
 ```
+
+**Telecharger une video complete (interface graphique).** La page Recherche a un
+bouton « ⬇ Telecharger » sur chaque resultat : il recupere la video ENTIERE,
+sans transcription, sans scoring et sans decoupage -- une video complete sert a
+autre chose qu'a produire des clips, et lui faire traverser l'analyse couterait
+plusieurs minutes de calcul pour un resultat dont on ne veut pas. La qualite
+(meilleure disponible par defaut) et le dossier de destination sont demandes
+avant, la progression est affichee en megaoctets et le transfert s'annule. Le
+verrou de consentement est le meme que pour l'analyse (voir ci-dessous). A la
+fin, la video peut partir directement dans Voice Studio pour y poser une
+narration.
 
 Le tri `--sort potential` utilise le **Video Potential Score** (`youtube/ranking.py`) : pertinence + popularite (vues, echelle log) + duree exploitable (combien de clips tiennent dedans) + un proxy de qualite tres faible base uniquement sur la duree. **Ce n'est pas le Hook Score** (`config/settings.json`) : le premier note une video entiere avant tout telechargement a partir de simples metadonnees, le second note un passage precis apres transcription reelle. Les deux ne sont jamais additionnes.
 

@@ -124,12 +124,27 @@ class MainWindow(QMainWindow):
         self.controller.analysis_failed.connect(self._show_analysis_error)
         self.controller.analysis_cancelled.connect(self._show_analysis_cancelled)
         self.controller.search_failed.connect(self._show_search_error)
+        self.controller.open_in_voice_studio.connect(self._open_in_voice_studio)
 
     def _show_analysis_error(self, message: str) -> None:
         QMessageBox.critical(self, "Échec de l'analyse", message)
 
     def _show_analysis_cancelled(self) -> None:
         QMessageBox.information(self, "Analyse annulée", "L'analyse a été annulée.")
+
+    def _open_in_voice_studio(self, payload: dict) -> None:
+        """Aiguillage Recherche -> Voice Studio.
+
+        La page Recherche ne connait pas Voice Studio : elle dit ce qu'elle a
+        telecharge, et c'est ici -- le seul endroit qui detient toutes les
+        pages -- qu'on affiche la bonne et qu'on lui passe la video.
+        """
+        page = self.pages.get("voice")
+        if page is None:
+            return
+        self.show_page("voice")
+        if hasattr(page, "open_source_video"):
+            page.open_source_video(payload)
 
     def _show_search_error(self, message: str) -> None:
         QMessageBox.critical(self, "Échec de la recherche", message)
