@@ -22,6 +22,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_IMAGE = "branding/watermark.png"
+# Voice Studio pose un AUTRE logo que le rendu des clips : les deux ne
+# publient pas sous le meme nom. Meme forme (un disque detoure, fond
+# transparent) donc mêmes reglages de taille, de marge et d'opacite -- seule
+# l'image change.
+VOICE_STUDIO_IMAGE = "branding/watermark-landscapesfr.png"
+# Ce logo-la porte du TEXTE (un nom sur l'anneau, une baseline en bas). A 14 %
+# de la largeur, comme la marque des clips, ce texte n'est plus lisible : un
+# ecusson detaille a besoin de plus de place et de plus d'opacite qu'un
+# pictogramme. D'ou deux valeurs propres a Voice Studio, remplacables dans
+# config/editing.json.
+VOICE_STUDIO_SIZE_PERCENT = 18.0
+VOICE_STUDIO_OPACITY = 0.85
 
 POSITIONS = ("haut-gauche", "haut-centre", "haut-droite",
              "bas-gauche", "bas-centre", "bas-droite")
@@ -54,8 +66,8 @@ class Watermark:
         return bool(self.image) and Path(self.image).is_file()
 
 
-def default_image_path() -> Path:
-    """Le logo livre avec l'application.
+def asset_path(name: str) -> Path:
+    """Chemin d'un logo livre avec l'application.
 
     Passe par app_base_dir() et non par un chemin relatif : une fois compile,
     le dossier courant n'est pas celui de l'executable, et un chemin relatif
@@ -63,7 +75,17 @@ def default_image_path() -> Path:
     """
     from core.paths import app_base_dir
 
-    return app_base_dir() / "assets" / DEFAULT_IMAGE
+    return app_base_dir() / "assets" / name
+
+
+def default_image_path() -> Path:
+    """Le logo des clips."""
+    return asset_path(DEFAULT_IMAGE)
+
+
+def voice_studio_image_path() -> Path:
+    """Le logo des videos narrees de Voice Studio."""
+    return asset_path(VOICE_STUDIO_IMAGE)
 
 
 def _clamp(value: float, low: float, high: float) -> float:

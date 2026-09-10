@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
@@ -480,3 +481,114 @@ class TestTelechargementComplet:
         with pytest.raises(CancelledError):
             download_video("abc", str(tmp_path), consent_confirmed=True,
                            cancel_token=token)
+
+
+class TestFiligrane:
+    """Voice Studio pose un AUTRE logo que le rendu des clips : une video
+    narree n'est pas publiee sous le meme nom qu'un clip."""
+
+    def _block(self, **overrides) -> dict:
+        block = {"enabled": True, "image": "", "position": "bas-centre",
+                 "size_percent": 14, "opacity": 0.7, "margin_percent": 12}
+        block.update(overrides)
+        return block
+
+    def _patch(self, monkeypatch, block: dict) -> None:
+        from core import config_loader
+
+        monkeypatch.setattr(config_loader, "_load_editing_config", lambda: {"watermark": block})
+
+    def test_le_logo_de_voice_studio_n_est_pas_celui_des_clips(self, monkeypatch):
+        from video import watermark as watermark_module
+        from voice_studio.video_service import _watermark_for
+
+        self._patch(monkeypatch, self._block())
+        chosen = _watermark_for(VideoSettings(watermark_enabled=True))
+        assert chosen is not None
+        assert Path(chosen.image).name == Path(watermark_module.VOICE_STUDIO_IMAGE).name
+        assert Path(chosen.image).name != Path(watermark_module.DEFAULT_IMAGE).name
+
+    def test_l_image_est_livree_avec_l_application(self):
+        from video.watermark import voice_studio_image_path
+
+        assert voice_studio_image_path().is_file(), \
+            "le logo doit être dans assets/, sinon l'exe compilé ne l'aura pas"
+
+    def test_le_logo_est_un_disque_detoure(self):
+        """Un carre opaque poserait un rectangle sur la video. Les coins
+        doivent etre transparents et le centre opaque."""
+        from PIL import Image
+
+        from video.watermark import voice_studio_image_path
+
+        with Image.open(voice_studio_image_path()) as image:
+            assert image.mode == "RGBA"
+            assert image.width == image.height, "un disque tient dans un carré"
+            pixels = image.load()
+            w, h = image.size
+            for corner in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+                assert pixels[corner][3] == 0, f"coin {corner} non transparent"
+            assert pixels[w // 2, h // 2][3] == 255
+
+    def test_il_est_pose_plus_grand_et_plus_opaque_que_celui_des_clips(self, monkeypatch):
+        """Ce logo porte du texte : a la taille du pictogramme des clips, ce
+        texte n'est plus lisible."""
+        from video import watermark as watermark_module
+        from voice_studio.video_service import _watermark_for
+
+        block = self._block()
+        self._patch(monkeypatch, block)
+        chosen = _watermark_for(VideoSettings(watermark_enabled=True))
+        assert chosen.size_percent == watermark_module.VOICE_STUDIO_SIZE_PERCENT
+        assert chosen.opacity == watermark_module.VOICE_STUDIO_OPACITY
+        assert chosen.size_percent > block["size_percent"]
+        assert chosen.opacity > block["opacity"]
+
+    def test_la_position_et_la_marge_restent_celles_de_la_configuration(self, monkeypatch):
+        """Un seul bloc de reglages : seuls l'image, la taille et l'opacite
+        sont propres a Voice Studio."""
+        from voice_studio.video_service import _watermark_for
+
+        self._patch(monkeypatch, self._block(position="haut-droite", margin_percent=5))
+        chosen = _watermark_for(VideoSettings(watermark_enabled=True))
+        assert chosen.position == "haut-droite"
+        assert chosen.margin_percent == 5
+
+    def test_la_configuration_peut_remplacer_les_trois_valeurs(self, monkeypatch, tmp_path):
+        from voice_studio.video_service import _watermark_for
+
+        autre = tmp_path / "autre-logo.png"
+        autre.write_bytes(b"pas une vraie image, seul le chemin compte ici")
+        self._patch(monkeypatch, self._block(
+            voice_studio_image=str(autre), voice_studio_size_percent=25,
+            voice_studio_opacity=0.5))
+        chosen = _watermark_for(VideoSettings(watermark_enabled=True))
+        assert chosen.image == str(autre)
+        assert chosen.size_percent == 25
+        assert chosen.opacity == 0.5
+
+    def test_le_filigrane_coupe_dans_l_interface_ne_pose_rien(self, monkeypatch):
+        from voice_studio.video_service import _watermark_for
+
+        self._patch(monkeypatch, self._block())
+        assert _watermark_for(VideoSettings(watermark_enabled=False)) is None
+
+    def test_le_filigrane_coupe_dans_la_configuration_ne_pose_rien(self, monkeypatch):
+        from voice_studio.video_service import _watermark_for
+
+        self._patch(monkeypatch, self._block(enabled=False))
+        assert _watermark_for(VideoSettings(watermark_enabled=True)) is None
+
+    def test_les_sous_titres_ne_peuvent_pas_retomber_sur_le_logo(self, monkeypatch):
+        """Le logo est plus grand qu'avant : la bande qu'il occupe doit grandir
+        avec lui, sinon le texte lui passe dessus."""
+        from video.watermark import reserved_bottom_px
+        from voice_studio.video_service import _watermark_for, scale_style
+
+        self._patch(monkeypatch, self._block())
+        chosen = _watermark_for(VideoSettings(watermark_enabled=True))
+        reserved = reserved_bottom_px(chosen, 1080, out_h=1920)
+        assert reserved > 0
+        _scaled, margin = scale_style({"font_size": 96, "margin_v": 300},
+                                      1080, 1920, reserved)
+        assert margin >= reserved

@@ -103,9 +103,12 @@
     }
   },
   "watermark": {
-    "_comment": "Filigrane pose sur chaque clip. L'image par defaut est assets/branding/watermark.png, livree avec l'application ; 'image' permet d'en designer une autre. La taille est un POURCENTAGE de la largeur de sortie et non un nombre de pixels, pour que le logo pese pareil a l'oeil en 9:16 et en 16:9 ; la marge est la distance au bord le plus proche, dans la meme unite. En BAS AU CENTRE par defaut : la colonne d'icones de TikTok et d'Instagram est a droite, la legende a gauche, et les sous-titres sont incrustes plus haut (300 a 460 px du bas selon le style) -- le centre bas est la seule zone basse reellement libre. Les sous-titres ne peuvent pas y redescendre : la bande occupee par le logo devient leur plancher. Positions : haut-gauche, haut-centre, haut-droite, bas-gauche, bas-centre, bas-droite.",
+    "_comment": "Filigrane pose sur chaque clip. L'image par defaut est assets/branding/watermark.png, livree avec l'application ; 'image' permet d'en designer une autre. Voice Studio pose un AUTRE logo (assets/branding/watermark-landscapesfr.png) avec les memes reglages de position, de taille et d'opacite : une video narree n'est pas publiee sous le meme nom qu'un clip. 'voice_studio_image' permet de le remplacer sans toucher a celui des clips, et 'voice_studio_size_percent' / 'voice_studio_opacity' d'en changer la taille et l'opacite (0 = valeurs par defaut de Voice Studio, plus grandes que celles des clips parce que ce logo porte du texte). La taille est un POURCENTAGE de la largeur de sortie et non un nombre de pixels, pour que le logo pese pareil a l'oeil en 9:16 et en 16:9 ; la marge est la distance au bord le plus proche, dans la meme unite. En BAS AU CENTRE par defaut : la colonne d'icones de TikTok et d'Instagram est a droite, la legende a gauche, et les sous-titres sont incrustes plus haut (300 a 460 px du bas selon le style) -- le centre bas est la seule zone basse reellement libre. Les sous-titres ne peuvent pas y redescendre : la bande occupee par le logo devient leur plancher. Positions : haut-gauche, haut-centre, haut-droite, bas-gauche, bas-centre, bas-droite.",
     "enabled": true,
     "image": "",
+    "voice_studio_image": "",
+    "voice_studio_size_percent": 0,
+    "voice_studio_opacity": 0,
     "position": "bas-centre",
     "size_percent": 14,
     "opacity": 0.70,

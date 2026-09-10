@@ -259,15 +259,33 @@ def scale_style(style: dict, out_w: int, out_h: int,
 
 
 def _watermark_for(settings) -> object | None:
-    """Filigrane a poser, ou None. Meme source que le rendu des clips."""
+    """Filigrane a poser, ou None.
+
+    Memes REGLAGES que le rendu des clips (position, taille, opacite, marge :
+    un seul bloc de configuration), mais une AUTRE IMAGE : une video narree
+    n'est pas publiee sous le meme nom qu'un clip. Le logo par defaut est celui
+    de Voice Studio ; `voice_studio_image` dans config/editing.json permet d'en
+    designer un autre sans toucher a celui des clips.
+    """
     if not getattr(settings, "watermark_enabled", False):
         return None
     try:
         from core.config_loader import _load_editing_config
-        from video.watermark import from_config
+        from video import watermark as watermark_module
 
-        block = (_load_editing_config().get("watermark") or {})
-        return from_config(block) if block.get("enabled", False) else None
+        block = dict(_load_editing_config().get("watermark") or {})
+        if not block.get("enabled", False):
+            return None
+        chosen = str(block.get("voice_studio_image") or "").strip()
+        block["image"] = chosen or str(watermark_module.voice_studio_image_path())
+        # Taille et opacite propres a ce logo : il porte du texte, qui
+        # disparait a la taille du pictogramme des clips. Une valeur mise dans
+        # la configuration gagne, sinon on prend celle de Voice Studio.
+        block["size_percent"] = (block.get("voice_studio_size_percent")
+                                 or watermark_module.VOICE_STUDIO_SIZE_PERCENT)
+        block["opacity"] = (block.get("voice_studio_opacity")
+                            or watermark_module.VOICE_STUDIO_OPACITY)
+        return watermark_module.from_config(block)
     except Exception as error:                    # pragma: no cover - config abimee
         logger.warning(f"Filigrane ignoré ({error}).")
         return None

@@ -216,6 +216,17 @@ mesuree sur le fichier (ffprobe), jamais calculee. L'estimation affichee sous le
 script, elle, est annoncee comme une estimation et ne sert qu'a prevenir avant
 de generer.
 
+**Le filigrane n'est pas celui des clips.** Une video narree n'est pas publiee
+sous le meme nom qu'un clip : Voice Studio pose
+`assets/branding/watermark-landscapesfr.png`, le rendu des clips garde
+`watermark.png`. Position et marge viennent du meme bloc de configuration (un
+seul jeu de reglages), mais la taille et l'opacite sont propres a ce logo : il
+porte du texte, illisible a la taille d'un pictogramme. Les trois valeurs sont
+remplacables par `voice_studio_image`, `voice_studio_size_percent` et
+`voice_studio_opacity` dans `config/editing.json`, sans toucher a celui des
+clips. La bande basse qu'il occupe reste le plancher des sous-titres, qui ne
+peuvent donc pas lui passer dessus.
+
 **Aucun nouveau systeme.** La voix vient du bloc « Generer une voix » juste
 au-dessus (meme moteur, meme voix, meme vitesse, meme cache) ; les styles de
 sous-titres sont ceux de `config/subtitles.json`, decoupes par
