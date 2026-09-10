@@ -64,6 +64,19 @@ class ChatterboxDialog(QDialog):
 
         self.runtime_card = self._card()
         layout.addWidget(self.runtime_card)
+
+        python_row = QHBoxLayout()
+        self.python_label = QLabel("")
+        self.python_label.setProperty("role", "muted")
+        self.python_label.setWordWrap(True)
+        python_row.addWidget(self.python_label, stretch=1)
+        self.python_btn = QPushButton("Choisir python.exe…")
+        self.python_btn.setToolTip(
+            "Si Python est installé mais n'est pas détecté, désigne son fichier "
+            "python.exe : l'application l'utilisera tel quel.")
+        self.python_btn.clicked.connect(self._pick_python)
+        python_row.addWidget(self.python_btn)
+        layout.addLayout(python_row)
         self.model_card = self._card()
         layout.addWidget(self.model_card)
 
@@ -134,10 +147,21 @@ class ChatterboxDialog(QDialog):
         spec = catalogue.model_spec()
 
         self.intro.setText(
-            "Voix locale plus expressive que Piper. Deux téléchargements distincts : "
-            "l'environnement d'exécution, puis le modèle. Tout reste sur cet "
-            "ordinateur — aucun texte n'est envoyé nulle part.\n"
+            "Voix locale plus expressive que Piper. Deux téléchargements distincts et "
+            "indépendants : l'environnement d'exécution et le modèle. L'ordre n'a pas "
+            "d'importance, mais les deux sont nécessaires pour générer. Tout reste sur "
+            "cet ordinateur — aucun texte n'est envoyé nulle part.\n"
             + (spec.get("watermark") or ""))
+
+        candidate = runtime.find_python()
+        if candidate is None:
+            self.python_label.setText(
+                "⚠️ Aucun Python 3.10 à 3.13 détecté. Installe-le depuis python.org en "
+                "cochant « Add python.exe to PATH », ou désigne-le ici. Si tu viens de "
+                "l'installer, redémarre l'application : elle lit le PATH à son démarrage.")
+        else:
+            version = ".".join(str(part) for part in candidate.version)
+            self.python_label.setText(f"Python {version} détecté : {candidate.executable}")
 
         estimated = runtime_state.get("estimated_download_mb")
         self.runtime_card.label.setText(
@@ -170,6 +194,38 @@ class ChatterboxDialog(QDialog):
                                    and (runtime_state["ready"] or model_state["installed"]))
 
     # ---------------------------------------------------------- actions
+    def _pick_python(self) -> None:
+        """Designer python.exe a la main.
+
+        Un repli qui compte : la detection automatique peut echouer pour une
+        raison qui n'a rien a voir avec Python (PATH herite d'avant son
+        installation, alias du Microsoft Store), et rester bloque devant un
+        message alors que Python est bien la serait absurde.
+        """
+        from PySide6.QtWidgets import QFileDialog
+
+        from gui import settings_store
+
+        pattern = "python.exe" if __import__("os").name == "nt" else "python*"
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choisir l'interpréteur Python", "",
+            f"Interpréteur Python ({pattern});;Tous les fichiers (*)")
+        if not path:
+            return
+
+        candidate = runtime.find_python(path)
+        if candidate is None:
+            QMessageBox.warning(
+                self, "Interpréteur refusé",
+                "Ce fichier n'a pas répondu comme un Python 3.10 à 3.13.\n\n"
+                "Vérifie qu'il s'agit bien de python.exe et non d'un raccourci.")
+            return
+
+        settings_store.save({"chatterbox_python": path})
+        self.status.setText(
+            f"Python {'.'.join(str(p) for p in candidate.version)} retenu : {path}")
+        self.refresh()
+
     def _start(self, mode: str) -> None:
         if self._worker is not None:
             return
@@ -177,8 +233,12 @@ class ChatterboxDialog(QDialog):
             QMessageBox.warning(
                 self, "Python introuvable",
                 "Chatterbox a besoin d'un Python 3.10 à 3.13 installé sur cet ordinateur "
-                "pour créer son environnement.\n\nInstalle-le depuis python.org en cochant "
-                "« Add python.exe to PATH », puis relance cette installation.")
+                "pour créer son environnement.\n\n"
+                "Si tu viens de l'installer, redémarre l'application : elle lit le PATH "
+                "à son démarrage, et une variable mise à jour n'atteint pas un programme "
+                "déjà lancé.\n\n"
+                "S'il est bien installé, utilise « Choisir python.exe… » pour le désigner "
+                "directement.\n\nCherché ici :\n" + runtime.describe_search())
             return
 
         self._cancel_token = CancelToken()

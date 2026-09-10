@@ -638,3 +638,103 @@ class TestPanneauDeReglages:
         libelles = " ".join(panel.voice_mode.itemText(i)
                             for i in range(panel.voice_mode.count())).lower()
         assert "cloner" not in libelles and "internet" not in libelles
+
+
+class TestDetectionDePython:
+    """Trouver l'interpreteur, y compris quand le PATH ment.
+
+    DEFAUT REEL SIGNALE EN USAGE : sur un poste ou `python --version`
+    repondait « Python 3.12.7 » dans l'invite de commandes, l'application
+    compilee affichait « Python introuvable ».
+    """
+
+    def test_un_alias_vide_du_microsoft_store_est_ignore(self, tmp_path):
+        """Windows pose dans WindowsApps des fichiers de ZERO octet qui ouvrent
+        le Store au lieu de lancer Python -- et `shutil.which` les trouve en
+        premier."""
+        alias = tmp_path / "python.exe"
+        alias.write_bytes(b"")
+        assert runtime._probe(str(alias)) is None
+
+    def test_un_interpreteur_reel_est_reconnu(self):
+        candidate = runtime._probe(sys.executable)
+        assert candidate is not None
+        assert candidate.version[:2] >= (3, 10)
+
+    def test_le_lanceur_windows_est_essaye_avec_une_version(self, monkeypatch):
+        """`py` seul lance la version « par defaut », qui peut sortir de la
+        plage acceptee : les versions explicites passent avant."""
+        monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+        monkeypatch.setattr(runtime, "_windows_install_paths", lambda: [])
+        plan = [" ".join(c) for c in runtime.search_plan()]
+        assert any(entry.endswith("-3.12") for entry in plan)
+        assert any(entry.endswith("-3.11") for entry in plan)
+
+    def test_un_chemin_designe_a_la_main_passe_en_premier(self):
+        plan = runtime.search_plan("/mon/python")
+        assert plan[0] == ["/mon/python"]
+
+    def test_le_chemin_enregistre_dans_les_reglages_est_essaye(self, monkeypatch):
+        from gui import settings_store
+
+        monkeypatch.setattr(settings_store, "get",
+                            lambda key: "/choisi/python.exe" if key == "chatterbox_python" else None)
+        assert ["/choisi/python.exe"] in runtime.search_plan()
+
+    def test_les_emplacements_d_installation_windows_sont_regardes(self, monkeypatch, tmp_path):
+        """Le PATH d'un programme deja lance ne voit pas une installation
+        faite apres son demarrage : on regarde donc aussi les dossiers
+        habituels, directement."""
+        monkeypatch.setattr(runtime, "_is_windows", lambda: True)
+        local = tmp_path / "Local"
+        (local / "Programs" / "Python" / "Python312").mkdir(parents=True)
+        (local / "Programs" / "Python" / "Python312" / "python.exe").write_bytes(b"MZ")
+        monkeypatch.setenv("LOCALAPPDATA", str(local))
+        trouve = [c[0] for c in runtime._windows_install_paths()]
+        assert any(entry.endswith("python.exe") for entry in trouve)
+
+    def test_le_plan_de_recherche_est_sans_doublon(self):
+        plan = [" ".join(c) for c in runtime.search_plan("/mon/python")]
+        assert len(plan) == len(set(plan))
+
+    def test_le_diagnostic_dit_ou_l_on_a_cherche(self):
+        """Un « introuvable » sans dire ou l'on a cherche ne laisse aucune
+        prise a l'utilisateur."""
+        texte = runtime.describe_search()
+        assert texte.startswith("•")
+        assert len(texte.splitlines()) >= 1
+
+    def test_le_lanceur_reste_une_commande_complete(self, monkeypatch):
+        """« py -3.12 » doit rester en deux morceaux jusqu'a l'appel, sinon
+        l'environnement serait cree par le mauvais Python."""
+        vu = {}
+
+        def _fake_run(command, **kwargs):
+            vu["command"] = command
+
+            class _Result:
+                returncode = 0
+                stdout = "3.12.7\n"
+            return _Result()
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        candidate = runtime._probe(["py", "-3.12"])
+        assert candidate.executable == "py -3.12"
+        assert vu["command"][:2] == ["py", "-3.12"]
+
+    def test_l_entree_standard_est_neutralisee(self, monkeypatch):
+        """Une application fenetree n'a pas d'entree standard valable, et le
+        processus fils heritait d'un descripteur invalide."""
+        vu = {}
+
+        def _fake_run(command, **kwargs):
+            vu.update(kwargs)
+
+            class _Result:
+                returncode = 0
+                stdout = "3.12.7\n"
+            return _Result()
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        runtime._probe(sys.executable)
+        assert vu.get("stdin") == subprocess.DEVNULL

@@ -35,6 +35,10 @@ _DEFAULTS = {
     # clips : une video entiere pese des centaines de megaoctets, la ranger
     # avec des clips de trente secondes rend le dossier des clips illisible.
     "videos_dir": None,
+    # Interpreteur Python utilise pour creer l'environnement Chatterbox.
+    # None = detection automatique. Renseigne quand l'utilisateur designe
+    # lui-meme son python.exe, la detection ayant echoue.
+    "chatterbox_python": None,
     "tts_engine": None,
     "tts_voice": None,
     "tts_rate": 1.0,

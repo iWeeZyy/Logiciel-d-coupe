@@ -223,9 +223,19 @@ passe par CTranslate2, et cela ne change pas. Consequence directe : elle
 demarre et fonctionne sans Chatterbox, et une casse de son cote ne peut pas
 empecher Piper ou Faster-Whisper de fonctionner.
 
-**Deux telechargements distincts, tous deux declenches par un bouton** dans
-« Installer / gerer Chatterbox » : l'environnement (Python + PyTorch +
-Chatterbox), puis les poids du modele. Les poids passent par le telechargeur
+**Deux telechargements distincts et INDEPENDANTS, tous deux declenches par un
+bouton** dans « Installer / gerer Chatterbox » : l'environnement (Python +
+PyTorch + Chatterbox) et les poids du modele. L'ordre n'a aucune importance --
+les poids sont recuperes par le telechargeur de l'application, qui n'a pas
+besoin de l'environnement -- mais les deux sont necessaires pour generer.
+
+**Si Python n'est pas detecte alors qu'il est installe**, deux causes connues,
+toutes deux traitees : une variable PATH mise a jour n'atteint pas un programme
+deja lance (redemarrer l'application suffit), et Windows pose dans
+`WindowsApps` des fichiers de zero octet qui ouvrent le Microsoft Store au lieu
+de lancer Python (ils sont ignores). En dernier recours, « Choisir
+python.exe… » designe l'interpreteur directement, et le choix est conserve. La
+fenetre affiche toujours ou elle a cherche. Les poids passent par le telechargeur
 deja utilise pour les voix Piper -- reprise apres coupure, annulation,
 verification de l'espace disque. Rien ne part au demarrage de l'application.
 

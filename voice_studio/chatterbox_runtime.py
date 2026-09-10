@@ -112,11 +112,39 @@ def is_outdated() -> bool:
 
 # ------------------------------------------------------------ interpreteur
 
-def _probe(executable: str) -> PythonCandidate | None:
+def _probe(command) -> PythonCandidate | None:
+    """Demande sa version a un interpreteur, ou None s'il ne repond pas.
+
+    Trois precautions qui viennent d'un defaut reel : sur un poste ou
+    `python --version` repondait parfaitement dans l'invite de commandes,
+    l'application compilee ne trouvait rien.
+
+    - `stdin=DEVNULL` : une application FENETREE n'a pas d'entree standard
+      valable, et le processus fils herite d'un descripteur invalide. Python
+      demarre alors mal, ou pas du tout.
+    - `CREATE_NO_WINDOW` : sans lui, chaque essai fait clignoter une console
+      noire a l'ecran, et certains environnements bloquent tout simplement la
+      creation de la console.
+    - un fichier VIDE n'est pas un interpreteur : Windows installe dans
+      WindowsApps des « alias » de zero octet qui ouvrent le Microsoft Store
+      au lieu de lancer Python. `shutil.which` les trouve en premier.
+    """
+    command = [command] if isinstance(command, str) else list(command)
+    if not command:
+        return None
+    executable = command[0]
+    try:
+        if Path(executable).is_file() and Path(executable).stat().st_size == 0:
+            return None
+    except OSError:                                    # pragma: no cover - chemin illisible
+        pass
+
+    creation = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
         result = subprocess.run(
-            [executable, "-c", "import sys;print('%d.%d.%d' % sys.version_info[:3])"],
-            capture_output=True, text=True, timeout=20)
+            command + ["-c", "import sys;print('%d.%d.%d' % sys.version_info[:3])"],
+            capture_output=True, text=True, timeout=20,
+            stdin=subprocess.DEVNULL, creationflags=creation)
     except (OSError, subprocess.SubprocessError):
         return None
     if result.returncode != 0:
@@ -125,7 +153,10 @@ def _probe(executable: str) -> PythonCandidate | None:
         version = tuple(int(p) for p in result.stdout.strip().split("."))
     except ValueError:
         return None
-    return PythonCandidate(executable=executable, version=version)
+    # Le lanceur `py` sert d'interpreteur : on garde la commande complete
+    # (« py -3.12 »), sinon l'environnement serait cree par le mauvais Python.
+    return PythonCandidate(executable=" ".join(command) if len(command) > 1 else executable,
+                           version=version)
 
 
 def _acceptable(version: tuple) -> bool:
@@ -135,6 +166,96 @@ def _acceptable(version: tuple) -> bool:
     return low <= version[:2] <= high
 
 
+def _is_windows() -> bool:
+    """Une fonction plutot que `os.name == "nt"` en ligne : c'est le seul
+    moyen de verifier le chemin Windows depuis un autre systeme. Remplacer
+    `os.name` lui-meme casserait pathlib pour tout le processus."""
+    return os.name == "nt"
+
+
+def _windows_install_paths() -> list[list[str]]:
+    """Emplacements ou l'installateur officiel pose Python sous Windows.
+
+    Cherches DIRECTEMENT, sans passer par le PATH : une variable
+    d'environnement mise a jour n'atteint pas les programmes deja lances
+    (l'explorateur compris), et l'application heritait alors d'un PATH
+    d'avant l'installation de Python. C'est exactement ce qui s'est produit
+    sur un poste ou l'invite de commandes, elle, voyait Python.
+    """
+    if not _is_windows():
+        return []
+
+    roots = []
+    for variable in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"):
+        base = os.environ.get(variable)
+        if base:
+            roots.append(Path(base) / "Programs" / "Python")
+            roots.append(Path(base) / "Python")
+    roots.append(Path("C:/"))
+
+    found: list[list[str]] = []
+    for root in roots:
+        try:
+            if not root.is_dir():
+                continue
+            for entry in sorted(root.iterdir(), reverse=True):
+                if not entry.is_dir() or not entry.name.lower().startswith("python"):
+                    continue
+                executable = entry / "python.exe"
+                if executable.is_file():
+                    found.append([str(executable)])
+        except OSError:                                # pragma: no cover - dossier protege
+            continue
+    return found
+
+
+def search_plan(extra: str = "") -> list[list[str]]:
+    """Tout ce qui va etre essaye, dans l'ordre. Sert aussi au diagnostic :
+    quand rien n'est trouve, l'interface peut dire OU l'on a cherche."""
+    import shutil
+
+    plan: list[list[str]] = []
+    if extra:
+        plan.append([extra])
+    configured = ""
+    try:
+        from gui import settings_store
+
+        configured = settings_store.get("chatterbox_python") or ""
+    except Exception:                                  # pragma: no cover - reglages illisibles
+        configured = ""
+    if configured:
+        plan.append([configured])
+    if os.environ.get("CLIPFARMING_PYTHON"):
+        plan.append([os.environ["CLIPFARMING_PYTHON"]])
+    if not getattr(sys, "frozen", False):
+        plan.append([sys.executable])
+
+    for name in ("python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"):
+        found = shutil.which(name)
+        if found:
+            plan.append([found])
+
+    if _is_windows():
+        launcher = shutil.which("py") or "py"
+        # Versions explicites d'abord : `py` seul lance la version « par
+        # defaut », qui peut etre en dehors de la plage acceptee.
+        for version in ("-3.12", "-3.11", "-3.13", "-3.10"):
+            plan.append([launcher, version])
+        plan.append([launcher])
+        plan.extend(_windows_install_paths())
+
+    unique: list[list[str]] = []
+    seen = set()
+    for command in plan:
+        key = " ".join(command)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(command)
+    return unique
+
+
 def find_python(extra: str = "") -> PythonCandidate | None:
     """Un interpreteur du systeme capable d'accueillir Chatterbox.
 
@@ -142,31 +263,18 @@ def find_python(extra: str = "") -> PythonCandidate | None:
     il n'a ni pip ni bibliotheque standard installable. En developpement, il
     fait l'affaire s'il a la bonne version.
     """
-    import shutil
-
-    candidates: list[str] = []
-    if extra:
-        candidates.append(extra)
-    if not getattr(sys, "frozen", False):
-        candidates.append(sys.executable)
-    for name in ("python3.12", "python3.11", "python3.10", "python3", "python"):
-        found = shutil.which(name)
-        if found:
-            candidates.append(found)
-    if os.name == "nt":
-        launcher = shutil.which("py")
-        if launcher:
-            candidates.append(launcher)
-
-    seen = set()
-    for executable in candidates:
-        if executable in seen:
-            continue
-        seen.add(executable)
-        candidate = _probe(executable)
+    for command in search_plan(extra):
+        candidate = _probe(command)
         if candidate and _acceptable(candidate.version):
             return candidate
     return None
+
+
+def describe_search(extra: str = "") -> str:
+    """Ce qui a ete essaye, en clair. Un « introuvable » sans dire ou l'on a
+    cherche ne laisse aucune prise a l'utilisateur."""
+    lines = [" ".join(command) for command in search_plan(extra)]
+    return "\n".join(f"• {line}" for line in lines[:12]) or "• (aucune piste)"
 
 
 # --------------------------------------------------------------- execution
@@ -228,14 +336,17 @@ def install(on_progress: Optional[Callable] = None,
             f"Aucun Python {low} à {high} n'a été trouvé sur cet ordinateur.\n\n"
             "Chatterbox a besoin d'un Python installé à côté de l'application pour "
             "créer son environnement. Installe-le depuis python.org (coche « Add "
-            "python.exe to PATH »), puis relance cette installation.")
+            "python.exe to PATH »), puis relance cette installation.\n\n"
+            "Si Python est déjà installé, désigne son fichier python.exe : "
+            "l'application l'utilisera tel quel.\n\nCherché ici :\n"
+            + describe_search(base_python))
 
     directory = runtime_dir()
     directory.mkdir(parents=True, exist_ok=True)
     marker_path().unlink(missing_ok=True)
 
     if not python_executable().is_file():
-        _run([candidate.executable, "-m", "venv", str(directory)],
+        _run(candidate.executable.split(" ") + ["-m", "venv", str(directory)],
              on_progress, cancel_token, "création de l'environnement")
 
     python = str(python_executable())
