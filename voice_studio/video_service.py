@@ -38,6 +38,7 @@ tts.py et de transcription/cache.py les retrouvent quand meme.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -48,6 +49,7 @@ from core.models import Transcript
 from utils.errors import ClipFarmingError
 from voice_studio import align
 from voice_studio import narration as narration_module
+from voice_studio import voice_progress
 from voice_studio import store, transcription, tts, video_edit
 
 logger = get_logger()
@@ -412,10 +414,23 @@ def create_video(request: VideoRequest, reporter: Reporter | None = None,
         if request.narration_wav and target.is_file():
             reporter.detail(1.0, "voix déjà générée, réutilisée")
         else:
+            # Meme compte rendu que dans la carte « Voix » : morceau en cours,
+            # temps ecoule, et duree restante des qu'un morceau est termine.
+            # Sans mesure precedente ici -- celles-ci vivent dans les reglages
+            # de l'interface, que cette couche n'a pas a connaitre -- donc
+            # l'estimation arrive apres le premier morceau, jamais avant.
+            tracker = voice_progress.GenerationProgress()
+            tracker.start(time.monotonic())
+
+            def _voice_event(event: dict) -> None:
+                shown = tracker.event(event or {}, time.monotonic())
+                reporter.detail(shown.fraction, shown.label)
+
             reporter.detail(None, "synthèse en cours")
             tts.synthesize(script, str(target), voice=request.voice,
                            rate=request.rate, volume=request.volume,
-                           sentence_pause_s=request.sentence_pause_s)
+                           sentence_pause_s=request.sentence_pause_s,
+                           on_progress=_voice_event, cancel_token=cancel_token)
         narration_wav = str(target)
         report.narration_wav = narration_wav
         _check()

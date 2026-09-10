@@ -143,6 +143,7 @@ def generate(job: dict) -> int:
     pieces = []
     for index, chunk in enumerate(chunks, start=1):
         emit("chunk", index=index, total=len(chunks), chars=len(chunk))
+        chunk_started = time.time()
         wav = model.generate(
             chunk,
             language_id=params.get("language") or "fr",
@@ -152,6 +153,10 @@ def generate(job: dict) -> int:
             temperature=float(params.get("temperature", 0.8)),
         )
         piece = _to_numpy(wav)
+        # La FIN du morceau, pas seulement son debut : c'est elle qui donne
+        # une vitesse mesuree, donc une duree restante qui vaut quelque chose.
+        emit("chunk_done", index=index, total=len(chunks), chars=len(chunk),
+             seconds=round(time.time() - chunk_started, 2))
         if pieces and silence is not None:
             pieces.append(silence)
         pieces.append(piece)

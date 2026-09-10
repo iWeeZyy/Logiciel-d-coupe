@@ -39,6 +39,14 @@ _DEFAULTS = {
     # None = detection automatique. Renseigne quand l'utilisateur designe
     # lui-meme son python.exe, la detection ayant echoue.
     "chatterbox_python": None,
+    # Deux MESURES de la derniere generation Chatterbox reussie sur CETTE
+    # machine : temps de chargement du modele, et secondes par caractere. Elles
+    # servent a annoncer une duree restante des la premiere seconde de la
+    # generation suivante. 0 = jamais mesure, et l'ecran se tait alors au lieu
+    # d'estimer. Jamais des constantes ecrites en dur : un processeur lent
+    # produit de grands nombres, et l'estimation le refletera.
+    "chatterbox_load_seconds": 0.0,
+    "chatterbox_seconds_per_char": 0.0,
     "tts_engine": None,
     "tts_voice": None,
     "tts_rate": 1.0,

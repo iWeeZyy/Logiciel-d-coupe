@@ -140,6 +140,12 @@ class ChatterboxEngine:
             "out_wav": str(out_wav),
         }
         Path(out_wav).parent.mkdir(parents=True, exist_ok=True)
+        if on_progress:
+            # Le decompte AVANT de lancer le processus : demarrer un Python et
+            # charger le modele prend du temps, et l'ecran doit pouvoir dire
+            # tout de suite ce qui l'attend plutot que rester vide.
+            on_progress({"event": "plan", "chunks": len(pieces),
+                         "chars": sum(len(piece) for piece in pieces)})
         self._run_worker(job, on_progress=on_progress, cancel_token=cancel_token)
         if not Path(out_wav).is_file():
             raise TtsError(

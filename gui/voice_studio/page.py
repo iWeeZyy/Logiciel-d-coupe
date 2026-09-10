@@ -8,9 +8,10 @@ lecture synchronisee sans le media en local.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -37,7 +38,8 @@ from gui.voice_studio.transcript_view import TranscriptView
 from gui.voice_studio.video_panel import VideoPanel
 from gui.voice_studio.voices_dialog import VoicesDialog
 from gui.voice_studio.workers import AnalysisWorker, VoiceWorker
-from voice_studio import exporters, piper_models, services, store, tts
+from voice_studio import (exporters, piper_models, services, store, tts,
+                          voice_progress)
 from voice_studio.models import SOURCE_LABELS, TtsSettings
 from voice_studio.transcript import VIEW_CLEAN, VIEW_RAW, coverage, format_timestamp
 from voice_studio.transcription import RIGHTS_NOTICE
@@ -73,6 +75,14 @@ class VoiceStudioPage(QWidget):
         self.project = None
         self._worker = None
         self._voice_worker = None
+        self._voice_cancel = None
+        self._voice_progress = None
+        # Fait avancer la barre ENTRE deux evenements : un morceau de narration
+        # dure des dizaines de secondes, et une barre immobile pendant tout ce
+        # temps laisse croire que rien ne se passe.
+        self._voice_timer = QTimer(self)
+        self._voice_timer.setInterval(500)
+        self._voice_timer.timeout.connect(self._on_voice_tick)
         self._cancel_token = None
         self._last_audio = ""
         self._voices = []
@@ -386,8 +396,23 @@ class VoiceStudioPage(QWidget):
         self.export_mp3_btn = QPushButton("Exporter MP3")
         self.export_mp3_btn.clicked.connect(lambda: self._export_audio("mp3"))
         row.addWidget(self.export_mp3_btn)
+
+        # Visible seulement pendant une generation : Chatterbox prend des
+        # dizaines de secondes, et il n'y avait jusqu'ici aucun moyen
+        # d'interrompre une narration lancee par erreur.
+        self.voice_cancel_btn = QPushButton("Annuler")
+        self.voice_cancel_btn.setVisible(False)
+        self.voice_cancel_btn.clicked.connect(self._cancel_voice)
+        row.addWidget(self.voice_cancel_btn)
         row.addStretch(1)
         layout.addLayout(row)
+
+        # Meme convention que la barre de l'analyse, plus haut dans cette page :
+        # plage (0, 0) quand aucune mesure ne permet d'estimer, (0, 100) des
+        # qu'une duree totale est connue.
+        self.voice_progress = QProgressBar()
+        self.voice_progress.setVisible(False)
+        layout.addWidget(self.voice_progress)
 
         self.voice_status = QLabel("")
         self.voice_status.setProperty("role", "muted")
@@ -844,7 +869,39 @@ class VoiceStudioPage(QWidget):
         self.generate_btn.setEnabled(False)
         self.preview_btn.setEnabled(False)
         self.voice_status.setText(message)
+
+        # Les deux mesures de la generation precedente SUR CETTE MACHINE. Elles
+        # valent zero tant qu'aucune n'a eu lieu, et l'estimation se tait alors.
+        saved = settings_store.load()
+        self._voice_progress = voice_progress.GenerationProgress(
+            previous_load_s=float(saved.get("chatterbox_load_seconds") or 0.0),
+            previous_rate=float(saved.get("chatterbox_seconds_per_char") or 0.0),
+        )
+        self._show_voice_report(self._voice_progress.start(time.monotonic()))
+        self.voice_progress.setVisible(True)
+        self.voice_cancel_btn.setVisible(True)
+        self.voice_cancel_btn.setEnabled(True)
+        self._voice_timer.start()
         self._voice_worker.start()
+
+    def _cancel_voice(self) -> None:
+        if self._voice_cancel is not None:
+            self._voice_cancel.cancel()
+        self.voice_cancel_btn.setEnabled(False)
+        self.voice_status.setText("Annulation en cours…")
+
+    def _show_voice_report(self, report) -> None:
+        """Une seule porte vers l'ecran : barre et libelle changent ensemble."""
+        if report.fraction is None:
+            self.voice_progress.setRange(0, 0)
+        else:
+            self.voice_progress.setRange(0, 100)
+            self.voice_progress.setValue(int(report.fraction * 100))
+        self.voice_status.setText(report.label)
+
+    def _on_voice_tick(self) -> None:
+        if self._voice_progress is not None:
+            self._show_voice_report(self._voice_progress.tick(time.monotonic()))
 
     def _current_voice(self):
         index = self.voice_combo.currentIndex()
@@ -863,6 +920,7 @@ class VoiceStudioPage(QWidget):
     def _on_voice_done(self, path: str) -> None:
         self._last_audio = path
         self.voice_status.setText(f"Voix générée : {path}")
+        self._remember_voice_timings()
         if self.project is not None:
             settings = TtsSettings(
                 voice_id=self._current_voice().id if self._current_voice() else "",
@@ -886,17 +944,29 @@ class VoiceStudioPage(QWidget):
 
     def _on_voice_progress(self, event: dict) -> None:
         """Compte rendu d'un moteur qui prend du temps. Chatterbox est le seul
-        a en emettre : les autres finissent avant qu'on ait lu la phrase."""
-        kind = (event or {}).get("event")
-        if kind == "loading":
-            self.voice_status.setText("Chargement du modèle Chatterbox…")
-        elif kind == "chunk":
-            self.voice_status.setText(
-                f"Génération de la narration… {event.get('index')}/{event.get('total')}")
-        elif kind == "done":
-            self.voice_status.setText(
-                f"Voix générée en {event.get('seconds', '?')} s "
-                f"({event.get('duration', '?')} s d'audio).")
+        a en emettre : les autres finissent avant qu'on ait lu la phrase.
+
+        Le calcul n'est pas fait ici mais dans voice_studio/voice_progress.py,
+        ou il se teste sans interface."""
+        if self._voice_progress is None:
+            return
+        self._show_voice_report(self._voice_progress.event(event or {}, time.monotonic()))
+
+    def _remember_voice_timings(self) -> None:
+        """Ce que cette generation vient d'apprendre sur CETTE machine, garde
+        pour annoncer une duree restante des la premiere seconde de la
+        suivante. Une mesure absente n'ecrase jamais une mesure existante --
+        un apercu de trois mots ne dit rien d'utile sur le chargement."""
+        progress = self._voice_progress
+        if progress is None:
+            return
+        measured = {}
+        if progress.measured_load_s > 0:
+            measured["chatterbox_load_seconds"] = round(progress.measured_load_s, 2)
+        if progress.measured_rate > 0:
+            measured["chatterbox_seconds_per_char"] = round(progress.measured_rate, 5)
+        if measured:
+            settings_store.save({**settings_store.load(), **measured})
 
     def _on_voice_cancelled(self) -> None:
         self.voice_status.setText("Génération annulée.")
@@ -906,6 +976,11 @@ class VoiceStudioPage(QWidget):
         QMessageBox.warning(self, "Génération impossible", message)
 
     def _on_voice_finished(self) -> None:
+        self._voice_timer.stop()
+        self.voice_cancel_btn.setVisible(False)
+        self.voice_progress.setVisible(False)
+        self._voice_progress = None
+        self._voice_cancel = None
         self._voice_worker = None
         self.generate_btn.setEnabled(bool(self._voices))
         self.preview_btn.setEnabled(bool(self._voices))
