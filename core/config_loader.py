@@ -65,10 +65,15 @@ class Settings:
     smart_framing: bool = True
     auto_montage: bool = True
     watermark_enabled: bool = True
-    # Comment remplir un cadre 16:9 quand la source est plus etroite : "flou"
-    # (une copie floutee de l'image) ou "noir" (des bandes). Sans effet en
-    # 9:16, ou le recadrage remplit deja le cadre.
+    # Comment remplir le cadre quand la source n'a pas sa forme : "flou" (une
+    # copie floutee de l'image) ou "noir" (des bandes).
     fill_mode: str = "flou"
+    # Que faire de l'image quand elle n'a pas la forme du cadre : "recadrer"
+    # (garder une fenetre, jeter le reste -- le comportement historique du
+    # 9:16) ou "entier" (tout garder et remplir ce qui manque). En paysage la
+    # valeur n'a pas d'effet : une source plus etroite y est deja gardee
+    # entiere.
+    fit_mode: str = "recadrer"
     # La source est deja un clip : on la traite en entier, sans y chercher un
     # passage. Mis par le Radar, ou par --whole-source en ligne de commande.
     whole_source: bool = False
@@ -199,6 +204,8 @@ def load_settings(cli_args: Any) -> Settings:
         fill_mode=("noir" if getattr(cli_args, "black_bars", False)
                    else (getattr(cli_args, "fill_mode", None)
                          or defaults.get("fill_mode") or "flou")),
+        fit_mode=(getattr(cli_args, "fit_mode", None)
+                  or defaults.get("fit_mode") or "recadrer"),
         whole_source=bool(getattr(cli_args, "whole_source", False)),
         weights=weights,
         scoring_params=settings_json.get("scoring_params", {}),

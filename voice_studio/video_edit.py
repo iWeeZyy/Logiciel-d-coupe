@@ -61,6 +61,15 @@ FRAMING_LABELS = {
     FRAMING_SUBJECT: "Suivi du sujet (détection de visage)",
 }
 
+# Recadrer ou garder toute l'image : les memes valeurs que le rendu des clips
+# (video/filter_graph.py), pas un second vocabulaire.
+FIT_CROP = "recadrer"
+FIT_WHOLE = "entier"
+FIT_LABELS = {
+    FIT_CROP: "Recadrer (l'image est rognée)",
+    FIT_WHOLE: "Image entière + bords remplis",
+}
+
 
 @dataclass(frozen=True)
 class DurationPlan:
@@ -184,7 +193,7 @@ def build_audio_graph(mode: str, narration_index: int, *,
 def build_video_graph(*, src_w: int, src_h: int, target_size: tuple,
                       fill: str, ass_path: str | None, face_hint=None,
                       framing_plan=None, freeze_s: float = 0.0,
-                      fps: float = 25.0) -> str:
+                      fps: float = 25.0, fit: str = FIT_CROP) -> str:
     """Fragment de filtre produisant [vbase] a partir de l'entree video.
 
     La geometrie vient de video/filter_graph.build_video_chain : le meme code
@@ -207,6 +216,7 @@ def build_video_graph(*, src_w: int, src_h: int, target_size: tuple,
         ass_path=ass_path,
         target_size=tuple(target_size),
         fill=fill,
+        fit=fit,
     )
     prefix = ""
     if freeze_s > 0.01:
@@ -222,7 +232,8 @@ def build_render_args(*, video_path: str, narration_path: str | None,
                       face_hint=None, framing_plan=None,
                       original_volume: float = DEFAULT_ORIGINAL_VOLUME,
                       narration_volume: float = DEFAULT_NARRATION_VOLUME,
-                      watermark=None, fps: float = 25.0) -> list[str]:
+                      watermark=None, fps: float = 25.0,
+                      fit: str = FIT_CROP) -> list[str]:
     """Ligne de commande complete du rendu final, en un seul encodage."""
     export_settings = export_settings or {}
     uses_narration = bool(narration_path) and audio_mode in (AUDIO_REPLACE, AUDIO_MIX)
@@ -236,7 +247,7 @@ def build_render_args(*, video_path: str, narration_path: str | None,
     graph_parts = [build_video_graph(
         src_w=src_w, src_h=src_h, target_size=target_size, fill=fill,
         ass_path=ass_path, face_hint=face_hint, framing_plan=framing_plan,
-        freeze_s=duration_plan.freeze_s, fps=fps,
+        freeze_s=duration_plan.freeze_s, fps=fps, fit=fit,
     )]
 
     if watermark is not None:

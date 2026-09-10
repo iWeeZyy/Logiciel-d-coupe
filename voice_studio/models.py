@@ -71,6 +71,9 @@ class VideoSettings:
     aspect_ratio: str = "16:9"          # "16:9" ou "9:16"
     fill: str = "flou"                  # remplissage des bords en 16:9
     framing: str = "centre"             # "centre" ou "sujet" (9:16 seulement)
+    # "recadrer" (garder une fenetre) ou "entier" (toute l'image, bords
+    # remplis). Sans effet en 16:9, ou l'image est deja gardee entiere.
+    fit: str = "recadrer"
     audio_mode: str = "remplacer"       # voir voice_studio/video_edit.py
     original_volume: float = 0.20
     narration_volume: float = 1.00

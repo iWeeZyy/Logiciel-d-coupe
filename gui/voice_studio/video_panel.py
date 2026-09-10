@@ -132,8 +132,14 @@ class VideoPanel(QWidget):
 
         formats.addWidget(QLabel("Cadrage"))
         self.framing_combo = QComboBox()
+        # Les deux premiers recadrent, le troisieme garde toute l'image. Une
+        # seule liste plutot que deux commandes : ce sont trois reponses a la
+        # meme question, « que fait-on de ce qui ne rentre pas dans le cadre ».
         for value in (video_edit.FRAMING_CENTER, video_edit.FRAMING_SUBJECT):
             self.framing_combo.addItem(video_edit.FRAMING_LABELS[value], value)
+        self.framing_combo.addItem(video_edit.FIT_LABELS[video_edit.FIT_WHOLE],
+                                   video_edit.FIT_WHOLE)
+        self.framing_combo.currentIndexChanged.connect(self._update_enabled)
         formats.addWidget(self.framing_combo)
 
         formats.addWidget(QLabel("Bords"))
@@ -330,10 +336,17 @@ class VideoPanel(QWidget):
                               f"{'+' if gap > 0 else '−'}{_format_seconds(abs(gap))}")
         self.stats_label.setText("  •  ".join(pieces))
 
+    def _keeps_whole_image(self) -> bool:
+        """Vrai quand rien n'est rogne : en 16:9, ou en 9:16 « image entiere »."""
+        return (self.aspect_combo.currentData() != "9:16"
+                or self.framing_combo.currentData() == video_edit.FIT_WHOLE)
+
     def _update_enabled(self) -> None:
         vertical = self.aspect_combo.currentData() == "9:16"
         self.framing_combo.setEnabled(vertical)
-        self.fill_combo.setEnabled(not vertical)
+        # Le remplissage des bords ne sert que si des bords restent a remplir :
+        # en recadrant, l'image couvre deja tout le cadre.
+        self.fill_combo.setEnabled(self._keeps_whole_image())
         self.original_slider.setEnabled(self.audio_combo.currentData() == video_edit.AUDIO_MIX)
         self.style_combo.setEnabled(self.subtitles_check.isChecked())
 
@@ -348,10 +361,16 @@ class VideoPanel(QWidget):
                                  and Path(self._last_output).is_file())
 
     def settings(self) -> VideoSettings:
+        # « Image entiere » est presente dans la liste des cadrages, mais c'est
+        # un autre reglage : on le traduit ici plutot que de laisser un cadrage
+        # porter deux sens.
+        choice = self.framing_combo.currentData() or video_edit.FRAMING_CENTER
+        whole = choice == video_edit.FIT_WHOLE
         return VideoSettings(
             aspect_ratio=self.aspect_combo.currentData() or "16:9",
             fill=self.fill_combo.currentData() or "flou",
-            framing=self.framing_combo.currentData() or video_edit.FRAMING_CENTER,
+            fit=video_edit.FIT_WHOLE if whole else video_edit.FIT_CROP,
+            framing=video_edit.FRAMING_CENTER if whole else choice,
             audio_mode=self.audio_combo.currentData() or video_edit.AUDIO_REPLACE,
             original_volume=self.original_slider.value() / 100.0,
             narration_volume=video_edit.DEFAULT_NARRATION_VOLUME,

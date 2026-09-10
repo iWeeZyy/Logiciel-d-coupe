@@ -227,7 +227,7 @@ Un seul encodage ffmpeg.
 
 | Choix | Ce qui se passe |
 |---|---|
-| Format | `16:9` garde l'image entiere et remplit les bords (flou ou noir) ; `9:16` recadre, au centre ou en suivant le visage detecte. |
+| Format | `16:9` garde l'image entiere et remplit les bords (flou ou noir) ; `9:16` recadre (au centre ou en suivant le visage detecte), ou garde l'image entiere et remplit le haut et le bas. |
 | Son | remplacer par la narration, garder celui de la video, ou melanger (le son d'origine est *baisse*, pas supprime). |
 | Duree | couper au plus court, garder toute la video (silence apres la narration), ou figer la derniere image si la narration est plus longue. |
 | Sous-titres | incrustes ou non, dans le style choisi, avec le filigrane par-dessus ou non. |
@@ -741,6 +741,33 @@ Le tri `--sort potential` utilise le **Video Potential Score** (`youtube/ranking
 - Republier ou monetiser un extrait sans les droits necessaires (accord du createur, licence explicite hors YouTube, contenu dont tu es l'auteur...) est une question de droit d'auteur, separee de ce qui precede.
 
 Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique -- l'information vient de YouTube telle quelle. `--youtube` refuse d'agir sans `--confirm-rights`, qui n'est qu'une confirmation de ta part : le logiciel ne verifie ni ne peut verifier tes droits reels.
+
+### Remplir le cadre : recadrer ou garder l'image entiere
+
+Une image qui n'a pas la forme du cadre demande une decision, et les deux
+reponses ont un usage reel. Le choix est dans les options de production, a cote
+du format, sur la page Accueil comme dans le Radar (et en ligne de commande avec
+`--fit`).
+
+| Choix | Ce qui se passe | Quand |
+|---|---|---|
+| `recadrer` (defaut en 9:16) | Une fenetre a la forme du cadre est gardee, le reste est jete. Le cadrage intelligent peut la deplacer pour suivre le sujet. | Un visage dans un plan large : on veut le voir en grand. |
+| `entier` | Toute l'image est gardee, mise a l'echelle et centree ; ce qui reste du cadre est rempli par une copie floutee de l'image (ou par des bandes noires). | Un plan large, un paysage, un tableau de jeu : rien ne doit sortir du champ. |
+
+**Le remplissage n'a d'effet que s'il reste quelque chose a remplir.** C'est un
+piege reel, rencontre en usage : une source deja en 16:9 rendue en 16:9 occupe
+exactement le cadre, il n'y a aucune bande, donc aucun flou visible -- l'option
+avait l'air cassee alors qu'elle n'avait rien a faire. Sur un clip Twitch
+(1920x1080), le flou ne devient visible qu'en vertical avec `--fit entier` :
+c'est la que les bandes existent, et c'est ce que les plateformes remplissent
+sinon avec du noir. La case est donc grisee quand elle ne sert a rien, plutot
+que laissee cochee sans effet.
+
+Rien n'est jamais deforme : dans les deux cas la proportion d'origine est
+preservee. On choisit seulement ce qu'on perd (recadrer) ou ce qu'on ajoute
+(remplir). Quand l'image entiere est gardee, le cadrage intelligent est coupe
+automatiquement -- il n'y a plus de fenetre a deplacer -- et la detection de
+visages n'est meme pas lancee.
 
 ## Options de production
 

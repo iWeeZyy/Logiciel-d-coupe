@@ -285,6 +285,10 @@ def _framing(request: VideoRequest, video_s: float, reporter: Reporter,
     notes: list = []
     if getattr(settings, "aspect_ratio", "16:9") != "9:16":
         return None, None, notes
+    if getattr(settings, "fit", video_edit.FIT_CROP) == video_edit.FIT_WHOLE:
+        # Toute l'image est gardee : il n'y a aucun choix a faire sur ce qu'on
+        # garde, donc rien a centrer ni a suivre.
+        return None, None, notes
     if getattr(settings, "framing", video_edit.FRAMING_CENTER) != video_edit.FRAMING_SUBJECT:
         return None, None, notes
 
@@ -497,6 +501,7 @@ def create_video(request: VideoRequest, reporter: Reporter | None = None,
                                  video_edit.DEFAULT_NARRATION_VOLUME),
         watermark=watermark,
         fps=_safe_fps(str(source), video_fps),
+        fit=getattr(settings, "fit", video_edit.FIT_CROP),
     )
 
     Path(request.out_path).parent.mkdir(parents=True, exist_ok=True)

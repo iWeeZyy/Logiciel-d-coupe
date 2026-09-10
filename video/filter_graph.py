@@ -91,6 +91,21 @@ def _framing_points(
 FILL_BLACK = "noir"
 FILL_BLUR = "flou"
 
+# Comment faire tenir une image dans un cadre qui n'a pas sa forme.
+#
+# `recadrer` : on garde une fenetre a la forme du cadre et on jette le reste.
+# C'est ce qu'il faut quand le sujet occupe une petite partie de l'image -- un
+# visage dans un plan large -- et c'est le comportement historique du 9:16.
+#
+# `entier` : on garde TOUTE l'image, mise a l'echelle pour tenir dans le cadre,
+# et on remplit ce qui reste (flou ou noir). C'est le rendu attendu quand rien
+# ne doit sortir du champ : un plan large, un paysage, un tableau de jeu. Un
+# clip 16:9 poste en vertical y gagne un cadre rempli au lieu de deux bandes
+# noires ajoutees par la plateforme.
+FIT_CROP = "recadrer"
+FIT_WHOLE = "entier"
+FIT_MODES = (FIT_CROP, FIT_WHOLE)
+
 # Flou du fond. Assez fort pour qu'on ne lise plus l'image, assez faible pour
 # que les couleurs et le mouvement restent -- c'est ce qui fait que le cadre
 # parait rempli plutot que barre de noir.
@@ -134,6 +149,7 @@ def build_video_chain(
     ass_path: str | None = None,
     target_size: tuple[int, int] = (TARGET_W, TARGET_H),
     fill: str = FILL_BLACK,
+    fit: str = FIT_CROP,
 ) -> str:
     """Chaine video (sans le montage, applique en amont) : cadrage, zoom,
     mise a l'echelle, sous-titres.
@@ -143,9 +159,14 @@ def build_video_chain(
     ferait que rogner l'image pour rien. Le suivi de visage et le zoom ne
     s'appliquent donc qu'au portrait, ou ils servent a choisir QUOI garder dans
     un cadre bien plus etroit que la source.
+
+    `fit` a `entier` demande de garder toute l'image meme en portrait : le
+    cadre est alors rempli exactement comme en paysage. Le suivi de visage et
+    le zoom n'ont plus rien a decider dans ce cas -- il n'y a pas de choix a
+    faire sur ce qu'on garde, on garde tout.
     """
     out_w, out_h = target_size
-    if out_w >= out_h:
+    if out_w >= out_h or fit == FIT_WHOLE:
         # L'image entiere est conservee, et le cadre est complete -- par des
         # bandes noires, ou par une copie floutee de l'image (voir
         # landscape_fill_chain).
@@ -235,6 +256,7 @@ def build_ffmpeg_args(
     target_size: tuple[int, int] = (TARGET_W, TARGET_H),
     watermark=None,
     fill: str = FILL_BLACK,
+    fit: str = FIT_CROP,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -243,7 +265,7 @@ def build_ffmpeg_args(
     video_chain = build_video_chain(
         edit_list=edit_list, framing_plan=framing_plan, zoom_track=zoom_track,
         src_w=src_w, src_h=src_h, fps=fps, face_hint=face_hint, ass_path=ass_path,
-        target_size=target_size, fill=fill,
+        target_size=target_size, fill=fill, fit=fit,
     )
     audio_chain = build_audio_chain(audio_cfg)
 

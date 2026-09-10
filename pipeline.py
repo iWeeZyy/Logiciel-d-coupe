@@ -340,6 +340,7 @@ def run(
                     target_size=settings.target_size(),
                     watermark=watermark,
                     fill=settings.fill_mode,
+                    fit=settings.fit_mode,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -569,7 +570,16 @@ def _analyse_framing(
     face_cfg: dict,
 ) -> tuple[object, Optional[FramingPlan]]:
     """Une seule passe de detection de visages, deux usages : le cadrage fixe
-    (repli historique) et la trajectoire de suivi."""
+    (repli historique) et la trajectoire de suivi.
+
+    Rien n'est detecte quand l'image est gardee ENTIERE : il n'y a alors aucun
+    choix a faire sur ce qu'on garde, donc rien a centrer ni a suivre. Chercher
+    des visages malgre tout couterait une passe d'analyse video complete pour
+    un resultat que le rendu ignorerait.
+    """
+    if getattr(settings, "fit_mode", "recadrer") == "entier":
+        return None, None
+
     framing_cfg = settings.editing_module("framing")
     tracking = framing_cfg.get("enabled", False)
 

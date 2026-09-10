@@ -285,6 +285,7 @@ class HomePage(QWidget):
             debug_scores=False,
             aspect=self.production_options.aspect(),
             fill_mode=self.production_options.fill_mode(),
+            fit_mode=self.production_options.fit_mode(),
         )
         name = Path(self.selected_video_path).stem
         self.controller.start_analysis(
