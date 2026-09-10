@@ -216,6 +216,67 @@ second moteur de synthese, seulement un champ qui se remplit.
 passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
 un seul formateur de minutage dans tout le projet.
 
+### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
+
+Une page separee, « ⚡ Voice Studio ZeroGPU », qui execute LE MEME Chatterbox
+Multilingual V3 sur un GPU distant (Hugging Face ZeroGPU) au lieu du
+processeur, pour repondre a une seule question chiffree : est-ce que cela vaut
+mieux que le local sur cette machine.
+
+**Ce n'est pas un quatrieme moteur.** Il n'apparait pas dans la liste des voix,
+n'ecrit dans aucun projet, n'utilise pas le cache de `tts.py`. Le Voice Studio
+normal (SAPI, Piper, Chatterbox local, transcription, exports, video) ne le
+connait pas : `tests/test_zerogpu.py::TestIsolation` verifie qu'aucun module
+existant ne l'importe, et que son empreinte dans `gui/main_window.py` tient en
+trois lignes. Le supprimer, c'est effacer les fichiers `zerogpu_*` et ces trois
+lignes ; rien n'est a restaurer.
+
+**Le jeton Hugging Face suit le mecanisme de la cle YouTube**, pas un second
+systeme de secrets : variable d'environnement `HF_TOKEN` d'abord, sinon un
+fichier `huggingface_token.txt` dans le dossier de donnees de l'utilisateur.
+Jamais dans le code, jamais dans le depot, jamais dans l'executable. Sans
+jeton, l'appel reste possible sous le quota anonyme, ce que l'ecran annonce.
+
+**Le decoupage est a 300 caracteres, et ce chiffre n'est pas prudentiel.**
+`multilingual_app.py`, dans le depot officiel de Chatterbox, fait
+`text_input[:300]` SANS RIEN DIRE : un morceau plus long perdrait sa fin en
+silence. C'est pourquoi la limite est propre a ce fichier de configuration et
+non partagee avec le Chatterbox local, qui coupe a 320. Les regles de coupe,
+elles, sont empruntees telles quelles a `chatterbox_catalogue.chunks()` : entre
+phrases d'abord, apres une virgule ensuite, entre deux mots en dernier recours,
+jamais a l'interieur d'un mot. Les morceaux sont recolles en UN fichier, avec
+un court silence aux jointures, avant toute transcription.
+
+**L'API du Space est decouverte, pas devinee.** Le depot officiel n'attache
+aucun `api_name` a son bouton et le fichier reellement deploye sur le Space
+n'est pas lisible depuis un depot public : ecrire un endpoint en dur serait une
+supposition, et une supposition fausse enverrait le script dans le champ
+« temperature ». L'application lit donc `view_api()` a la connexion et associe
+ses valeurs aux parametres par leur nom, avec repli sur l'ordre declare dans
+`config/zerogpu.json`.
+
+**Attente et generation sont mesurees separement**, parce qu'elles ne disent
+pas la meme chose : la file d'attente depend de la charge de Hugging Face et du
+niveau de compte, la generation depend du modele. Les confondre rendrait toute
+comparaison avec le local trompeuse, le local n'ayant pas de file. Chaque essai
+est ajoute au journal `zerogpu_benchmark.jsonl` (mots, duree d'audio, attente,
+GPU, total, RTF), en JSON Lines pour qu'une ligne s'ajoute sans relire le
+fichier et qu'une troncature ne coute que la derniere ligne.
+
+**Quotas annonces par Hugging Face**, lus dans `huggingface/hub-docs` le
+2026-09-10 et repris dans `config/zerogpu.json` : 2 minutes de GPU par jour
+sans compte, 5 minutes avec un compte gratuit, 40 minutes avec PRO, sur une
+moitie de NVIDIA RTX Pro 6000 Blackwell. Un compte gratuit peut heberger deux
+Spaces ZeroGPU. Ces chiffres bougent : ils sont AFFICHES comme un rappel date,
+jamais utilises pour calculer ou bloquer quoi que ce soit. La duree maximale
+d'un appel GPU n'est pas chiffree par la documentation officielle -- seule la
+duree par defaut (60 s) l'est -- donc l'application ne la teste pas et se
+contente de traduire un refus du serveur.
+
+**Rien n'est payant sans action explicite.** Le depassement de quota chez PRO
+se paie en credits prepayes ; l'application n'a aucun mecanisme de paiement et
+n'en aura pas.
+
 #### Chatterbox — la voix expressive (optionnelle)
 
 Troisieme moteur de synthese, a cote des voix du systeme et de Piper. Il est

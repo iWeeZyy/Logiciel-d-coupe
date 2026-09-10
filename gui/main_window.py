@@ -32,12 +32,17 @@ from gui.pages.results_page import ResultsPage
 from gui.pages.search_page import SearchPage
 from gui.pages.settings_page import SettingsPage
 from gui.voice_studio.page import VoiceStudioPage
+# Banc d'essai ZeroGPU. Les TROIS lignes marquees « zerogpu » dans ce
+# fichier sont sa seule empreinte ici : les retirer, avec les fichiers
+# zerogpu_*, suffit a le supprimer entierement.
+from gui.voice_studio.zerogpu_page import ZeroGpuPage
 
 _NAV_ITEMS = [
     ("home", "🎬  Accueil"),
     ("search", "🔎  Recherche"),
     ("radar", "📡  Radar"),
     ("voice", "🎙️  Voice Studio"),
+    ("zerogpu", "⚡  Voice Studio ZeroGPU"),
     ("projects", "📁  Projets"),
     ("learning", "🧠  Apprentissage"),
     ("settings", "⚙️  Paramètres"),
@@ -112,6 +117,7 @@ class MainWindow(QMainWindow):
         self.pages["search"] = SearchPage(self.controller)
         self.pages["radar"] = RadarPage(self.controller)
         self.pages["voice"] = VoiceStudioPage(self.controller)
+        self.pages["zerogpu"] = ZeroGpuPage(self.controller)
         self.pages["projects"] = ProjectsPage(self.controller)
         self.pages["learning"] = LearningPage(self.controller)
         self.pages["settings"] = SettingsPage(self.controller)

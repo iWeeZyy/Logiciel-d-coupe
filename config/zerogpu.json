@@ -1,0 +1,56 @@
+{
+  "_comment": "Voice Studio ZeroGPU -- BANC D'ESSAI, isole du Voice Studio normal. Chatterbox V3 execute sur un GPU distant (Hugging Face ZeroGPU) au lieu du processeur local. Rien ici n'est lu par les moteurs SAPI, Piper ou Chatterbox local : supprimer ce fichier et l'onglet ne touche a aucun d'eux.",
+
+  "space": {
+    "_comment": "Le Space appele. Par defaut celui de Resemble AI, verifie comme tournant sur ZeroGPU. Le dupliquer sous son propre compte le rend stable (personne d'autre ne peut le modifier) et consomme un des deux Spaces ZeroGPU gratuits.",
+    "id": "ResembleAI/Chatterbox-Multilingual-TTS",
+    "_api_name_comment": "null = DECOUVERTE A L'EXECUTION via view_api(). Le depot officiel n'attache aucun api_name a son bouton, et le fichier app.py reellement deploye sur le Space n'est pas lisible depuis un depot public : deviner un nom d'endpoint serait exactement le genre d'invention interdite ici. Renseigner ce champ force un endpoint precis si la decouverte se trompe.",
+    "api_name": null,
+    "_parameters_comment": "Noms des parametres de la fonction distante, lus dans multilingual_app.py du depot officiel (commit du jour). Sert a placer nos valeurs dans le BON ordre apres decouverte : gradio_client appelle par position. Si le Space change de signature, la decouverte le detecte et l'ecran le dit, plutot que d'envoyer un texte dans le champ temperature.",
+    "parameters": [
+      "text_input",
+      "language_id",
+      "audio_prompt_path_input",
+      "exaggeration_input",
+      "temperature_input",
+      "seed_num_input",
+      "cfgw_input"
+    ]
+  },
+
+  "limits": {
+    "_max_chars_comment": "300, et ce n'est pas un choix prudent : multilingual_app.py tronque le texte a 300 caracteres (text_input[:300]) SANS RIEN DIRE. Un morceau plus long perdrait sa fin en silence. La limite du Chatterbox local (320) ne s'applique donc pas ici, d'ou une valeur propre a ce fichier plutot qu'un partage qui serait faux.",
+    "max_chars_per_chunk": 300,
+
+    "_queue_comment": "Attente maximale dans la file avant d'abandonner un morceau. Un Space gratuit endormi met plusieurs dizaines de secondes a se reveiller ; la priorite de file va aux comptes PRO. NON MESURE ici : cette valeur est une garde, pas une prediction.",
+    "queue_timeout_s": 600,
+
+    "_gpu_comment": "Duree maximale d'un appel GPU cote Hugging Face : NON CONFIRMEE par la documentation officielle, qui ne donne que la duree PAR DEFAUT (60 s). Les forums convergent vers 120 s, parfois 240, avec un comportement irregulier au-dela. Ce champ ne sert qu'a expliquer un echec a l'utilisateur, jamais a promettre quoi que ce soit.",
+    "gpu_duration_hint_s": 120,
+
+    "_retry_comment": "Un morceau rejete pour quota epuise ou file pleine est retente, avec une pause croissante. Au-dela, on s'arrete et on dit pourquoi : insister ne fait pas revenir un quota journalier.",
+    "max_retries": 2,
+    "retry_pause_s": 20
+  },
+
+  "defaults": {
+    "_comment": "Memes bornes et memes valeurs que le Chatterbox local (config/chatterbox.json) : c'est le meme modele, la comparaison des deux n'aurait aucun sens avec des reglages differents.",
+    "language": "fr",
+    "exaggeration": 0.5,
+    "cfg_weight": 0.5,
+    "temperature": 0.8,
+    "seed": 0
+  },
+
+  "quota": {
+    "_comment": "Chiffres lus dans huggingface/hub-docs (docs/hub/spaces-zerogpu.md, branche main). Ils bougent : ils sont AFFICHES a l'utilisateur comme un rappel date, jamais utilises pour calculer ou bloquer quoi que ce soit.",
+    "source": "huggingface/hub-docs, docs/hub/spaces-zerogpu.md",
+    "checked_on": "2026-09-10",
+    "daily_seconds": {
+      "anonymous": 120,
+      "free": 300,
+      "pro": 2400
+    },
+    "hardware": "moitié d'une NVIDIA RTX Pro 6000 Blackwell"
+  }
+}

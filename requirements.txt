@@ -54,3 +54,9 @@ llama-cpp-python>=0.3.0
 # lui, l'application refuse d'enregistrer un jeton -- elle ne l'ecrit jamais en
 # clair ailleurs -- et l'export manuel reste disponible.
 keyring>=25.0
+
+# Banc d'essai ZeroGPU (gui/voice_studio/zerogpu_page.py) : appelle un Space
+# Hugging Face qui execute Chatterbox V3 sur GPU distant. Environ 6 Mo avec ses
+# dependances, sans PyTorch. Importe PARESSEUSEMENT : son absence n'empeche pas
+# l'application de demarrer, elle desactive seulement cet onglet.
+gradio_client>=2.6.1

@@ -65,6 +65,15 @@ hiddenimports = [
     # Creation video : le service et le montage sont importes par le panneau,
     # lui-meme importe par la page Voice Studio.
     "voice_studio.align",
+    # Banc d'essai ZeroGPU : gradio_client est importe PARESSEUSEMENT, dans les
+    # fonctions, pour que son absence ne bloque pas le demarrage -- ce que
+    # l'analyse statique de PyInstaller ne voit donc pas.
+    "gradio_client",
+    "voice_studio.zerogpu_catalogue",
+    "voice_studio.zerogpu_client",
+    "voice_studio.zerogpu_service",
+    "voice_studio.zerogpu_bench",
+    "voice_studio.zerogpu_token",
     # Chatterbox : le moteur est charge a l'execution par tts._known_engines().
     "voice_studio.chatterbox_catalogue",
     "voice_studio.chatterbox_engine",
