@@ -322,8 +322,10 @@ def install(on_progress: Optional[Callable] = None,
             base_python: str = "") -> Path:
     """Cree l'environnement et y installe Chatterbox. Action explicite."""
     spec = catalogue.runtime_spec()
-    source = str(spec.get("source") or "")
-    if not source:
+    sources = [str(entry) for entry in (spec.get("sources") or []) if entry]
+    if not sources and spec.get("source"):
+        sources = [str(spec["source"])]
+    if not sources:
         raise ChatterboxRuntimeError(
             "Le catalogue (config/chatterbox.json) n'indique aucune source pour "
             "Chatterbox : rien ne peut être installé.")
@@ -364,16 +366,59 @@ def install(on_progress: Optional[Callable] = None,
             command += ["--index-url", index]
         _run(command, on_progress, cancel_token, "installation de PyTorch")
 
-    _run([python, "-m", "pip", "install", "--no-input", source],
-         on_progress, cancel_token, "installation de Chatterbox")
+    # Plusieurs sources possibles pour le MEME commit : une archive (pip seul)
+    # et un depot git (exige git sur la machine). On essaie dans l'ordre, et on
+    # ne garde l'echec que si TOUTES ont echoue.
+    last_error: Exception | None = None
+    used = ""
+    for candidate_source in sources:
+        try:
+            _run([python, "-m", "pip", "install", "--no-input", candidate_source],
+                 on_progress, cancel_token, "installation de Chatterbox")
+        except CancelledError:
+            raise
+        except ChatterboxRuntimeError as error:
+            logger.warning(f"Source Chatterbox refusée ({candidate_source}) : {error}")
+            last_error = error
+            continue
+        used = candidate_source
+        break
+
+    if not used:
+        raise ChatterboxRuntimeError(_explain_source_failure(str(last_error or "")))
 
     marker_path().write_text(json.dumps({
         "commit": spec.get("commit", ""),
-        "source": source,
+        "source": used,
         "python": candidate.executable,
         "version": ".".join(str(p) for p in candidate.version),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     return directory
+
+
+def _explain_source_failure(detail: str) -> str:
+    """Traduit l'echec d'installation de Chatterbox.
+
+    Le cas « git absent » est nomme parce qu'il est arrive : pip sait
+    installer depuis un depot git, mais seulement si git est installe sur la
+    machine -- ce qui n'a rien d'evident pour qui n'ecrit pas de code.
+    """
+    lowered = detail.lower()
+    if "cannot find command 'git'" in lowered or "'git' installed" in lowered:
+        return ("Chatterbox n'a pas pu être installé : cette source demande git, qui "
+                "n'est pas présent sur cet ordinateur.\n\n"
+                "Deux solutions, au choix :\n"
+                "• installer Git pour Windows (https://git-scm.com/download/win), puis "
+                "relancer l'installation ;\n"
+                "• utiliser la source en archive, qui n'a besoin que de pip — elle est "
+                "déjà la première du catalogue config/chatterbox.json dans les versions "
+                "récentes de l'application.\n\n"
+                "L'environnement et PyTorch déjà installés sont conservés : relancer "
+                "l'installation ne les retéléchargera pas.")
+    if "no matching distribution" in lowered or "404" in lowered:
+        return ("Chatterbox n'a pas pu être téléchargé : la source indiquée dans "
+                "config/chatterbox.json est introuvable.\n\n" + detail[-400:])
+    return ("L'installation de Chatterbox a échoué.\n\n" + (detail[-600:] or ""))
 
 
 def remove() -> bool:

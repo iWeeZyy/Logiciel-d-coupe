@@ -35,7 +35,12 @@
       "torch==2.6.0",
       "torchaudio==2.6.0"
     ],
-    "source": "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox@5de7a54aa4e5e2baadb0182dde554908b48b85c2",
+    "_sources_comment": "Essayees dans l'ordre. La PREMIERE est une archive du depot au commit epingle : elle s'installe avec pip seul. La seconde passe par git+, qui exige que git soit installe sur la machine -- ce qui n'est pas le cas de tout le monde, et c'est un echec reel rencontre en usage. Meme commit dans les deux cas.",
+    "sources": [
+      "chatterbox-tts @ https://github.com/resemble-ai/chatterbox/archive/5de7a54aa4e5e2baadb0182dde554908b48b85c2.zip",
+      "chatterbox-tts @ git+https://github.com/resemble-ai/chatterbox@5de7a54aa4e5e2baadb0182dde554908b48b85c2"
+    ],
+    "source": "chatterbox-tts @ https://github.com/resemble-ai/chatterbox/archive/5de7a54aa4e5e2baadb0182dde554908b48b85c2.zip",
     "commit": "5de7a54aa4e5e2baadb0182dde554908b48b85c2",
     "estimated_download_mb": 700
   },

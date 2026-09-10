@@ -245,6 +245,13 @@ PyTorch + Chatterbox) et les poids du modele. L'ordre n'a aucune importance --
 les poids sont recuperes par le telechargeur de l'application, qui n'a pas
 besoin de l'environnement -- mais les deux sont necessaires pour generer.
 
+**Git n'est PAS necessaire.** Le catalogue propose deux sources pour le meme
+commit, essayees dans l'ordre : une archive du depot, qui s'installe avec pip
+seul, puis le depot git, qui exige git sur la machine. La premiere evite un
+echec reel rencontre en usage -- PyTorch installe, puis « Cannot find command
+'git' » a la derniere etape. Si les deux echouent, le message le dit et propose
+les deux remedes.
+
 **Si Python n'est pas detecte alors qu'il est installe**, deux causes connues,
 toutes deux traitees : une variable PATH mise a jour n'atteint pas un programme
 deja lance (redemarrer l'application suffit), et Windows pose dans

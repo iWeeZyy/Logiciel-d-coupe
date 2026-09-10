@@ -738,3 +738,80 @@ class TestDetectionDePython:
         monkeypatch.setattr(subprocess, "run", _fake_run)
         runtime._probe(sys.executable)
         assert vu.get("stdin") == subprocess.DEVNULL
+
+
+class TestSourcesDInstallation:
+    """Installer Chatterbox sans exiger git.
+
+    DEFAUT REEL SIGNALE EN USAGE : l'environnement et PyTorch s'installaient
+    correctement, puis la derniere etape echouait sur
+    « Cannot find command 'git' ». pip sait installer depuis un depot git,
+    mais seulement si git est present -- ce qui n'a rien d'evident pour qui
+    n'ecrit pas de code.
+    """
+
+    def test_la_premiere_source_ne_demande_pas_git(self):
+        sources = catalogue.runtime_spec().get("sources") or []
+        assert sources, "le catalogue doit proposer au moins une source"
+        assert not sources[0].startswith("chatterbox-tts @ git+")
+        assert ".zip" in sources[0]
+
+    def test_toutes_les_sources_visent_le_meme_commit(self):
+        """Deux chemins d'installation, un seul moteur : sinon l'application
+        ne saurait plus ce qui est installe."""
+        spec = catalogue.runtime_spec()
+        for source in spec["sources"]:
+            assert spec["commit"] in source
+
+    def test_l_absence_de_git_est_traduite_en_message_utile(self):
+        message = runtime._explain_source_failure(
+            "ERROR: Cannot find command 'git' - do you have 'git' installed and in your PATH?")
+        assert "git" in message
+        assert "git-scm.com" in message
+        assert "Traceback" not in message
+        assert "conservés" in message, "l'utilisateur doit savoir qu'il ne retélécharge pas tout"
+
+    def test_une_source_introuvable_est_dite_clairement(self):
+        message = runtime._explain_source_failure("ERROR: 404 Not Found")
+        assert "introuvable" in message
+
+    def test_un_echec_inconnu_ne_montre_pas_de_trace(self):
+        message = runtime._explain_source_failure("Traceback (most recent call last): ...")
+        assert message.startswith("L'installation de Chatterbox a échoué")
+
+    def test_la_seconde_source_est_essayee_si_la_premiere_echoue(self, monkeypatch, tmp_path):
+        """C'est tout l'interet d'en avoir deux."""
+        monkeypatch.setattr(runtime, "runtime_dir", lambda: tmp_path / "rt")
+        executable = runtime.python_executable()
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(runtime, "find_python",
+                            lambda extra="": runtime.PythonCandidate("/usr/bin/python3", (3, 12, 0)))
+
+        essais = []
+
+        def _fake_run(command, on_progress, cancel_token, label):
+            if label == "installation de Chatterbox":
+                essais.append(command[-1])
+                if len(essais) == 1:
+                    raise runtime.ChatterboxRuntimeError("Cannot find command 'git'")
+
+        monkeypatch.setattr(runtime, "_run", _fake_run)
+        runtime.install()
+        assert len(essais) == 2, "la seconde source doit être essayée"
+        assert runtime.installed_commit() == catalogue.runtime_spec()["commit"]
+
+    def test_l_installation_s_arrete_a_la_premiere_source_qui_marche(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(runtime, "runtime_dir", lambda: tmp_path / "rt")
+        executable = runtime.python_executable()
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(runtime, "find_python",
+                            lambda extra="": runtime.PythonCandidate("/usr/bin/python3", (3, 12, 0)))
+
+        essais = []
+        monkeypatch.setattr(runtime, "_run",
+                            lambda command, on_progress, cancel_token, label:
+                            essais.append(command[-1]) if label == "installation de Chatterbox" else None)
+        runtime.install()
+        assert len(essais) == 1
