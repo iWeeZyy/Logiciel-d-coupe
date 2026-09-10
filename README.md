@@ -218,12 +218,30 @@ un seul formateur de minutage dans tout le projet.
 
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
+**CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de
+nature differente ; les confondre serait la faute la plus couteuse ici. Chaque
+affirmation ci-dessous porte donc une marque :
+
+| Marque | Sens |
+|---|---|
+| **[VERIFIE]** | Lu dans le code source officiel ou la documentation officielle, a la date indiquee. |
+| **[TESTE]** | Execute et verifie par la suite de tests de ce depot, sans reseau. |
+| **[ESTIME]** | Un calcul a partir de chiffres publies. Ce n'est PAS une mesure. |
+| **[NON TESTE]** | Jamais execute : `huggingface.co` est injoignable depuis l'environnement de developpement. Seul le PC de l'utilisateur peut le confirmer. |
+
+Sont **[NON TESTE]**, en bloc : la connexion reelle a un Space, la vitesse, la
+duree de la file d'attente, le temps de reveil d'un Space endormi, la
+consommation reelle du quota, la qualite de la voix produite, et la
+comparaison chiffree avec le Chatterbox local et Piper. C'est precisement ce
+que le journal de banc d'essai existe pour recueillir.
+
+
 Une page separee, « ⚡ Voice Studio ZeroGPU », qui execute LE MEME Chatterbox
 Multilingual V3 sur un GPU distant (Hugging Face ZeroGPU) au lieu du
 processeur, pour repondre a une seule question chiffree : est-ce que cela vaut
 mieux que le local sur cette machine.
 
-**Ce n'est pas un quatrieme moteur.** Il n'apparait pas dans la liste des voix,
+**Ce n'est pas un quatrieme moteur. [TESTE]** Il n'apparait pas dans la liste des voix,
 n'ecrit dans aucun projet, n'utilise pas le cache de `tts.py`. Le Voice Studio
 normal (SAPI, Piper, Chatterbox local, transcription, exports, video) ne le
 connait pas : `tests/test_zerogpu.py::TestIsolation` verifie qu'aucun module
@@ -231,13 +249,13 @@ existant ne l'importe, et que son empreinte dans `gui/main_window.py` tient en
 trois lignes. Le supprimer, c'est effacer les fichiers `zerogpu_*` et ces trois
 lignes ; rien n'est a restaurer.
 
-**Le jeton Hugging Face suit le mecanisme de la cle YouTube**, pas un second
+**Le jeton Hugging Face suit le mecanisme de la cle YouTube [TESTE]**, pas un second
 systeme de secrets : variable d'environnement `HF_TOKEN` d'abord, sinon un
 fichier `huggingface_token.txt` dans le dossier de donnees de l'utilisateur.
 Jamais dans le code, jamais dans le depot, jamais dans l'executable. Sans
 jeton, l'appel reste possible sous le quota anonyme, ce que l'ecran annonce.
 
-**Le decoupage est a 300 caracteres, et ce chiffre n'est pas prudentiel.**
+**Le decoupage est a 300 caracteres, et ce chiffre n'est pas prudentiel. [VERIFIE]**
 `multilingual_app.py`, dans le depot officiel de Chatterbox, fait
 `text_input[:300]` SANS RIEN DIRE : un morceau plus long perdrait sa fin en
 silence. C'est pourquoi la limite est propre a ce fichier de configuration et
@@ -247,15 +265,20 @@ phrases d'abord, apres une virgule ensuite, entre deux mots en dernier recours,
 jamais a l'interieur d'un mot. Les morceaux sont recolles en UN fichier, avec
 un court silence aux jointures, avant toute transcription.
 
-**L'API du Space est decouverte, pas devinee.** Le depot officiel n'attache
+**L'API du Space est decouverte, pas devinee. [VERIFIE] + [TESTE]** Le depot officiel n'attache
 aucun `api_name` a son bouton et le fichier reellement deploye sur le Space
 n'est pas lisible depuis un depot public : ecrire un endpoint en dur serait une
 supposition, et une supposition fausse enverrait le script dans le champ
 « temperature ». L'application lit donc `view_api()` a la connexion et associe
-ses valeurs aux parametres par leur nom, avec repli sur l'ordre declare dans
-`config/zerogpu.json`.
+ses valeurs aux parametres par leur nom, avec repli sur le libelle affiche
+puis sur l'ordre declare dans `config/zerogpu.json`. **Si le champ du texte
+ne peut etre reconnu, AUCUN appel n'est envoye** : `check_arguments()` leve
+une erreur nommant les parametres reellement publies. Sans ce garde-fou,
+l'appel serait parti avec un texte vide, aurait consomme du quota GPU et
+serait revenu avec la voix par defaut du Space lisant son propre exemple --
+le plus couteux des echecs silencieux. [TESTE]
 
-**Attente et generation sont mesurees separement**, parce qu'elles ne disent
+**Attente et generation sont mesurees separement [NON TESTE en reel]**, parce qu'elles ne disent
 pas la meme chose : la file d'attente depend de la charge de Hugging Face et du
 niveau de compte, la generation depend du modele. Les confondre rendrait toute
 comparaison avec le local trompeuse, le local n'ayant pas de file. Chaque essai
@@ -263,7 +286,7 @@ est ajoute au journal `zerogpu_benchmark.jsonl` (mots, duree d'audio, attente,
 GPU, total, RTF), en JSON Lines pour qu'une ligne s'ajoute sans relire le
 fichier et qu'une troncature ne coute que la derniere ligne.
 
-**Quotas annonces par Hugging Face**, lus dans `huggingface/hub-docs` le
+**Quotas annonces par Hugging Face [VERIFIE au 2026-09-10]**, lus dans `huggingface/hub-docs` le
 2026-09-10 et repris dans `config/zerogpu.json` : 2 minutes de GPU par jour
 sans compte, 5 minutes avec un compte gratuit, 40 minutes avec PRO, sur une
 moitie de NVIDIA RTX Pro 6000 Blackwell. Un compte gratuit peut heberger deux
@@ -272,6 +295,14 @@ jamais utilises pour calculer ou bloquer quoi que ce soit. La duree maximale
 d'un appel GPU n'est pas chiffree par la documentation officielle -- seule la
 duree par defaut (60 s) l'est -- donc l'application ne la teste pas et se
 contente de traduire un refus du serveur.
+
+**Un ordre de grandeur, et rien de plus. [ESTIME]** Un script de 500 mots
+represente environ 3 min 20 d'audio. Si Chatterbox tenait sur ce materiel le
+facteur temps reel annonce par Resemble pour un H100, cela couterait de
+l'ordre de 40 s de quota, soit trois a cinq scripts par jour sur un compte
+gratuit. C'est un calcul enchaine sur deux hypotheses, pas un resultat : le
+materiel n'est pas le meme, et rien n'a ete mesure. Le journal de banc d'essai
+remplacera ce paragraphe par des chiffres.
 
 **Rien n'est payant sans action explicite.** Le depassement de quota chez PRO
 se paie en credits prepayes ; l'application n'a aucun mecanisme de paiement et

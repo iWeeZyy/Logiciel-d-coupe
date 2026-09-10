@@ -71,8 +71,12 @@ class ZeroGpuPage(QWidget):
         title.setProperty("role", "pageTitle")
         outer.addWidget(title)
 
-        subtitle = QLabel("Banc d'essai : Chatterbox V3 exécuté sur un GPU distant, "
-                          "pour le comparer au Chatterbox local et à Piper.")
+        subtitle = QLabel(
+            "Banc d'essai : Chatterbox V3 exécuté sur un GPU distant, pour le "
+            "comparer au Chatterbox local et à Piper. Aucune vitesse n'a été "
+            "mesurée avant ta première génération : les chiffres affichés "
+            "ci-dessous viennent de la documentation de Hugging Face, pas d'un "
+            "essai.")
         subtitle.setProperty("role", "subtitle")
         subtitle.setWordWrap(True)
         outer.addWidget(subtitle)

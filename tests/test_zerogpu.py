@@ -458,3 +458,59 @@ class TestAssemblageDeBoutEnBout:
         with pytest.raises(zerogpu_client.ZeroGpuError) as erreur:
             zerogpu_service._join([str(premier), str(second)], str(tmp_path / "out.wav"))
         assert "échantillonnage" in str(erreur.value)
+
+
+class TestAucunAppelArbitraire:
+    """« Si la découverte dynamique échoue, l'interface doit afficher une
+    erreur claire plutôt que tenter un appel arbitraire. »
+
+    DEFAUT REEL TROUVE EN RELISANT CETTE EXIGENCE : `_arguments` met None
+    partout ou il ne reconnait rien. Pour le champ du texte, cela produisait un
+    appel qui PART, consomme du quota GPU, et revient avec la voix par defaut
+    du Space lisant son propre exemple -- un echec silencieux, et le plus cher
+    des trois.
+    """
+
+    def _params(self):
+        return catalogue.params_for()
+
+    def test_un_space_dont_aucun_parametre_n_est_reconnu_est_refuse(self):
+        noms = ["machin", "truc"]
+        args = zerogpu_client._arguments(noms, self._params(), "Mon script.", [])
+        with pytest.raises(zerogpu_client.ZeroGpuError) as erreur:
+            zerogpu_client.check_arguments(noms, args, "Mon script.")
+        assert "aucun de ses paramètres" in str(erreur.value)
+
+    def test_le_message_nomme_les_parametres_reellement_publies(self):
+        """Sans eux, l'utilisateur n'a aucune prise pour corriger."""
+        noms = ["machin", "truc"]
+        args = zerogpu_client._arguments(noms, self._params(), "x", [])
+        with pytest.raises(zerogpu_client.ZeroGpuError) as erreur:
+            zerogpu_client.check_arguments(noms, args, "x")
+        assert "machin, truc" in str(erreur.value)
+
+    def test_le_message_dit_qu_aucun_quota_n_a_ete_depense(self):
+        noms = ["machin"]
+        with pytest.raises(zerogpu_client.ZeroGpuError) as erreur:
+            zerogpu_client.check_arguments(noms, [None], "x")
+        assert "Aucun appel n'a été envoyé" in str(erreur.value)
+
+    def test_un_space_sans_aucun_parametre_est_refuse(self):
+        with pytest.raises(zerogpu_client.ZeroGpuError):
+            zerogpu_client.check_arguments([], [], "Mon script.")
+
+    def test_une_signature_valide_passe_toujours(self):
+        noms = ["text_input", "language_id", "exaggeration_input"]
+        args = zerogpu_client._arguments(noms, self._params(), "Mon script.", [])
+        zerogpu_client.check_arguments(noms, args, "Mon script.")
+
+    def test_le_repli_par_libelle_passe_aussi(self):
+        noms = ["Text to synthesize (max chars 300)", "Language ID"]
+        args = zerogpu_client._arguments(noms, self._params(), "Mon script.", [])
+        zerogpu_client.check_arguments(noms, args, "Mon script.")
+
+    def test_la_verification_a_lieu_avant_tout_envoi(self):
+        """Le garde-fou ne sert a rien s'il est appele apres submit()."""
+        source = (REPO / "voice_studio" / "zerogpu_client.py").read_text(encoding="utf-8")
+        assert source.index("check_arguments(connection.parameter_names") < \
+            source.index("job = client.submit")

@@ -134,10 +134,15 @@ def _arguments(names: list, params: catalogue.Params, text: str,
                configured: list) -> list:
     """Place nos valeurs en face des parametres du Space.
 
-    Association PAR LE NOM quand le Space en donne un ; sinon, repli sur
-    l'ordre declare dans config/zerogpu.json, lui-meme lu dans le depot
-    officiel. Un parametre inconnu recoit None, ce que Gradio traite comme
-    « valeur par defaut » -- jamais une valeur inventee.
+    Association PAR LE NOM quand le Space en donne un ; sinon par le libelle
+    affiche ; sinon, repli sur l'ordre declare dans config/zerogpu.json,
+    lui-meme lu dans le depot officiel. Un parametre inconnu recoit None, ce
+    que Gradio traite comme « valeur par defaut » -- jamais une valeur
+    inventee.
+
+    NE VERIFIE PAS que le texte a trouve sa place : c'est le role de
+    `check_arguments`, appele juste apres, parce qu'un appel sans texte est un
+    appel arbitraire et doit etre refuse plutot qu'envoye.
     """
     known = {
         "text_input": text,
@@ -176,6 +181,29 @@ def _arguments(names: list, params: catalogue.Params, text: str,
                     break
         arguments.append(known.get(key))
     return arguments
+
+
+def check_arguments(names: list, arguments: list, text: str) -> None:
+    """Refuse un appel dont on ne sait pas ou mettre le script.
+
+    LA REGLE POSEE : si la decouverte de l'API echoue, on affiche une erreur
+    claire plutot que de tenter un appel arbitraire. Or `_arguments` met None
+    partout ou il ne reconnait rien -- ce qui, pour le parametre du texte,
+    produirait un appel qui part, consomme du quota GPU, et revient avec la
+    voix par defaut du Space lisant son propre exemple. Un echec silencieux,
+    donc, et le plus coûteux des trois.
+    """
+    if text and text in arguments:
+        return
+    raise ZeroGpuError(
+        "L'API du Space ne correspond pas à ce que l'application sait "
+        "envoyer : aucun de ses paramètres n'a pu être reconnu comme le "
+        "champ de texte.\n\n"
+        f"Paramètres publiés par le Space : {', '.join(str(name) for name in names) or 'aucun'}.\n\n"
+        "Aucun appel n'a été envoyé, pour ne pas dépenser de quota GPU sur "
+        "une requête incomplète. Corrige « space.parameters » dans "
+        "config/zerogpu.json pour refléter la signature réelle, ou vérifie "
+        "que « space.id » désigne bien un Space Chatterbox.")
 
 
 def connect(cancel_token: Optional[CancelToken] = None) -> tuple[object, Connection]:
@@ -237,6 +265,7 @@ def generate_chunk(client, connection: Connection, text: str,
 
     configured = catalogue.space_spec().get("parameters") or []
     arguments = _arguments(connection.parameter_names, params, text, configured)
+    check_arguments(connection.parameter_names, arguments, text)
 
     started = time.monotonic()
     processing_at: Optional[float] = None
