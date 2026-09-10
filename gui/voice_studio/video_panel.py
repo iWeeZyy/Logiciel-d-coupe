@@ -72,7 +72,6 @@ class VideoPanel(QWidget):
         self._narration_signature = None
         self._last_output = ""
         self._whisper_model = "small"
-        self._language = None
         self._device = "auto"
 
         layout = QVBoxLayout(self)
@@ -85,8 +84,8 @@ class VideoPanel(QWidget):
 
         intro = QLabel(
             "Pose ta narration sur une vidéo téléchargée depuis Recherche. "
-            "Les sous-titres sont calés sur les mots réellement prononcés par "
-            "la voix générée, pas sur une durée estimée.")
+            "Les sous-titres affichent le texte de ton script, calé sur les mots "
+            "réellement prononcés par la voix générée.")
         intro.setProperty("role", "muted")
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -245,12 +244,19 @@ class VideoPanel(QWidget):
         if index >= 0:
             self.style_combo.setCurrentIndex(index)
 
-    def set_transcription_options(self, model: str, language, device: str) -> None:
-        """Modele/langue/peripherique choisis en haut de la page : la voix
-        generee est analysee avec les MEMES reglages, pas avec des valeurs
-        cachees ici."""
+    def set_transcription_options(self, model: str, device: str) -> None:
+        """Modele et peripherique choisis en haut de la page : la voix generee
+        est analysee avec les MEMES reglages, pas avec des valeurs cachees ici.
+
+        LA LANGUE, ELLE, N'EST PAS REPRISE. Celle du haut de la page est celle
+        de la VIDEO A TRANSCRIRE ; la narration, elle, est lue par la voix
+        choisie ici. Les reprendre ensemble a produit un defaut reel : une
+        video anglaise analysee en anglais, puis un script francais dont les
+        sous-titres sortaient en anglais -- forcer une langue que l'audio ne
+        parle pas fait TRADUIRE Whisper. La langue de la narration est
+        deduite de la voix (voir video_service.narration_language).
+        """
         self._whisper_model = model or "small"
-        self._language = language
         self._device = device or "auto"
 
     def set_source(self, path: str, title: str = "", duration_s=None) -> None:
@@ -424,7 +430,8 @@ class VideoPanel(QWidget):
             settings=settings,
             voice=voice, rate=rate, volume=volume, sentence_pause_s=pause,
             whisper_model=self._whisper_model,
-            language=self._language,
+            # Aucune langue imposee : le service la deduit de la voix.
+            language=None,
             device=self._device,
             preview=preview,
             narration_wav=self._narration_wav,
@@ -481,6 +488,9 @@ class VideoPanel(QWidget):
         pieces.append(f"sortie {_format_seconds(report.output_s)}")
         if report.caption_count:
             pieces.append(f"{report.caption_count} blocs de sous-titres")
+        if report.script_words:
+            pieces.append(f"{report.aligned_words}/{report.script_words} mots "
+                          "retrouvés dans la voix")
         summary = "  •  ".join(pieces)
         prefix = "Aperçu prêt" if report.is_preview else "Vidéo créée"
         text = f"{prefix} : {report.output_path}\n{summary}"

@@ -10,11 +10,19 @@ qui existait deja :
 2. LA DUREE REELLE de cette voix : mesuree sur le fichier produit
    (ffprobe), jamais estimee. L'estimation de narration.py sert a prevenir
    AVANT de generer ; a partir d'ici, on ne travaille plus que sur du mesure.
-3. LES MINUTAGES : transcription/whisper_engine.py, lance SUR L'AUDIO
-   REELLEMENT GENERE. C'est le coeur de la synchronisation : les sous-titres
-   ne sont pas cales sur une duree calculee a partir du nombre de mots, mais
-   sur les instants ou la voix prononce vraiment chaque mot. Une voix qui
-   marque une pause, avale une liaison ou allonge un chiffre reste synchrone.
+3. LES MINUTAGES, ET SEULEMENT EUX : transcription/whisper_engine.py, lance
+   SUR L'AUDIO REELLEMENT GENERE. C'est le coeur de la synchronisation : les
+   sous-titres ne sont pas cales sur une duree calculee a partir du nombre de
+   mots, mais sur les instants ou la voix prononce vraiment chaque mot. Une
+   voix qui marque une pause, avale une liaison ou allonge un chiffre reste
+   synchrone.
+   LE TEXTE, LUI, EST CELUI DU SCRIPT, jamais celui que Whisper a entendu :
+   voice_studio/align.py apparie les deux et garde les mots ecrits par
+   l'utilisateur. Whisper ecrit ce qu'il entend -- un mot approche, un nom
+   propre defigure, et dans le cas signale une transcription rendue dans une
+   autre langue que celle de la voix, qui affichait des sous-titres anglais
+   sur une narration francaise. Le texte, ici, est connu ; il n'y a aucune
+   raison de le redecouvrir.
 4. LES SOUS-TITRES : editing/captions.py + video/subtitle_renderer.py, les
    memes styles que les clips (config/subtitles.json).
 5. LE RENDU : voice_studio/video_edit.py construit la commande, ffmpeg encode
@@ -38,6 +46,7 @@ from core.cancellation import CancelToken
 from core.logging_setup import get_logger
 from core.models import Transcript
 from utils.errors import ClipFarmingError
+from voice_studio import align
 from voice_studio import narration as narration_module
 from voice_studio import store, transcription, tts, video_edit
 
@@ -104,6 +113,10 @@ class VideoReport:
     output_s: float = 0.0
     audio_mode: str = ""
     caption_count: int = 0
+    # Mots du script retrouves dans la voix generee : c'est la mesure de
+    # confiance du minutage, et elle est rendue plutot que supposee.
+    aligned_words: int = 0
+    script_words: int = 0
     ass_path: str = ""
     is_preview: bool = False
     notes: list = field(default_factory=list)
@@ -131,6 +144,26 @@ class Reporter:
     def detail(self, fraction: Optional[float], label: str) -> None:
         if self._on_detail:
             self._on_detail(fraction, label)
+
+
+def narration_language(request) -> str | None:
+    """Langue a annoncer a Whisper pour la VOIX GENEREE.
+
+    Jamais celle de la video source. Le premier essai reprenait la langue
+    choisie en haut de la page -- celle de la video a transcrire -- et forcer
+    « anglais » sur une narration francaise ne produit pas une transcription
+    francaise : Whisper TRADUIT. C'est exactement ce qui a donne des
+    sous-titres anglais sur un script francais.
+
+    La seule source honnete est la voix qui a lu le texte : une voix francaise
+    parle francais. Si la voix ne declare pas sa langue, on laisse Whisper la
+    detecter plutot que d'en imposer une.
+    """
+    explicit = str(getattr(request, "language", "") or "").strip()
+    if explicit:
+        return explicit[:2].lower()
+    declared = str(getattr(getattr(request, "voice", None), "language", "") or "").strip()
+    return declared[:2].lower() or None
 
 
 def work_dir() -> Path:
@@ -421,8 +454,8 @@ def create_video(request: VideoRequest, reporter: Reporter | None = None,
         transcript = request.narration_transcript
         if transcript is None:
             transcript = transcription.transcribe_media(
-                narration_wav, request.whisper_model, request.language, request.device,
-                cancel_token=cancel_token, on_progress=reporter.detail,
+                narration_wav, request.whisper_model, narration_language(request),
+                request.device, cancel_token=cancel_token, on_progress=reporter.detail,
             )
         else:
             reporter.detail(1.0, "minutages déjà connus, réutilisés")
@@ -430,7 +463,20 @@ def create_video(request: VideoRequest, reporter: Reporter | None = None,
         _check()
 
         reporter.step(STEP_SUBTITLES)
-        narration_words = transcript.words() if transcript else []
+        heard_words = transcript.words() if transcript else []
+        # LE TEXTE DU SCRIPT, LES INSTANTS DE LA VOIX. Voir align.py : les
+        # sous-titres doivent dire ce que l'utilisateur a ecrit, pas ce que
+        # Whisper a cru entendre.
+        alignment = align.align_script(script, heard_words)
+        narration_words = alignment.words
+        report.aligned_words = alignment.matched
+        report.script_words = alignment.total
+        if heard_words and not alignment.is_reliable:
+            report.notes.append(
+                f"Seuls {alignment.matched} mots sur {alignment.total} ont été "
+                "retrouvés dans la voix générée : le texte affiché est bien "
+                "celui de ton script, mais le minutage de certains passages est "
+                "approché. Vérifie que la voix choisie parle la langue du script.")
         if not narration_words:
             report.notes.append(
                 "Aucun mot n'a pu être repéré dans la voix générée : la vidéo "

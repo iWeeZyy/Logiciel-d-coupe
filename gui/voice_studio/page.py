@@ -150,7 +150,6 @@ class VoiceStudioPage(QWidget):
         if configured in MODELS:
             self.model_combo.setCurrentIndex(MODELS.index(configured))
         self.model_combo.currentIndexChanged.connect(lambda _i: self._sync_video_options())
-        self.language_combo.currentIndexChanged.connect(lambda _i: self._sync_video_options())
         options.addWidget(self.model_combo)
         options.addStretch(1)
         layout.addLayout(options)
@@ -440,13 +439,17 @@ class VoiceStudioPage(QWidget):
         self._refresh_state()
 
     def _sync_video_options(self) -> None:
-        """Le modele, la langue et le peripherique choisis en haut de la page
-        servent aussi a analyser la voix generee : un seul choix, pas deux."""
+        """Le modele et le peripherique choisis en haut de la page servent
+        aussi a analyser la voix generee : un seul choix, pas deux.
+
+        La LANGUE n'est pas transmise : celle-ci est celle de la video a
+        transcrire, pas celle de la narration (voir
+        video_panel.set_transcription_options).
+        """
         if getattr(self, "video_panel", None) is None:
             return
         self.video_panel.set_transcription_options(
             self.model_combo.currentData() or "small",
-            self.language_combo.currentData(),
             settings_store.get("default_device") or "auto",
         )
 

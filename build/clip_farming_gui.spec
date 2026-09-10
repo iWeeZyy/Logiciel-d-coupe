@@ -58,6 +58,7 @@ hiddenimports = [
     "voice_studio.rewriting.providers.llama_cpp_provider",
     # Creation video : le service et le montage sont importes par le panneau,
     # lui-meme importe par la page Voice Studio.
+    "voice_studio.align",
     "voice_studio.narration",
     "voice_studio.video_edit",
     "voice_studio.video_service",

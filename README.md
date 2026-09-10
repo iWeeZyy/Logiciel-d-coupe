@@ -206,15 +206,29 @@ Dernier bloc de la page : une video, un script de narration, et un MP4 en
 sortie. La video vient de l'onglet **Recherche** (bouton « Telecharger », puis
 « Ouvrir dans Voice Studio ») ou d'un fichier deja present sur le disque.
 
-**Les sous-titres sont cales sur la voix REELLEMENT generee.** C'est le coeur de
-la fonction : le fichier audio produit par la synthese est repasse dans
-Faster-Whisper -- le meme moteur que le reste de l'application -- pour obtenir
-les instants ou chaque mot est vraiment prononce. Rien n'est estime a partir du
-nombre de mots ou de caracteres : une voix qui marque une pause, allonge un
-chiffre ou avale une liaison reste synchrone. La duree de la narration est
-mesuree sur le fichier (ffprobe), jamais calculee. L'estimation affichee sous le
-script, elle, est annoncee comme une estimation et ne sert qu'a prevenir avant
-de generer.
+**Les sous-titres disent le SCRIPT, aux instants de la VOIX.** Le fichier audio
+produit par la synthese est repasse dans Faster-Whisper -- le meme moteur que le
+reste de l'application -- pour savoir QUAND chaque mot est prononce. Rien n'est
+estime a partir du nombre de mots ou de caracteres : une voix qui marque une
+pause, allonge un chiffre ou avale une liaison reste synchrone. La duree de la
+narration est mesuree sur le fichier (ffprobe), jamais calculee.
+
+Le TEXTE, lui, n'est pas celui que Whisper a entendu : `voice_studio/align.py`
+apparie les mots reconnus avec ceux du script et garde ceux du script. Whisper
+ecrit ce qu'il entend -- un mot approche, un nom propre defigure -- alors que le
+texte est ici connu d'avance. Un mot que la reconnaissance n'a pas retrouve voit
+son instant interpole entre les deux mots surs qui l'encadrent, au prorata de sa
+longueur, et l'ecran affiche combien de mots ont ete reellement retrouves : une
+precision qu'on n'a pas n'est jamais presentee comme acquise.
+
+**La langue de la narration vient de la voix, jamais de la video source.** Defaut
+reel rencontre : la langue choisie en haut de la page (celle de la video a
+transcrire, anglaise) etait aussi annoncee a Whisper pour la narration
+francaise. Forcer une langue que l'audio ne parle pas ne produit pas une
+transcription dans cette langue, cela fait TRADUIRE Whisper -- et les
+sous-titres sortaient en anglais sur un script francais. La langue est
+maintenant deduite de la voix choisie, et laissee en detection automatique
+quand la voix ne la declare pas.
 
 **Le filigrane n'est pas celui des clips.** Une video narree n'est pas publiee
 sous le meme nom qu'un clip : Voice Studio pose
