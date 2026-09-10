@@ -2,7 +2,7 @@ name: Build Windows GUI (.exe + installateur)
 
 # DECLENCHEMENT MANUEL UNIQUEMENT, ET C'EST DELIBERE.
 #
-# Ce depot est PRIVE : les minutes d'execution sont comptees, et un runner
+# Ce depot ETAIT prive : les minutes d'execution etaient comptees, et un runner
 # Windows est facture DEUX FOIS le temps reel. Un build de cette application
 # prend environ 22 minutes, soit 44 minutes facturees. Avec un declenchement
 # a chaque poussee sur main, et DEUX workflows qui se declenchaient ensemble,
@@ -12,6 +12,11 @@ name: Build Windows GUI (.exe + installateur)
 # Un installateur ne sert que quand quelqu'un veut l'installer : il se demande
 # donc, depuis l'onglet Actions ("Run workflow") ou par l'API. Pour revenir au
 # declenchement automatique, remettre le bloc `push:` retire ici.
+#
+# DEPUIS, LE DEPOT EST PUBLIC : les minutes redeviennent gratuites sur les
+# runners standards, et remettre `push:` ne couterait plus rien. Le
+# declenchement reste manuel parce qu'un installateur ne sert que quand on
+# veut l'installer, pas a chaque poussee.
 on:
   workflow_dispatch: {}
 
@@ -20,6 +25,18 @@ on:
 concurrency:
   group: build-windows-gui.yml
   cancel-in-progress: true
+
+# LE JETON DOIT POUVOIR ECRIRE, ET IL FAUT LE DIRE ICI.
+#
+# La derniere etape publie l'installateur en Release, ce qui ecrit dans le
+# depot. Sans ce bloc, le jeton prend les droits par defaut du depot -- et
+# ceux-ci ne sont pas une constante : le passage de prive a public a suffi a
+# les ramener en lecture seule, et le build a echoue sur
+# « HTTP 403: Resource not accessible by integration » APRES avoir tout
+# compile. Declarer le droit dans le workflow le rend independant d'un
+# reglage d'interface que personne ne pense a verifier.
+permissions:
+  contents: write
 
 jobs:
   build:
