@@ -99,6 +99,14 @@ def test_the_same_person_on_two_platforms_is_two_creators(store):
 
 
 def test_deactivating_keeps_the_creator_and_its_data(store):
+    """Suspendre garde tout en base, mais MASQUE les contenus.
+
+    Ce test verifiait auparavant que les contenus restaient dans la liste par
+    defaut. C'etait precisement le defaut signale en usage : la chaine
+    suspendue continuait d'apparaitre dans le Radar. Ce qui compte -- et qui
+    est verifie ici -- c'est que rien ne soit supprime, donc que reactiver la
+    surveillance fasse tout revenir.
+    """
     manager = CreatorManager(store)
     manager.add(_creator())
     store.upsert_opportunity(_opp("v1"))
@@ -107,7 +115,11 @@ def test_deactivating_keeps_the_creator_and_its_data(store):
 
     assert manager.get("youtube:UC1").active is False
     assert manager.all(active_only=True) == []
-    assert len(store.list_opportunities()) == 1
+    assert store.list_opportunities() == []                       # masque
+    assert len(store.list_opportunities(include_suspended=True)) == 1   # conserve
+
+    manager.set_active("youtube:UC1", True)
+    assert len(store.list_opportunities()) == 1                   # de retour
 
 
 def test_removing_a_creator_never_deletes_the_collected_history(store):
@@ -406,3 +418,102 @@ class TestTypesCherches:
         engine = RadarEngine(store, {"twitch": Youtube()})
         assert engine.searched_kinds("twitch") is None
         assert engine.keeps(store.get_opportunity("twitch:live0")) is True
+
+
+class TestSurveillanceSuspendue:
+    """Une chaine mise en pause ne doit plus apparaitre.
+
+    DEFAUT REEL SIGNALE EN USAGE : le scan sautait bien les chaines suspendues,
+    mais leurs contenus deja collectes restaient affiches et comptes. Suspendre
+    une surveillance et continuer a voir ses clips, c'est ne pas l'avoir
+    suspendue.
+    """
+
+    def _store(self, tmp_path):
+        from datetime import datetime, timezone
+
+        from radar.models import KIND_CLIP, Creator, Opportunity
+        from radar.store import RadarStore
+
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        store = RadarStore(path=tmp_path / "radar.sqlite3")
+        for name, active, score in (("actif", True, 60.0), ("suspendu", False, 90.0)):
+            creator = Creator(platform="twitch", platform_id=name, username=name,
+                              active=active)
+            store.upsert_creator(creator)
+            clip = Opportunity(platform="twitch", content_id=f"clip-{name}", kind=KIND_CLIP,
+                               creator_key=creator.key, title=f"clip de {name}",
+                               published_at=now, view_count=100)
+            clip.radar_score = score
+            store.upsert_opportunity(clip)
+        return store
+
+    def test_les_contenus_d_une_chaine_suspendue_disparaissent(self, tmp_path):
+        store = self._store(tmp_path)
+
+        titles = [o.title for o in store.list_opportunities(platform="twitch")]
+
+        assert titles == ["clip de actif"]
+
+    def test_le_filtre_s_applique_avant_la_limite(self, tmp_path):
+        # Le clip suspendu score le plus haut : filtrer apres la limite le
+        # laisserait consommer la seule place disponible.
+        store = self._store(tmp_path)
+
+        assert [o.title for o in store.list_opportunities(limit=1)] == ["clip de actif"]
+
+    def test_reactiver_la_chaine_les_fait_revenir(self, tmp_path):
+        from radar.creators import CreatorManager
+
+        store = self._store(tmp_path)
+        CreatorManager(store).set_active("twitch:suspendu", True)
+
+        titles = [o.title for o in store.list_opportunities()]
+
+        assert sorted(titles) == ["clip de actif", "clip de suspendu"]
+
+    def test_rien_n_est_supprime_pendant_la_pause(self, tmp_path):
+        # La pause doit rester reversible : les donnees restent en base, elles
+        # sont seulement masquees.
+        store = self._store(tmp_path)
+
+        assert len(store.list_opportunities(include_suspended=True)) == 2
+
+    def test_l_historique_d_une_chaine_retiree_reste_consultable(self, tmp_path):
+        # Retirer un createur de la liste n'est pas le suspendre : son
+        # historique reste visible, comme le prevoit delete_creator.
+        from datetime import datetime, timezone
+
+        from radar.models import KIND_CLIP, Creator, Opportunity
+
+        store = self._store(tmp_path)
+        gone = Creator(platform="twitch", platform_id="parti", username="parti")
+        store.upsert_creator(gone)
+        clip = Opportunity(platform="twitch", content_id="clip-parti", kind=KIND_CLIP,
+                           creator_key=gone.key, title="clip de parti",
+                           published_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        clip.radar_score = 70.0
+        store.upsert_opportunity(clip)
+        store.delete_creator(gone.key)
+
+        assert "clip de parti" in [o.title for o in store.list_opportunities()]
+
+    def test_le_bandeau_compte_la_meme_chose_que_la_liste(self, tmp_path):
+        from radar.engine import RadarEngine
+
+        store = self._store(tmp_path)
+        engine = RadarEngine(store, {})
+
+        data = engine.dashboard()
+
+        assert data["opportunities"] == len(store.list_opportunities())
+        assert data["creators_watched"] == 1
+        assert data["creators_total"] == 2
+
+    def test_un_scan_ne_visite_pas_une_chaine_suspendue(self, tmp_path):
+        # Deja vrai avant le correctif, et il faut que ca le reste.
+        store = self._store(tmp_path)
+
+        keys = [c.key for c in store.list_creators(active_only=True)]
+
+        assert keys == ["twitch:actif"]

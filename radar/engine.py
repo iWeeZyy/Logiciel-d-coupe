@@ -188,7 +188,9 @@ class RadarEngine:
         creators = self.store.list_creators()
         active = [c for c in creators if c.active]
         # Un type qui n'est plus cherche ne doit plus etre compte : le bandeau
-        # annoncerait des directs alors que le Radar n'en cherche plus.
+        # annoncerait des directs alors que le Radar n'en cherche plus. Les
+        # contenus des chaines suspendues sont ecartes par la requete
+        # elle-meme, comme dans la liste : les deux doivent dire la meme chose.
         opportunities = [o for o in self.store.list_opportunities(since=threshold, limit=1000)
                          if self.keeps(o)]
         strong = [o for o in opportunities if (o.radar_score or 0) >= 80]

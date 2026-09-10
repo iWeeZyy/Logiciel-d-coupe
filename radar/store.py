@@ -282,7 +282,8 @@ class RadarStore:
 
     def list_opportunities(self, platform: str | None = None, creator_key: str | None = None,
                            since: str | None = None, limit: int = 500,
-                           kinds=None, order: str = ORDER_SCORE) -> list[Opportunity]:
+                           kinds=None, order: str = ORDER_SCORE,
+                           include_suspended: bool = False) -> list[Opportunity]:
         """Contenus enregistres, dans l'ordre demande (`order`).
 
         `kinds` filtre DANS la requete et non apres coup, et c'est le point
@@ -306,6 +307,13 @@ class RadarStore:
         if since:
             clauses.append("published_at >= ?")
             params.append(since)
+        if not include_suspended:
+            # Une chaine mise en pause ne doit plus apparaitre : suspendre la
+            # surveillance et continuer a voir ses contenus, c'est ne pas
+            # l'avoir suspendue. Le filtre exclut les createurs SUSPENDUS, pas
+            # les createurs ABSENTS : retirer un createur de la liste laisse
+            # volontairement son historique consultable (voir delete_creator).
+            clauses.append("creator_key NOT IN (SELECT key FROM creators WHERE active = 0)")
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         # L'ordre est fait par SQL et non apres coup, pour la meme raison que le

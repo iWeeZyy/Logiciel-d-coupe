@@ -212,6 +212,13 @@ que Twitch ne rend pas laisse la categorie VIDE plutot que d'afficher le
 nombre -- c'est ce que faisait l'application, et ce nombre partait meme en
 hashtag.
 
+**Suspendre une chaine la retire de la liste**, pas seulement des scans. Le
+scan sautait deja les chaines suspendues, mais leurs contenus deja collectes
+restaient affiches et comptes : suspendre une surveillance et continuer a voir
+ses clips, c'est ne pas l'avoir suspendue. Rien n'est supprime pour autant --
+reactiver la chaine fait tout revenir. A ne pas confondre avec RETIRER un
+createur de la liste, qui laisse volontairement son historique consultable.
+
 **Trois ordres de lecture** : score radar, plus recents (par defaut), plus vus.
 Aucun ne remplace les autres -- un clip qui vient de sortir n'a pas encore de
 vues, un clip tres vu n'est plus une nouveaute. Le tri est fait par la base et
