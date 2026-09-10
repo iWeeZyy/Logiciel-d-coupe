@@ -115,6 +115,29 @@
       "thumbnail_variant": "a",
       "framing_mode": "",
       "montage_applied": true
+    },
+    "out_entier/clips/clip_01.mp4": {
+      "clip_id": "out_entier/clips/clip_01.mp4",
+      "project": "out_entier",
+      "created_at": "2026-09-10T12:55:41+00:00",
+      "hook_score": 27.769954971252332,
+      "rewatch_score": 63.333333333333336,
+      "content_score": 16.799999999999997,
+      "viral_potential_score": 36.244977485626166,
+      "priority_score": null,
+      "duration": 12.0,
+      "word_density": 1.58,
+      "audio_intensity": 41.97822259670726,
+      "silence_ratio": 0.208,
+      "question_detected": false,
+      "loop_potential": 63.333333333333336,
+      "context_quality": null,
+      "category": "",
+      "subtitle_style": "dynamic",
+      "title_style": "direct",
+      "thumbnail_variant": "a",
+      "framing_mode": "",
+      "montage_applied": true
     }
   }
 }

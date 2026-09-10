@@ -767,6 +767,23 @@ Le tri `--sort potential` utilise le **Video Potential Score** (`youtube/ranking
 
 Le filtre `--yt-creative-commons` est **indicatif**, pas une garantie juridique -- l'information vient de YouTube telle quelle. `--youtube` refuse d'agir sans `--confirm-rights`, qui n'est qu'une confirmation de ta part : le logiciel ne verifie ni ne peut verifier tes droits reels.
 
+### Garder toute la video, au lieu d'en tirer des clips
+
+Une case sur la page d'accueil : « Garder toute la video (une seule sortie,
+sans decoupage) ». La video est alors traitee en entier, en UNE sortie, avec les
+memes sous-titres, le meme cadrage, le meme montage et le meme filigrane qu'un
+clip -- seule la recherche d'un passage disparait.
+
+Ce n'est pas un deuxieme mode de traitement : c'est le chemin `whole_source`
+que le Radar utilise deja pour un clip Twitch, qui est deja un clip decoupe.
+Une seule fenetre d'analyse, aucun filtre sur le nombre de mots, aucune
+detection de contexte -- elle deplacerait des bornes qu'on ne veut pas
+deplacer. En ligne de commande, c'est `--whole-source`.
+
+Quand la case est cochee, la duree des clips et leur nombre sont grises : ces
+deux decisions n'ont plus d'objet, et les laisser actives laisserait croire
+qu'elles comptent encore.
+
 ### Remplir le cadre : recadrer ou garder l'image entiere
 
 Une image qui n'a pas la forme du cadre demande une decision, et les deux

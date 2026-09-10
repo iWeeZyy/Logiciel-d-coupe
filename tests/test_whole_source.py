@@ -5,6 +5,8 @@ Un clip recupere par le Radar a deja ete decoupe par quelqu'un. Y chercher un
 24 s, a en perdre les huit premieres secondes parce qu'une fenetre plus courte
 notait un point de plus.
 """
+import pytest
+
 from core.models import AudioFeatures, TextFeatures, Word
 from core.steps import (
     STEP_ANALYSIS,
@@ -93,17 +95,18 @@ def test_a_normal_video_keeps_all_its_steps():
 # --------------------------------------------------------------- reglages
 
 def test_the_radar_asks_for_the_whole_clip():
-    # La fenetre du Radar est ce qui met whole_source ; l'accueil ne le met
-    # jamais, une video d'une heure n'est pas un clip.
+    # Le Radar met TOUJOURS whole_source : sa source est deja un clip. Sans
+    # rien demander, une source reste decoupee en clips -- c'est le
+    # comportement historique de l'accueil et de la ligne de commande.
     from types import SimpleNamespace
 
     from core.config_loader import load_settings
 
     radar = load_settings(SimpleNamespace(input="x.mp4", whole_source=True))
-    accueil = load_settings(SimpleNamespace(input="x.mp4"))
+    defaut = load_settings(SimpleNamespace(input="x.mp4"))
 
     assert radar.whole_source is True
-    assert accueil.whole_source is False
+    assert defaut.whole_source is False
 
 
 def test_the_context_detection_never_recuts_a_clip_taken_whole():
@@ -118,3 +121,89 @@ def test_the_context_detection_never_recuts_a_clip_taken_whole():
 
     context_enabled = s.editing_module_enabled("context_detection") and not s.whole_source
     assert context_enabled is False
+
+
+class TestChoixDeLAccueil:
+    """« Garder toute la video » sur la page d'accueil.
+
+    Le chemin est celui du Radar, deja ecrit et deja teste plus haut : la case
+    ne fait que le demander pour une source locale. Ce qu'elle doit garantir,
+    c'est qu'aucune des deux decisions devenues sans objet -- duree d'un clip,
+    nombre de clips -- ne reste active ni ne soit transmise.
+    """
+
+    @pytest.fixture
+    def page(self):
+        import os
+
+        pytest.importorskip("PySide6")
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+
+        from gui.controller import AppController
+        from gui.pages.home_page import HomePage
+
+        app = QApplication.instance() or QApplication([])
+        assert app is not None
+        page = HomePage(AppController())
+        page.selected_video_path = "x.mp4"
+        return page
+
+    def _args(self, page):
+        captured = {}
+        page.controller.start_analysis = lambda cli_args, **kw: captured.update(a=cli_args)
+        page._on_generate_clicked()
+        return captured["a"]
+
+    def test_le_decoupage_en_clips_reste_le_defaut(self, page):
+        args = self._args(page)
+        assert args.whole_source is False
+        assert args.nb_clips >= 1
+
+    def test_la_case_demande_une_seule_sortie(self, page):
+        page.whole_video_check.setChecked(True)
+        args = self._args(page)
+        assert args.whole_source is True
+        assert args.nb_clips == 1
+
+    def test_la_duree_annoncee_est_celle_de_la_source(self, page):
+        page.video_duration_s = 754.0
+        page.whole_video_check.setChecked(True)
+        assert self._args(page).clip_duration == 754
+
+    def test_une_duree_non_mesurable_ne_bloque_pas(self, page):
+        """ffprobe peut echouer sur un fichier abime : la case doit rester
+        utilisable, le pipeline prend de toute facon la fenetre entiere."""
+        page.video_duration_s = None
+        page.whole_video_check.setChecked(True)
+        assert self._args(page).clip_duration > 0
+
+    def test_les_champs_devenus_sans_objet_sont_grises(self, page):
+        page.whole_video_check.setChecked(True)
+        assert not page.duration_combo.isEnabled()
+        assert not page.nb_clips_auto.isEnabled()
+        assert not page.nb_clips_spin.isEnabled()
+
+    def test_decocher_rend_les_champs(self, page):
+        page.whole_video_check.setChecked(True)
+        page.whole_video_check.setChecked(False)
+        assert page.duration_combo.isEnabled()
+        assert page.nb_clips_auto.isEnabled()
+
+    def test_le_nombre_manuel_reste_grise_tant_qu_on_garde_tout(self, page):
+        """Piege : decocher « Automatique » pendant que la case est cochee ne
+        doit pas ranimer le champ."""
+        page.whole_video_check.setChecked(True)
+        page.nb_clips_auto.setChecked(False)
+        assert not page.nb_clips_spin.isEnabled()
+
+    def test_le_bouton_dit_ce_qu_il_va_faire(self, page):
+        page.whole_video_check.setChecked(True)
+        assert "TOUTE LA VIDÉO" in page.generate_btn.text()
+
+    def test_les_autres_reglages_sont_transmis_comme_avant(self, page):
+        page.whole_video_check.setChecked(True)
+        args = self._args(page)
+        assert args.aspect in ("9:16", "16:9")
+        assert args.fill_mode in ("flou", "noir")
+        assert args.fit_mode in ("recadrer", "entier")

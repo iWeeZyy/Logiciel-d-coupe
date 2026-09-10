@@ -107,8 +107,26 @@ class HomePage(QWidget):
         self.drop_zone.file_selected.connect(self._on_file_selected)
         card_layout.addWidget(self.drop_zone)
 
+        # --- Toute la video, ou des clips ---
+        # Ce choix commande les deux champs suivants : quand on garde la video
+        # entiere, il n'y a ni duree de clip ni nombre de clips a decider. Les
+        # champs sont donc grises plutot que laisses actifs sans effet.
+        self.whole_video_check = QCheckBox("Garder toute la vidéo (une seule sortie, sans découpage)")
+        self.whole_video_check.toggled.connect(self._on_whole_video_changed)
+        card_layout.addWidget(self.whole_video_check)
+
+        self.whole_video_hint = QLabel(
+            "Aucun passage n'est cherché : la vidéo est traitée en entier, avec "
+            "les mêmes sous-titres, le même cadrage et le même filigrane qu'un clip."
+        )
+        self.whole_video_hint.setProperty("role", "muted")
+        self.whole_video_hint.setWordWrap(True)
+        self.whole_video_hint.setVisible(False)
+        card_layout.addWidget(self.whole_video_hint)
+
         # --- Duree des clips ---
-        card_layout.addWidget(_field_label("Durée des clips"))
+        self.duration_label = _field_label("Durée des clips")
+        card_layout.addWidget(self.duration_label)
         duration_row = QHBoxLayout()
         self.duration_combo = QComboBox()
         self.duration_combo.addItem(f"Automatique (~{_AUTO_DURATION} s, ajustée au contexte)", 0)
@@ -128,7 +146,8 @@ class HomePage(QWidget):
         card_layout.addLayout(duration_row)
 
         # --- Nombre de clips ---
-        card_layout.addWidget(_field_label("Nombre de clips"))
+        self.nb_clips_label = _field_label("Nombre de clips")
+        card_layout.addWidget(self.nb_clips_label)
         nb_row = QHBoxLayout()
         self.nb_clips_auto = QCheckBox("Automatique")
         self.nb_clips_auto.setChecked(True)
@@ -196,6 +215,18 @@ class HomePage(QWidget):
         self.generate_btn.clicked.connect(self._on_generate_clicked)
         card_layout.addWidget(self.generate_btn)
 
+    def _on_whole_video_changed(self, whole: bool) -> None:
+        """Garder toute la video retire deux decisions, il faut donc retirer
+        leurs champs : les laisser actifs laisserait croire qu'ils comptent
+        encore."""
+        self.whole_video_hint.setVisible(whole)
+        for widget in (self.duration_label, self.duration_combo, self.custom_duration_spin,
+                       self.nb_clips_label, self.nb_clips_auto, self.nb_clips_hint):
+            widget.setEnabled(not whole)
+        self.nb_clips_spin.setEnabled(not whole and not self.nb_clips_auto.isChecked())
+        self.generate_btn.setText("🚀  TRAITER TOUTE LA VIDÉO" if whole
+                                  else "🚀  CRÉER LES CONTENUS")
+
     def _on_duration_changed(self) -> None:
         is_custom = self.duration_combo.currentData() == -1
         self.custom_duration_spin.setVisible(is_custom)
@@ -206,7 +237,7 @@ class HomePage(QWidget):
         self.model_hint.setText(hint)
 
     def _on_nb_clips_mode_changed(self, automatic: bool) -> None:
-        self.nb_clips_spin.setEnabled(not automatic)
+        self.nb_clips_spin.setEnabled(not automatic and not self.whole_video_check.isChecked())
         self._refresh_nb_clips_hint()
 
     def _refresh_nb_clips_hint(self) -> None:
@@ -232,6 +263,16 @@ class HomePage(QWidget):
         if self.video_duration_s:
             self.nb_clips_spin.setValue(planning.suggested_clip_count(self.video_duration_s))
         self._refresh_nb_clips_hint()
+
+    def _whole_clip_duration(self) -> int:
+        """Duree annoncee quand on garde toute la video.
+
+        Celle de la source quand elle a pu etre mesuree, sinon la valeur par
+        defaut : le pipeline prend de toute facon la fenetre entiere, cette
+        valeur ne sert qu'aux plafonds et aux notes."""
+        if self.video_duration_s:
+            return max(5, int(self.video_duration_s))
+        return 45
 
     def _clip_duration(self) -> int:
         data = self.duration_combo.currentData()
@@ -270,10 +311,16 @@ class HomePage(QWidget):
         if not self._confirm_heavy_model():
             return
 
+        whole = self.whole_video_check.isChecked()
         cli_args = SimpleNamespace(
             input=self.selected_video_path,
-            clip_duration=self._clip_duration(),
-            nb_clips=self.nb_clips_spin.value(),
+            # Toute la video : une seule sortie, et une duree demandee qui
+            # couvre la source entiere. La duree reste renseignee parce que
+            # d'autres reglages s'y rapportent (plafonds, notes affichees) --
+            # elle n'a simplement plus a decider d'un decoupage.
+            clip_duration=self._whole_clip_duration() if whole else self._clip_duration(),
+            nb_clips=1 if whole else self.nb_clips_spin.value(),
+            whole_source=whole,
             model=self.model_combo.currentData(),
             language=None,
             pre_roll=None,
