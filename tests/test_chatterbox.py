@@ -815,3 +815,92 @@ class TestSourcesDInstallation:
                             essais.append(command[-1]) if label == "installation de Chatterbox" else None)
         runtime.install()
         assert len(essais) == 1
+
+
+class TestDependancesDepuisPyPI:
+    """Installer les dependances de Chatterbox sans passer par git.
+
+    SECOND DEFAUT REEL SIGNALE EN USAGE : l'archive s'installait bien, mais
+    pip lisait ensuite les dependances declarees par le depot officiel, dont
+    « resemble-perth @ git+https://github.com/resemble-ai/Perth.git@master ».
+    Une adresse git dans une dependance suffit a redemander git, meme quand la
+    source principale n'en demande plus. Le meme paquet existe sur PyPI : on
+    pose donc les dependances depuis PyPI, puis la bibliotheque sans les
+    siennes.
+    """
+
+    def test_le_catalogue_liste_les_dependances(self):
+        library = catalogue.runtime_spec().get("library_packages") or []
+        assert library, "les dépendances doivent être listées pour éviter git"
+
+    def test_aucune_dependance_ne_passe_par_git(self):
+        for entry in catalogue.runtime_spec().get("library_packages") or []:
+            assert "git+" not in entry, f"{entry} ramènerait l'exigence de git"
+
+    def test_perth_est_pris_sur_pypi_et_epingle(self):
+        """C'est LE paquet qui a fait echouer une installation reelle."""
+        library = catalogue.runtime_spec().get("library_packages") or []
+        perth = [entry for entry in library if entry.startswith("resemble-perth")]
+        assert perth == ["resemble-perth==1.0.1"]
+
+    def test_gradio_n_est_pas_installe(self):
+        """Le depot le declare, mais c'est l'interface web de ses demos : la
+        bibliotheque ne l'importe jamais. Plusieurs centaines de Mo evitees."""
+        library = catalogue.runtime_spec().get("library_packages") or []
+        assert not [entry for entry in library if entry.startswith("gradio")]
+
+    def test_torch_n_est_pas_duplique(self):
+        """torch a son propre index (CPU) : le reprendre ici irait le chercher
+        ailleurs, et donc deux fois."""
+        spec = catalogue.runtime_spec()
+        library = spec.get("library_packages") or []
+        for entry in library:
+            assert not entry.startswith("torch"), f"{entry} est déjà installé à part"
+
+    def _installe(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(runtime, "runtime_dir", lambda: tmp_path / "rt")
+        executable = runtime.python_executable()
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/bin/sh\n")
+        monkeypatch.setattr(runtime, "find_python",
+                            lambda extra="": runtime.PythonCandidate("/usr/bin/python3", (3, 12, 0)))
+        appels = []
+        monkeypatch.setattr(runtime, "_run",
+                            lambda command, on_progress, cancel_token, label:
+                            appels.append((label, list(command))))
+        runtime.install()
+        return appels
+
+    def test_les_dependances_sont_posees_avant_la_bibliotheque(self, monkeypatch, tmp_path):
+        appels = self._installe(monkeypatch, tmp_path)
+        labels = [label for label, _ in appels]
+        assert "installation des dépendances de Chatterbox" in labels
+        assert (labels.index("installation des dépendances de Chatterbox")
+                < labels.index("installation de Chatterbox"))
+
+    def test_la_bibliotheque_est_installee_sans_ses_dependances(self, monkeypatch, tmp_path):
+        appels = self._installe(monkeypatch, tmp_path)
+        commande = [command for label, command in appels
+                    if label == "installation de Chatterbox"][0]
+        assert "--no-deps" in commande, "sinon pip relit le pyproject et redemande git"
+
+    def test_les_dependances_installees_sont_celles_du_catalogue(self, monkeypatch, tmp_path):
+        appels = self._installe(monkeypatch, tmp_path)
+        commande = [command for label, command in appels
+                    if label == "installation des dépendances de Chatterbox"][0]
+        library = catalogue.runtime_spec().get("library_packages") or []
+        assert commande[-len(library):] == library
+
+    def test_sans_liste_de_dependances_on_revient_au_comportement_precedent(
+            self, monkeypatch, tmp_path):
+        """Un catalogue plus ancien, sans cette liste, doit rester installable."""
+        spec = dict(catalogue.runtime_spec())
+        spec.pop("library_packages", None)
+        monkeypatch.setattr(catalogue, "runtime_spec", lambda: spec)
+        monkeypatch.setattr(runtime.catalogue, "runtime_spec", lambda: spec)
+        appels = self._installe(monkeypatch, tmp_path)
+        labels = [label for label, _ in appels]
+        assert "installation des dépendances de Chatterbox" not in labels
+        commande = [command for label, command in appels
+                    if label == "installation de Chatterbox"][0]
+        assert "--no-deps" not in commande

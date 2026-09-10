@@ -227,8 +227,8 @@ second systeme de voix.
 officiel `resemble-ai/chatterbox`, avec `t3_model="v3"` (poids
 `t3_mtl23ls_v3.safetensors`) et `language_id="fr"`. Le paquet publie sur PyPI
 (0.1.7) n'expose PAS le choix du modele et retomberait silencieusement sur la
-V2 : l'installation vise donc le depot git, epingle sur un commit precis, ecrit
-dans `config/chatterbox.json`. Licence du code : MIT.
+V2 : l'installation vise donc le depot lui-meme, epingle sur un commit precis
+ecrit dans `config/chatterbox.json`. Licence du code : MIT.
 
 **Il vit dans un environnement Python separe**, installe a la demande, jamais
 embarque dans l'executable. Chatterbox epingle `torch==2.6.0`,
@@ -245,12 +245,20 @@ PyTorch + Chatterbox) et les poids du modele. L'ordre n'a aucune importance --
 les poids sont recuperes par le telechargeur de l'application, qui n'a pas
 besoin de l'environnement -- mais les deux sont necessaires pour generer.
 
-**Git n'est PAS necessaire.** Le catalogue propose deux sources pour le meme
-commit, essayees dans l'ordre : une archive du depot, qui s'installe avec pip
-seul, puis le depot git, qui exige git sur la machine. La premiere evite un
-echec reel rencontre en usage -- PyTorch installe, puis « Cannot find command
-'git' » a la derniere etape. Si les deux echouent, le message le dit et propose
-les deux remedes.
+**Git n'est PAS necessaire, et il a fallu s'y reprendre a deux fois.** Le
+catalogue propose d'abord deux sources pour le meme commit, essayees dans
+l'ordre : une archive du depot, qui s'installe avec pip seul, puis le depot
+git. Cela reglait un echec reel -- PyTorch installe, puis « Cannot find command
+'git' » a la derniere etape -- mais pas tout : pip lisait ensuite les
+dependances declarees par le depot, dont
+`resemble-perth @ git+https://github.com/resemble-ai/Perth.git@master`. Une
+adresse git dans une dependance redemande git, meme quand la source principale
+n'en demande plus. D'ou le fonctionnement actuel : les dependances sont
+installees DEPUIS PyPI (`library_packages` dans `config/chatterbox.json`,
+`resemble-perth` y existe sous le numero 1.0.1), puis la bibliotheque est posee
+avec `--no-deps`. `gradio` est volontairement absent de cette liste : le depot
+le declare, mais c'est l'interface web de ses demos, jamais importee par la
+bibliotheque.
 
 **Si Python n'est pas detecte alors qu'il est installe**, deux causes connues,
 toutes deux traitees : une variable PATH mise a jour n'atteint pas un programme

@@ -366,6 +366,16 @@ def install(on_progress: Optional[Callable] = None,
             command += ["--index-url", index]
         _run(command, on_progress, cancel_token, "installation de PyTorch")
 
+    # Les dependances de Chatterbox, prises sur PyPI. Elles sont installees
+    # AVANT la bibliotheque, qui sera ensuite posee sans les siennes : le depot
+    # officiel declare l'une d'elles par une adresse git, que pip ne sait
+    # suivre que si git est installe -- un echec reel, rencontre alors que tout
+    # le reste s'etait installe.
+    library = [str(entry) for entry in (spec.get("library_packages") or []) if entry]
+    if library:
+        _run([python, "-m", "pip", "install", "--no-input", *library],
+             on_progress, cancel_token, "installation des dépendances de Chatterbox")
+
     # Plusieurs sources possibles pour le MEME commit : une archive (pip seul)
     # et un depot git (exige git sur la machine). On essaie dans l'ordre, et on
     # ne garde l'echec que si TOUTES ont echoue.
@@ -373,8 +383,13 @@ def install(on_progress: Optional[Callable] = None,
     used = ""
     for candidate_source in sources:
         try:
-            _run([python, "-m", "pip", "install", "--no-input", candidate_source],
-                 on_progress, cancel_token, "installation de Chatterbox")
+            command = [python, "-m", "pip", "install", "--no-input"]
+            if library:
+                # Sans ses dependances : elles viennent d'etre installees
+                # depuis PyPI, et les reprendre ferait revenir l'adresse git.
+                command.append("--no-deps")
+            command.append(candidate_source)
+            _run(command, on_progress, cancel_token, "installation de Chatterbox")
         except CancelledError:
             raise
         except ChatterboxRuntimeError as error:
@@ -405,14 +420,11 @@ def _explain_source_failure(detail: str) -> str:
     """
     lowered = detail.lower()
     if "cannot find command 'git'" in lowered or "'git' installed" in lowered:
-        return ("Chatterbox n'a pas pu être installé : cette source demande git, qui "
-                "n'est pas présent sur cet ordinateur.\n\n"
-                "Deux solutions, au choix :\n"
-                "• installer Git pour Windows (https://git-scm.com/download/win), puis "
-                "relancer l'installation ;\n"
-                "• utiliser la source en archive, qui n'a besoin que de pip — elle est "
-                "déjà la première du catalogue config/chatterbox.json dans les versions "
-                "récentes de l'application.\n\n"
+        return ("Chatterbox n'a pas pu être installé : une de ses dépendances est "
+                "publiée sous forme d'adresse git, et git n'est pas présent sur cet "
+                "ordinateur.\n\n"
+                "Installe Git pour Windows (https://git-scm.com/download/win), puis "
+                "relance l'installation.\n\n"
                 "L'environnement et PyTorch déjà installés sont conservés : relancer "
                 "l'installation ne les retéléchargera pas.")
     if "no matching distribution" in lowered or "404" in lowered:

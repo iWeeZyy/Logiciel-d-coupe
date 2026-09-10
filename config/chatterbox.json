@@ -35,6 +35,21 @@
       "torch==2.6.0",
       "torchaudio==2.6.0"
     ],
+    "_library_packages_comment": "Dependances de Chatterbox installees DEPUIS PyPI, avant la bibliotheque elle-meme, qui est ensuite posee sans ses dependances (--no-deps). Raison : le depot officiel declare 'resemble-perth @ git+https://github.com/resemble-ai/Perth.git@master', une adresse git -- et pip ne sait la suivre que si git est installe sur la machine, ce qui a fait echouer une installation reelle. Le meme paquet existe sur PyPI (resemble-perth 1.0.1). La liste reprend celle du pyproject.toml officiel, SAUF gradio : c'est l'interface web des demos du depot, jamais importee par la bibliotheque (verifie : aucun 'import gradio' dans src/).",
+    "library_packages": [
+      "numpy>=1.24.0,<2.0.0",
+      "librosa==0.11.0",
+      "s3tokenizer",
+      "transformers==5.2.0",
+      "diffusers==0.29.0",
+      "resemble-perth==1.0.1",
+      "conformer==0.3.2",
+      "safetensors==0.5.3",
+      "spacy-pkuseg",
+      "pykakasi==2.3.0",
+      "pyloudnorm",
+      "omegaconf"
+    ],
     "_sources_comment": "Essayees dans l'ordre. La PREMIERE est une archive du depot au commit epingle : elle s'installe avec pip seul. La seconde passe par git+, qui exige que git soit installe sur la machine -- ce qui n'est pas le cas de tout le monde, et c'est un echec reel rencontre en usage. Meme commit dans les deux cas.",
     "sources": [
       "chatterbox-tts @ https://github.com/resemble-ai/chatterbox/archive/5de7a54aa4e5e2baadb0182dde554908b48b85c2.zip",
