@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -27,6 +28,7 @@ from gui import settings_store
 from gui.branding import APP_TAGLINE
 from content_factory import planning
 from video import ffmpeg_utils
+from youtube import downloader
 from gui.controller import AppController
 from gui.widgets.drop_zone import DropZone
 from gui.widgets.production_options import ProductionOptionsBox
@@ -57,6 +59,18 @@ _MODEL_CHOICES = [
 _HEAVY_MODELS = {"medium", "large", "large-v2", "large-v3"}
 
 
+def _safe_name(source: str) -> str:
+    """Un nom de dossier de projet tire d'un lien, sans caractere interdit.
+
+    Windows refuse : \\ / : * ? " < > | -- et une URL en contient toujours.
+    On garde les 40 derniers caracteres utiles : l'identifiant de la video est
+    en fin d'adresse, c'est lui qui distingue deux projets."""
+    import re
+
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "-", (source or "").strip()).strip("-")
+    return cleaned[-40:] or "video"
+
+
 def _field_label(text: str) -> QLabel:
     label = QLabel(text)
     label.setStyleSheet("font-size: 12.5px; font-weight: 600; margin-top: 4px;")
@@ -69,6 +83,10 @@ class HomePage(QWidget):
         self.controller = controller
         self.selected_video_path: str | None = None
         self.video_duration_s: float | None = None
+        # Une source YouTube et un fichier local s'excluent : la derniere
+        # designee gagne, et l'autre est effacee. Laisser les deux renseignees
+        # obligerait a deviner laquelle l'utilisateur voulait.
+        self.youtube_source: str = ""
 
         # La page defile. Sans cela, des que la carte depassait la hauteur de la
         # fenetre, Qt comprimait les widgets les uns sur les autres : les champs
@@ -106,6 +124,38 @@ class HomePage(QWidget):
         self.drop_zone = DropZone()
         self.drop_zone.file_selected.connect(self._on_file_selected)
         card_layout.addWidget(self.drop_zone)
+
+        # --- ou un lien YouTube ---
+        # Le telechargement passe par youtube/downloader.py, exactement comme
+        # la page Recherche : meme selecteur de qualite, meme verrou de
+        # consentement, meme gestion d'erreurs. Rien n'est reecrit ici.
+        link_label = QLabel("… ou colle un lien YouTube")
+        link_label.setProperty("role", "muted")
+        card_layout.addWidget(link_label)
+
+        link_row = QHBoxLayout()
+        self.youtube_edit = QLineEdit()
+        self.youtube_edit.setPlaceholderText(
+            "https://www.youtube.com/watch?v=…")
+        self.youtube_edit.setClearButtonEnabled(True)
+        self.youtube_edit.textChanged.connect(self._on_youtube_changed)
+        link_row.addWidget(self.youtube_edit, stretch=1)
+        card_layout.addLayout(link_row)
+
+        self.youtube_hint = QLabel("")
+        self.youtube_hint.setProperty("role", "muted")
+        self.youtube_hint.setWordWrap(True)
+        card_layout.addWidget(self.youtube_hint)
+
+        # Le MEME verrou que la page Recherche, et pour la meme raison : rien
+        # n'est telecharge sans que l'utilisateur ait confirme ses droits. Il
+        # n'apparait qu'avec un lien, pour ne pas encombrer le cas d'un fichier
+        # deja present sur le disque.
+        self.consent_check = QCheckBox(
+            "Je confirme disposer des droits nécessaires pour ce traitement.")
+        self.consent_check.setVisible(False)
+        self.consent_check.toggled.connect(self._refresh_generate_enabled)
+        card_layout.addWidget(self.consent_check)
 
         # --- Toute la video, ou des clips ---
         # Ce choix commande les deux champs suivants : quand on garde la video
@@ -251,7 +301,10 @@ class HomePage(QWidget):
 
     def _on_file_selected(self, path: str) -> None:
         self.selected_video_path = path
-        self.generate_btn.setEnabled(True)
+        # Les deux sources s'excluent : choisir un fichier abandonne le lien.
+        if self.youtube_edit.text().strip():
+            self.youtube_edit.clear()
+        self._refresh_generate_enabled()
 
         # Duree lue tout de suite : c'est elle qui permet de proposer un nombre
         # de clips. Une video illisible par ffprobe ne doit pas empecher de
@@ -263,6 +316,47 @@ class HomePage(QWidget):
         if self.video_duration_s:
             self.nb_clips_spin.setValue(planning.suggested_clip_count(self.video_duration_s))
         self._refresh_nb_clips_hint()
+
+    def _on_youtube_changed(self, value: str) -> None:
+        """Le lien decide de l'etat du bouton, et le dit.
+
+        On ne verifie PAS que la video existe : cela demanderait un appel
+        reseau a chaque frappe. On verifie que l'adresse designe bien YouTube,
+        ce qui evite d'envoyer un lien Vimeo a yt-dlp pour qu'il echoue trente
+        secondes plus tard sur un message technique.
+        """
+        value = (value or "").strip()
+        if value:
+            # Les deux sources s'excluent : coller un lien abandonne le fichier.
+            self.selected_video_path = None
+            self.video_duration_s = None
+
+        if not value:
+            self.youtube_source = ""
+            self.youtube_hint.setText("")
+        elif downloader.looks_like_youtube(value):
+            self.youtube_source = value
+            self.youtube_hint.setText(
+                "La vidéo sera téléchargée dans la meilleure qualité disponible, "
+                "puis analysée comme un fichier local. Elle n'est pas conservée "
+                "après l'analyse.")
+        else:
+            self.youtube_source = ""
+            self.youtube_hint.setText(
+                "Ce lien n'est pas reconnu comme une adresse YouTube. Colle une "
+                "adresse youtube.com ou youtu.be, ou l'identifiant de la vidéo.")
+
+        self.consent_check.setVisible(bool(self.youtube_source))
+        self._refresh_nb_clips_hint()
+        self._refresh_generate_enabled()
+
+    def _refresh_generate_enabled(self) -> None:
+        """Une seule regle, un seul endroit : le bouton ne ment jamais sur ce
+        qui manque."""
+        if self.youtube_source:
+            self.generate_btn.setEnabled(self.consent_check.isChecked())
+        else:
+            self.generate_btn.setEnabled(bool(self.selected_video_path))
 
     def _whole_clip_duration(self) -> int:
         """Duree annoncee quand on garde toute la video.
@@ -306,14 +400,18 @@ class HomePage(QWidget):
         return reply == QMessageBox.StandardButton.Yes
 
     def _on_generate_clicked(self) -> None:
-        if not self.selected_video_path:
+        if not (self.selected_video_path or self.youtube_source):
+            return
+        if self.youtube_source and not self.consent_check.isChecked():
             return
         if not self._confirm_heavy_model():
             return
 
         whole = self.whole_video_check.isChecked()
         cli_args = SimpleNamespace(
-            input=self.selected_video_path,
+            # Vide pour une source YouTube : le fil d'analyse le remplit apres
+            # telechargement, exactement comme le fait deja la page Recherche.
+            input=self.selected_video_path or "",
             # Toute la video : une seule sortie, et une duree demandee qui
             # couvre la source entiere. La duree reste renseignee parce que
             # d'autres reglages s'y rapportent (plafonds, notes affichees) --
@@ -334,6 +432,20 @@ class HomePage(QWidget):
             fill_mode=self.production_options.fill_mode(),
             fit_mode=self.production_options.fit_mode(),
         )
+        if self.youtube_source:
+            # Le nom du projet ne peut pas etre le titre de la video : il n'est
+            # pas encore connu, et aller le chercher demanderait un appel
+            # reseau et une cle API que l'accueil n'exige pas. L'identifiant
+            # suffit, et le titre reste lisible dans le lien enregistre.
+            label = downloader.resolve_watch_url(self.youtube_source)
+            self.controller.start_analysis(
+                cli_args, name=f"youtube-{_safe_name(self.youtube_source)}",
+                source_label=label, source_kind="youtube", source_url=label,
+                youtube_source=self.youtube_source,
+                editing_overrides=self._editing_overrides(),
+            )
+            return
+
         name = Path(self.selected_video_path).stem
         self.controller.start_analysis(
             cli_args, name=name, source_label=Path(self.selected_video_path).name,

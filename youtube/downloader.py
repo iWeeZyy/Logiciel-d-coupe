@@ -60,6 +60,46 @@ def resolve_watch_url(video_id_or_url: str) -> str:
     return value  # deja une URL -- yt-dlp gere youtube.com/watch, youtu.be, shorts, etc.
 
 
+# Hotes YouTube reconnus. La liste est EXPLICITE plutot qu'une recherche de
+# « youtube » dans la chaine : « youtube.evil.example.com » contient « youtube »
+# sans etre YouTube, et l'accueil ne doit pas envoyer n'importe quelle adresse a
+# yt-dlp sous pretexte qu'elle en a l'air.
+_YOUTUBE_HOSTS = {
+    "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+    "youtu.be", "www.youtu.be", "youtube-nocookie.com",
+    "www.youtube-nocookie.com",
+}
+
+
+def looks_like_youtube(value: str) -> bool:
+    """Cette chaine designe-t-elle une video YouTube ?
+
+    FONCTION PURE, sans reseau : elle sert a activer ou griser un bouton, pas a
+    garantir que la video existe. Un identifiant nu (11 caracteres) compte,
+    puisque resolve_watch_url() sait deja le completer.
+
+    Ce qu'elle REFUSE volontairement : un autre site, une adresse sans hote, et
+    une chaine vide. Mieux vaut dire « ce n'est pas un lien YouTube » que de
+    laisser yt-dlp echouer trente secondes plus tard sur un message technique.
+    """
+    value = (value or "").strip()
+    if not value:
+        return False
+    if _BARE_ID_RE.match(value):
+        return True
+
+    from urllib.parse import urlparse
+
+    candidate = value if "://" in value else f"https://{value}"
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    return (parsed.hostname or "").lower() in _YOUTUBE_HOSTS
+
+
 def download_video(video_id_or_url: str, out_dir: str, consent_confirmed: bool, *,
                    max_height: int | None = None, on_progress=None,
                    cancel_token=None) -> str:
