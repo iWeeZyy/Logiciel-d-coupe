@@ -304,6 +304,26 @@ gratuit. C'est un calcul enchaine sur deux hypotheses, pas un resultat : le
 materiel n'est pas le meme, et rien n'a ete mesure. Le journal de banc d'essai
 remplacera ce paragraphe par des chiffres.
 
+**De la narration a la video, sans que la video connaisse Hugging Face.
+[TESTE]** Le bouton « Utiliser dans la création vidéo » envoie le WAV produit
+vers le panneau de creation video. La couture existait deja :
+`VideoRequest.narration_wav` sert depuis toujours a reutiliser une voix quand
+seul le cadrage ou le style a change, et une narration venue d'ailleurs entre
+par la meme porte -- `voice_studio/video_service.py` n'a donc pas change d'une
+ligne. Le panneau expose `use_external_narration(wav, script, langue)`,
+volontairement generique : il recoit un fichier, un texte et une langue, et ne
+nomme ni Hugging Face ni ZeroGPU, ce qu'un test verifie ligne a ligne. La page
+ZeroGPU, elle, se contente d'emettre un signal ; c'est la fenetre principale
+qui aiguille, comme elle le fait deja pour Recherche vers Voice Studio.
+
+Deux pieges gardes par des tests, parce qu'ils ne se voient pas : la SIGNATURE
+qui decide de jeter une narration obsolete devait cesser de dependre de la voix
+(sinon le premier rendu jetait la narration qu'on venait d'adopter, et changer
+de voix aurait detruit un fichier que la voix ne produit pas), et la LANGUE
+devait etre imposee explicitement -- une narration externe n'a pas de voix d'ou
+la deduire, et sans elle Whisper traduirait, la faute exacte qui avait deja
+donne des sous-titres anglais sur un script francais.
+
 **Rien n'est payant sans action explicite.** Le depassement de quota chez PRO
 se paie en credits prepayes ; l'application n'a aucun mecanisme de paiement et
 n'en aura pas.

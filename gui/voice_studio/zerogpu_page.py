@@ -18,7 +18,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -48,6 +48,12 @@ BADGE = "GPU distant : Hugging Face ZeroGPU"
 
 
 class ZeroGpuPage(QWidget):
+    # (chemin du WAV, script, langue). La page NE CONNAIT PAS la creation
+    # video : elle annonce qu'une narration est prete, et la fenetre principale
+    # decide ou l'envoyer. C'est ce qui permet de supprimer ce banc d'essai
+    # sans toucher a la creation video.
+    narration_ready = Signal(str, str, str)
+
     def __init__(self, controller=None):
         super().__init__()
         self.controller = controller
@@ -232,6 +238,11 @@ class ZeroGpuPage(QWidget):
         self.srt_btn = QPushButton("Exporter SRT")
         self.srt_btn.clicked.connect(self._export_srt)
         row.addWidget(self.srt_btn)
+
+        self.to_video_btn = QPushButton("🎬  Utiliser dans la création vidéo")
+        self.to_video_btn.setProperty("variant", "primary")
+        self.to_video_btn.clicked.connect(self._send_to_video)
+        row.addWidget(self.to_video_btn)
         row.addStretch(1)
         layout.addLayout(row)
 
@@ -314,6 +325,7 @@ class ZeroGpuPage(QWidget):
         self.save_btn.setEnabled(has_audio)
         self.transcribe_btn.setEnabled(has_audio and not busy)
         self.srt_btn.setEnabled(self._transcript is not None)
+        self.to_video_btn.setEnabled(has_audio and not busy)
 
     # --------------------------------------------------------- generation
     def _params(self) -> catalogue.Params:
@@ -448,6 +460,21 @@ class ZeroGpuPage(QWidget):
 
         shutil.copyfile(self._outcome.wav_path, path)
         self.detail_label.setText(f"Enregistré : {path}")
+
+    def _send_to_video(self) -> None:
+        """Envoie la narration vers la creation video de Voice Studio.
+
+        La transcription N'EST PAS faite ici, meme si le bouton « Transcrire »
+        existe juste a cote : la creation video la refait de toute facon, avec
+        son propre cache, et la lui imposer depuis ce banc d'essai creerait
+        deux chemins pour la meme chose.
+        """
+        if not (self._outcome and Path(self._outcome.wav_path).is_file()):
+            return
+        self.narration_ready.emit(
+            self._outcome.wav_path,
+            self.script_edit.toPlainText().strip(),
+            self.language_combo.currentData() or "fr")
 
     def _transcribe(self) -> None:
         if not (self._outcome and Path(self._outcome.wav_path).is_file()):

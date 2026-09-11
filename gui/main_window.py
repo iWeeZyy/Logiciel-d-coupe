@@ -131,12 +131,39 @@ class MainWindow(QMainWindow):
         self.controller.analysis_cancelled.connect(self._show_analysis_cancelled)
         self.controller.search_failed.connect(self._show_search_error)
         self.controller.open_in_voice_studio.connect(self._open_in_voice_studio)
+        self.pages["zerogpu"].narration_ready.connect(self._use_zerogpu_narration)
 
     def _show_analysis_error(self, message: str) -> None:
         QMessageBox.critical(self, "Échec de l'analyse", message)
 
     def _show_analysis_cancelled(self) -> None:
         QMessageBox.information(self, "Analyse annulée", "L'analyse a été annulée.")
+
+    def _use_zerogpu_narration(self, wav_path: str, script: str, language: str) -> None:
+        """Aiguillage banc d'essai -> creation video, meme principe que
+        ci-dessous : la page ZeroGPU ne connait pas la creation video, elle dit
+        seulement qu'une narration est prete. C'est ici, seul endroit qui
+        detient toutes les pages, qu'on la remet au bon panneau.
+
+        Le panneau, lui, ne connait pas Hugging Face : il recoit un fichier, un
+        texte et une langue. Supprimer le banc d'essai n'a donc rien a defaire
+        dans la creation video.
+        """
+        page = self.pages.get("voice")
+        panel = getattr(page, "video_panel", None)
+        if panel is None:
+            return
+        if not panel.use_external_narration(wav_path, script, language,
+                                            origin="Voice Studio ZeroGPU"):
+            QMessageBox.warning(self, "Narration introuvable",
+                                "Le fichier audio n'existe plus sur le disque.")
+            return
+        self.show_page("voice")
+        QMessageBox.information(
+            self, "Narration transmise",
+            "La narration est en place dans « Créer une vidéo ».\n\n"
+            "Choisis la vidéo source, puis lance l'aperçu. La voix ne sera pas "
+            "régénérée : aucun quota GPU ne sera consommé.")
 
     def _open_in_voice_studio(self, payload: dict) -> None:
         """Aiguillage Recherche -> Voice Studio.

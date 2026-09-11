@@ -28,6 +28,45 @@ from voice_studio import zerogpu_client, zerogpu_token
 REPO = Path(__file__).resolve().parents[1]
 
 
+def code_lines(path: Path) -> list:
+    """Les lignes de CODE d'un fichier : ni commentaires, ni docstrings.
+
+    Les tests d'isolation ci-dessous cherchent des dependances reelles. Un
+    commentaire qui EXPLIQUE pourquoi un module ignore ZeroGPU est une bonne
+    chose, pas une dependance : le compter ferait echouer le test pour la
+    documentation qu'il est cense encourager.
+    """
+    import ast
+    import io
+    import tokenize
+
+    source = path.read_text(encoding="utf-8")
+
+    # Les docstrings, reperees par leur numero de ligne.
+    docstrings = set()
+    arbre = ast.parse(source)
+    for noeud in ast.walk(arbre):
+        if not isinstance(noeud, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                  ast.AsyncFunctionDef)):
+            continue
+        corps = getattr(noeud, "body", None) or []
+        if not corps:
+            continue
+        premier = corps[0]
+        if (isinstance(premier, ast.Expr)
+                and isinstance(premier.value, ast.Constant)
+                and isinstance(premier.value.value, str)):
+            docstrings.update(range(premier.lineno, (premier.end_lineno or premier.lineno) + 1))
+
+    # Les commentaires, par tokenisation : « # » dans une chaine n'en est pas un.
+    commentaires = {token.start[0] for token in
+                    tokenize.generate_tokens(io.StringIO(source).readline)
+                    if token.type == tokenize.COMMENT}
+
+    return [ligne for numero, ligne in enumerate(source.splitlines(), start=1)
+            if numero not in docstrings and numero not in commentaires]
+
+
 class TestIsolation:
     """La condition posee : « je veux pouvoir supprimer entierement ce nouvel
     onglet sans avoir a restaurer l'ancien Voice Studio »."""
@@ -41,7 +80,7 @@ class TestIsolation:
 
     def test_aucun_module_du_voice_studio_n_importe_zerogpu(self):
         coupables = [path.name for path in self._sources("voice_studio")
-                     if "zerogpu" in path.read_text(encoding="utf-8")]
+                     if any("zerogpu" in ligne.lower() for ligne in code_lines(path))]
         assert not coupables, (
             f"{coupables} dépend(ent) de ZeroGPU : le supprimer casserait "
             "le Voice Studio actuel")
@@ -49,20 +88,39 @@ class TestIsolation:
     def test_aucun_moteur_tts_ne_connait_zerogpu(self):
         """ZeroGPU n'est PAS un quatrieme moteur : SAPI, Piper et Chatterbox
         local doivent continuer a fonctionner exactement comme avant."""
-        tts = (REPO / "voice_studio" / "tts.py").read_text(encoding="utf-8")
-        assert "zerogpu" not in tts.lower()
+        for ligne in code_lines(REPO / "voice_studio" / "tts.py"):
+            assert "zerogpu" not in ligne.lower(), ligne
 
     def test_la_page_voice_studio_n_est_pas_touchee(self):
-        page = (REPO / "gui" / "voice_studio" / "page.py").read_text(encoding="utf-8")
-        assert "zerogpu" not in page.lower()
+        for ligne in code_lines(REPO / "gui" / "voice_studio" / "page.py"):
+            assert "zerogpu" not in ligne.lower(), ligne
 
-    def test_l_empreinte_dans_la_fenetre_principale_tient_en_trois_lignes(self):
-        """Trois lignes a retirer, pas davantage."""
-        window = (REPO / "gui" / "main_window.py").read_text(encoding="utf-8")
-        lignes = [ligne for ligne in window.splitlines()
-                  if ("zerogpu" in ligne.lower() or "ZeroGpuPage" in ligne)
-                  and not ligne.strip().startswith("#")]
-        assert len(lignes) == 3, lignes
+    def test_l_empreinte_dans_la_fenetre_principale_reste_minuscule(self):
+        """Quelques lignes a retirer, pas davantage.
+
+        Trois pour l'onglet lui-meme (import, entree de menu, instanciation),
+        deux pour l'aiguillage de la narration vers la creation video. Le
+        seuil est volontairement serre : il doit se declencher si quelqu'un
+        commence a repandre du ZeroGPU dans la fenetre principale.
+        """
+        lignes = [ligne for ligne in code_lines(REPO / "gui" / "main_window.py")
+                  if "zerogpu" in ligne.lower()]
+        assert len(lignes) <= 6, lignes
+
+    def test_la_creation_video_ignore_tout_de_hugging_face(self):
+        """Le panneau recoit un fichier, un texte et une langue. S'il nommait
+        ZeroGPU, supprimer le banc d'essai casserait la creation video."""
+        for ligne in code_lines(REPO / "gui" / "voice_studio" / "video_panel.py"):
+            for interdit in ("zerogpu", "gradio", "hugging"):
+                assert interdit not in ligne.lower(), ligne
+
+    def test_le_service_video_n_a_pas_eu_a_changer(self):
+        """VideoRequest.narration_wav existait deja pour reutiliser une voix :
+        c'est cette couture qui accueille la narration externe, sans ajout."""
+        service = REPO / "voice_studio" / "video_service.py"
+        assert "narration_wav" in service.read_text(encoding="utf-8")
+        for ligne in code_lines(service):
+            assert "zerogpu" not in ligne.lower(), ligne
 
     def test_le_service_ne_depend_pas_du_cache_de_voix(self):
         """Utiliser tts.py ferait entrer ZeroGPU dans le systeme existant."""
@@ -725,3 +783,132 @@ class TestVoixDeReference:
         message = zerogpu_client._explain(Exception("FileNotFoundError"), "X/Y")
         assert "voix de référence" in message
         assert "pas chez toi" in message, "l'utilisateur ne doit pas chercher de son côté"
+
+
+@pytest.fixture
+def qt_app():
+    """Meme amorcage que les autres tests d'interface de ce depot."""
+    pytest.importorskip("PySide6")
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication([])
+
+
+class TestNarrationVersLaVideo:
+    """Le branchement banc d'essai -> creation video.
+
+    LA COUTURE EXISTAIT DEJA : VideoRequest.narration_wav sert depuis toujours
+    a reutiliser une voix quand seul le cadrage ou le style a change. Une
+    narration venue d'ailleurs entre par la meme porte, donc video_service.py
+    n'a pas change d'une ligne.
+
+    CE QUI ETAIT PIEGEUX, en revanche, et que ces tests gardent : la signature
+    qui decide quand jeter une narration devenue obsolete, et la langue.
+    """
+
+    @pytest.fixture
+    def panneau(self, qt_app, tmp_path):
+        import numpy as np
+        import soundfile as sf
+
+        from gui.voice_studio.video_panel import VideoPanel
+
+        wav = tmp_path / "narration.wav"
+        sf.write(str(wav), np.zeros(24000, dtype="float32"), 24000)
+        panel = VideoPanel(lambda: (None, 1.0, 1.0, 0.0))
+        return panel, str(wav)
+
+    def test_la_narration_est_adoptee_avec_son_script(self, panneau):
+        panel, wav = panneau
+        assert panel.use_external_narration(wav, "Mon script.", "fr")
+        assert panel.external_narration() == wav
+        assert panel.script() == "Mon script."
+
+    def test_un_fichier_absent_est_refuse_sans_planter(self, panneau, tmp_path):
+        panel, _ = panneau
+        assert not panel.use_external_narration(str(tmp_path / "absent.wav"), "x", "fr")
+        assert panel.external_narration() == ""
+
+    def test_la_langue_est_imposee_car_il_n_y_a_pas_de_voix(self, panneau):
+        """Sans elle, Whisper detecterait -- ou traduirait. C'est la faute qui
+        avait donne des sous-titres anglais sur un script francais."""
+        panel, wav = panneau
+        panel.use_external_narration(wav, "Mon script.", "fr")
+        assert panel._external_language == "fr"
+
+    def test_la_narration_survit_au_premier_rendu(self, panneau):
+        """La signature est posee a l'adoption : sinon le rendu constaterait un
+        changement et jetterait la voix qu'on vient de recevoir."""
+        panel, wav = panneau
+        panel.use_external_narration(wav, "Mon script.", "fr")
+        assert panel._signature() == panel._narration_signature
+
+    def test_changer_de_voix_ne_jette_pas_une_narration_externe(self, panneau):
+        """Le fichier existe deja : la voix du bloc « Voix » ne le modifie pas."""
+        panel, wav = panneau
+        panel.use_external_narration(wav, "Mon script.", "fr")
+        avant = panel._signature()
+
+        class _AutreVoix:
+            id = "une-autre-voix"
+
+        panel._voice_provider = lambda: (_AutreVoix(), 2.0, 0.5, 1.0)
+        assert panel._signature() == avant
+
+    def test_changer_le_script_invalide_bien_la_narration(self, panneau):
+        """Les sous-titres en dependent : la garder serait pire."""
+        panel, wav = panneau
+        panel.use_external_narration(wav, "Mon script.", "fr")
+        avant = panel._signature()
+        panel.script_edit.setPlainText("Un tout autre script.")
+        assert panel._signature() != avant
+
+    def test_on_peut_revenir_a_la_voix_du_bloc_voix(self, panneau):
+        panel, wav = panneau
+        panel.use_external_narration(wav, "Mon script.", "fr")
+        panel.clear_external_narration()
+        assert panel.external_narration() == ""
+        assert panel._external_language is None
+        assert panel.external_label.isHidden()
+
+    def test_le_bandeau_previent_que_la_voix_choisie_est_ignoree(self, panneau):
+        """Sans cela, rien n'expliquerait pourquoi changer de voix ne change
+        rien au rendu."""
+        panel, wav = panneau
+        panel.use_external_narration(wav, "Mon script.", "fr", origin="Test")
+        assert "sans être" in panel.external_label.text()
+        assert "ignorée" in panel.external_label.text()
+
+    def test_la_page_annonce_la_narration_sans_connaitre_la_video(self, qt_app, tmp_path):
+        """La page ZeroGPU emet un signal ; elle n'appelle aucun panneau."""
+        import numpy as np
+        import soundfile as sf
+
+        from gui.voice_studio.zerogpu_page import ZeroGpuPage
+
+        wav = tmp_path / "narration.wav"
+        sf.write(str(wav), np.zeros(2400, dtype="float32"), 24000)
+
+        page = ZeroGpuPage(None)
+        page.script_edit.setPlainText("Mon script.")
+
+        class _Resultat:
+            wav_path = str(wav)
+
+        page._outcome = _Resultat()
+        recu = []
+        page.narration_ready.connect(lambda *args: recu.append(args))
+        page._send_to_video()
+        assert recu == [(str(wav), "Mon script.", "fr")]
+
+    def test_rien_n_est_emis_sans_audio(self, qt_app):
+        from gui.voice_studio.zerogpu_page import ZeroGpuPage
+
+        page = ZeroGpuPage(None)
+        recu = []
+        page.narration_ready.connect(lambda *args: recu.append(args))
+        page._send_to_video()
+        assert recu == []

@@ -69,6 +69,14 @@ class VideoPanel(QWidget):
         self._source_duration_s = 0.0
         self._narration_wav = ""
         self._narration_transcript = None
+        # Narration VENUE D'AILLEURS (banc d'essai ZeroGPU aujourd'hui, autre
+        # chose demain) : un fichier deja produit, que ce panneau ne doit ni
+        # regenerer ni jeter. `_external_language` existe parce que la langue
+        # se deduit normalement de la voix, et qu'une narration externe n'en a
+        # pas : sans elle, Whisper TRADUIRAIT le francais en anglais -- la
+        # faute exacte qui avait donne des sous-titres anglais.
+        self._external_wav = ""
+        self._external_language = None
         self._narration_signature = None
         self._last_output = ""
         self._whisper_model = "small"
@@ -119,6 +127,19 @@ class VideoPanel(QWidget):
         self.stats_label.setProperty("role", "muted")
         script_row.addWidget(self.stats_label)
         layout.addLayout(script_row)
+
+        # Visible uniquement quand une narration externe est en place : sinon
+        # rien n'indiquerait que la voix ne sera pas celle du bloc « Voix ».
+        self.external_label = QLabel("")
+        self.external_label.setProperty("role", "muted")
+        self.external_label.setWordWrap(True)
+        self.external_label.setVisible(False)
+        layout.addWidget(self.external_label)
+
+        self.drop_external_btn = QPushButton("Oublier cette narration")
+        self.drop_external_btn.setVisible(False)
+        self.drop_external_btn.clicked.connect(self.clear_external_narration)
+        layout.addWidget(self.drop_external_btn)
 
         # --- options ------------------------------------------------------
         formats = QHBoxLayout()
@@ -312,6 +333,56 @@ class VideoPanel(QWidget):
     def script(self) -> str:
         return narration_module.clean_script(self.script_edit.toPlainText())
 
+    # ------------------------------------------------- narration externe
+    def use_external_narration(self, wav_path: str, script: str,
+                               language: str = "", origin: str = "") -> bool:
+        """Adopte une voix deja produite ailleurs, avec son script.
+
+        VOLONTAIREMENT GENERIQUE : ce panneau ne connait ni Hugging Face ni
+        aucun fournisseur. Il recoit un fichier, un texte et une langue. C'est
+        ce qui permet au banc d'essai ZeroGPU de vivre entierement a part, et
+        d'etre supprime sans toucher a la creation video.
+
+        Rien n'est regenere : le service video sait deja reutiliser une
+        narration fournie (`VideoRequest.narration_wav`), c'est meme pour cela
+        que ce champ existe. Le script, lui, sert aux SOUS-TITRES -- ils
+        affichent le texte ecrit, cale sur les mots reellement prononces.
+        """
+        if not (wav_path and Path(wav_path).is_file()):
+            return False
+        self._external_wav = str(wav_path)
+        self._external_language = (language or "").strip()[:2].lower() or None
+        self._narration_wav = str(wav_path)
+        self._narration_transcript = None
+        if script:
+            self.script_edit.setPlainText(script)
+        # La signature est posee MAINTENANT : sans cela, le premier rendu
+        # constaterait un changement et jetterait la narration qu'on vient
+        # d'adopter.
+        self._narration_signature = self._signature()
+
+        self.external_label.setText(
+            f"Narration fournie{' par ' + origin if origin else ''} : "
+            f"{Path(wav_path).name}. Elle sera utilisée telle quelle, sans être "
+            "régénérée. La voix choisie dans le bloc « Voix » est ignorée tant "
+            "que cette narration est en place.")
+        self.external_label.setVisible(True)
+        self.drop_external_btn.setVisible(True)
+        self._update_stats()
+        return True
+
+    def clear_external_narration(self) -> None:
+        """Revenir a la voix du bloc « Voix »."""
+        self._external_wav = ""
+        self._external_language = None
+        self._narration_wav = ""
+        self._narration_transcript = None
+        self.external_label.setVisible(False)
+        self.drop_external_btn.setVisible(False)
+
+    def external_narration(self) -> str:
+        return self._external_wav
+
     def _on_script_changed(self) -> None:
         """Le compte de mots ET l'etat des boutons : un script colle dans le
         champ doit rendre « Creer la video » cliquable tout de suite, sans
@@ -388,6 +459,15 @@ class VideoPanel(QWidget):
 
     # --------------------------------------------------------------- rendu
     def _signature(self) -> tuple:
+        """Ce qui, en changeant, rend la narration obsolete.
+
+        Avec une narration externe, la voix et ses reglages n'y entrent PAS :
+        le fichier existe deja, et changer de voix dans le bloc « Voix » ne le
+        modifie pas. Les y laisser aurait jete la narration au premier rendu.
+        Le script y reste : les sous-titres en dependent.
+        """
+        if self._external_wav:
+            return (self.script(), "externe", self._external_wav)
         voice, rate, volume, pause = self._voice_provider()
         return (self.script(), getattr(voice, "id", ""), round(float(rate), 3),
                 round(float(volume), 3), round(float(pause), 2))
@@ -430,8 +510,10 @@ class VideoPanel(QWidget):
             settings=settings,
             voice=voice, rate=rate, volume=volume, sentence_pause_s=pause,
             whisper_model=self._whisper_model,
-            # Aucune langue imposee : le service la deduit de la voix.
-            language=None,
+            # Normalement aucune langue imposee : le service la deduit de la
+            # voix. Une narration externe n'a pas de voix, d'ou l'exception --
+            # sans elle Whisper detecterait, ou pire, traduirait.
+            language=self._external_language,
             device=self._device,
             preview=preview,
             narration_wav=self._narration_wav,
