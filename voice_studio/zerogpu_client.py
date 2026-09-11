@@ -144,10 +144,16 @@ def _arguments(names: list, params: catalogue.Params, text: str,
     `check_arguments`, appele juste apres, parce qu'un appel sans texte est un
     appel arbitraire et doit etre refuse plutot qu'envoye.
     """
+    # La voix de reference : celle fournie par l'utilisateur si elle existe,
+    # sinon l'echantillon officiel de la langue. Jamais None : le defaut du
+    # Space est une adresse HTTPS qu'il ne sait pas resoudre lui-meme quand
+    # l'appel vient de l'API, et il leve FileNotFoundError.
+    reference = _reference_payload(params)
+
     known = {
         "text_input": text,
         "language_id": params.language,
-        "audio_prompt_path_input": params.reference or None,
+        "audio_prompt_path_input": reference,
         "exaggeration_input": params.exaggeration,
         "temperature_input": params.temperature,
         "seed_num_input": params.seed,
@@ -181,6 +187,27 @@ def _arguments(names: list, params: catalogue.Params, text: str,
                     break
         arguments.append(known.get(key))
     return arguments
+
+
+def _reference_payload(params: catalogue.Params):
+    """Charge utile que le serveur saura resoudre, ou None faute de reference.
+
+    `handle_file()` accepte un chemin local COMME une adresse HTTPS et construit
+    dans les deux cas la structure que Gradio attend cote serveur. C'est ce
+    travail que l'interface web fait toute seule, et que personne ne fait quand
+    l'appel passe par l'API.
+    """
+    from gradio_client import handle_file                # noqa: PLC0415
+
+    source = (params.reference or "").strip() or catalogue.reference_for(params.language)
+    if not source:
+        return None
+    try:
+        return handle_file(source)
+    except ValueError as error:
+        raise ZeroGpuError(
+            "Le fichier de voix de référence est introuvable :\n"
+            f"{source}\n\nDétail technique : {error}") from error
 
 
 def check_arguments(names: list, arguments: list, text: str) -> None:
@@ -385,6 +412,14 @@ def _explain(error: Exception, space: str) -> str:
         return (f"Le Space « {space} » est introuvable.\n\n"
                 "Vérifie son identifiant dans config/zerogpu.json. Un Space privé "
                 "exige en plus un jeton ayant accès à ce dépôt.")
+    if "filenotfound" in lowered.replace(" ", ""):
+        return ("Le Space n'a pas trouvé le fichier de voix de référence.\n\n"
+                "C'est une erreur côté Hugging Face, pas chez toi : appelé par "
+                "l'API, le Space retombe sur une adresse Internet qu'il ne sait "
+                "pas ouvrir lui-même. L'application fournit donc la référence "
+                "explicitement ; si ce message revient, c'est que la référence "
+                "configurée pour cette langue n'est plus accessible.\n\n"
+                f"Message du serveur : {detail}")
     if "429" in detail or "rate limit" in lowered:
         return ("Trop de requêtes envoyées à Hugging Face en peu de temps. "
                 "Attends une minute avant de relancer.")

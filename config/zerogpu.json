@@ -1,6 +1,5 @@
 {
   "_comment": "Voice Studio ZeroGPU -- BANC D'ESSAI, isole du Voice Studio normal. Chatterbox V3 execute sur un GPU distant (Hugging Face ZeroGPU) au lieu du processeur local. Rien ici n'est lu par les moteurs SAPI, Piper ou Chatterbox local : supprimer ce fichier et l'onglet ne touche a aucun d'eux.",
-
   "space": {
     "_comment": "Le Space appele. Par defaut celui de Resemble AI, verifie comme tournant sur ZeroGPU. Le dupliquer sous son propre compte le rend stable (personne d'autre ne peut le modifier) et consomme un des deux Spaces ZeroGPU gratuits.",
     "id": "ResembleAI/Chatterbox-Multilingual-TTS",
@@ -17,22 +16,17 @@
       "cfgw_input"
     ]
   },
-
   "limits": {
     "_max_chars_comment": "300, et ce n'est pas un choix prudent : multilingual_app.py tronque le texte a 300 caracteres (text_input[:300]) SANS RIEN DIRE. Un morceau plus long perdrait sa fin en silence. La limite du Chatterbox local (320) ne s'applique donc pas ici, d'ou une valeur propre a ce fichier plutot qu'un partage qui serait faux.",
     "max_chars_per_chunk": 300,
-
     "_queue_comment": "Attente maximale dans la file avant d'abandonner un morceau. Un Space gratuit endormi met plusieurs dizaines de secondes a se reveiller ; la priorite de file va aux comptes PRO. NON MESURE ici : cette valeur est une garde, pas une prediction.",
     "queue_timeout_s": 600,
-
     "_gpu_comment": "Duree maximale d'un appel GPU cote Hugging Face : NON CONFIRMEE par la documentation officielle, qui ne donne que la duree PAR DEFAUT (60 s). Les forums convergent vers 120 s, parfois 240, avec un comportement irregulier au-dela. Ce champ ne sert qu'a expliquer un echec a l'utilisateur, jamais a promettre quoi que ce soit.",
     "gpu_duration_hint_s": 120,
-
     "_retry_comment": "Un morceau rejete pour quota epuise ou file pleine est retente, avec une pause croissante. Au-dela, on s'arrete et on dit pourquoi : insister ne fait pas revenir un quota journalier.",
     "max_retries": 2,
     "retry_pause_s": 20
   },
-
   "defaults": {
     "_comment": "Memes bornes et memes valeurs que le Chatterbox local (config/chatterbox.json) : c'est le meme modele, la comparaison des deux n'aurait aucun sens avec des reglages differents.",
     "language": "fr",
@@ -41,7 +35,6 @@
     "temperature": 0.8,
     "seed": 0
   },
-
   "quota": {
     "_comment": "Chiffres lus dans huggingface/hub-docs (docs/hub/spaces-zerogpu.md, branche main). Ils bougent : ils sont AFFICHES a l'utilisateur comme un rappel date, jamais utilises pour calculer ou bloquer quoi que ce soit.",
     "source": "huggingface/hub-docs, docs/hub/spaces-zerogpu.md",
@@ -52,5 +45,17 @@
       "pro": 2400
     },
     "hardware": "moitié d'une NVIDIA RTX Pro 6000 Blackwell"
+  },
+  "reference_voices": {
+    "_comment": "POURQUOI CE BLOC EXISTE, et ce n'est pas un confort. Le Space fait `chosen_prompt = audio_prompt_path_input or default_audio_for_ui(language_id)`, et ce defaut est une ADRESSE HTTPS, pas un fichier. Dans l'interface web, Gradio telecharge cette adresse et passe un vrai chemin local a la fonction. Par l'API, personne ne fait ce travail : le serveur passe l'adresse telle quelle a un chargeur audio, qui leve FileNotFoundError. Defaut REEL, vu en usage, avec pour seul detail « FileNotFoundError » -- Gradio ne divulgue que le nom de l'exception. On fournit donc nous-memes la reference, via gradio_client.handle_file(), qui construit la charge utile que le serveur sait resoudre.",
+    "_provenance_comment": "Ce sont les echantillons de demonstration officiels de Resemble AI, lus dans LANGUAGE_CONFIG de multilingual_app.py au commit du jour. Ce sont exactement ceux qu'utilise l'interface web du Space : la voix obtenue est donc celle de la demonstration, pas une voix clonee depuis Internet. Un fichier fourni volontairement par l'utilisateur prend le pas sur eux.",
+    "by_language": {
+      "fr": "https://storage.googleapis.com/chatterbox-demo-samples/mtl_prompts/fr_f1.flac",
+      "en": "https://storage.googleapis.com/chatterbox-demo-samples/mtl_prompts/en_f1.flac",
+      "es": "https://storage.googleapis.com/chatterbox-demo-samples/mtl_prompts/es_f1.flac",
+      "de": "https://storage.googleapis.com/chatterbox-demo-samples/mtl_prompts/de_f1.flac",
+      "it": "https://storage.googleapis.com/chatterbox-demo-samples/mtl_prompts/it_m1.flac",
+      "pt": "https://storage.googleapis.com/chatterbox-demo-samples/mtl_prompts/pt_m1.flac"
+    }
   }
 }

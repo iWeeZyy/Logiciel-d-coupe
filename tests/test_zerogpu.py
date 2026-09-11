@@ -115,14 +115,18 @@ class TestAssociationDesParametres:
 
     def test_association_par_nom_de_parametre(self):
         args = zerogpu_client._arguments(self.NOMS, self._params(), "Bonjour.", [])
-        assert args == ["Bonjour.", "fr", None, 0.7, 0.9, 3, 0.4]
+        assert [args[0], args[1], args[3], args[4], args[5], args[6]] == \
+            ["Bonjour.", "fr", 0.7, 0.9, 3, 0.4]
+        # La reference n'est JAMAIS None : voir TestVoixDeReference.
+        assert isinstance(args[2], dict)
 
     def test_association_par_libelle_quand_le_space_ne_nomme_pas(self):
         labels = ["Text to synthesize (max chars 300)", "Language ID",
                   "Reference audio file", "Exaggeration", "Temperature",
                   "Random seed", "CFG/Pace"]
         args = zerogpu_client._arguments(labels, self._params(), "Salut.", [])
-        assert args == ["Salut.", "fr", None, 0.7, 0.9, 3, 0.4]
+        assert [args[0], args[1], args[3]] == ["Salut.", "fr", 0.7]
+        assert isinstance(args[2], dict)
 
     def test_repli_sur_l_ordre_du_catalogue_si_rien_n_est_nomme(self):
         anonymes = [f"#{index}" for index in range(7)]
@@ -134,10 +138,11 @@ class TestAssociationDesParametres:
                                          self._params(), "Bonjour.", [])
         assert args == ["Bonjour.", None]
 
-    def test_la_voix_de_reference_absente_vaut_none(self):
+    def test_la_voix_de_reference_n_est_jamais_laissee_vide(self):
+        """Le defaut du Space est casse par l'API : voir TestVoixDeReference."""
         args = zerogpu_client._arguments(["audio_prompt_path_input"],
                                          self._params(), "x", [])
-        assert args == [None]
+        assert args[0] is not None
 
 
 class TestChoixDeLEndpoint:
@@ -659,3 +664,64 @@ class TestLaBoucleDeSondage:
         assert zerogpu_client._audio_path([piece, None]) == piece
         assert zerogpu_client._audio_path({"path": piece}) == piece
         assert zerogpu_client._audio_path(None) == ""
+
+
+class TestVoixDeReference:
+    """La reference EST obligatoire, et ce n'est pas un choix de confort.
+
+    DEFAUT REEL SIGNALE EN USAGE : la connexion reussissait, l'endpoint
+    /generate_tts_audio etait bien decouvert, puis chaque morceau echouait sur
+    « FileNotFoundError » -- sans autre detail, Gradio ne divulguant que le nom
+    de l'exception.
+
+    CAUSE, lue dans multilingual_app.py du depot officiel :
+
+        chosen_prompt = audio_prompt_path_input or default_audio_for_ui(language_id)
+
+    et ce defaut est une ADRESSE HTTPS, pas un fichier. Dans l'interface web,
+    Gradio telecharge l'adresse et passe un vrai chemin local a la fonction.
+    Par l'API, personne ne fait ce travail : le serveur passe l'adresse telle
+    quelle a un chargeur audio, qui echoue. Envoyer None etait donc une panne
+    garantie.
+    """
+
+    def test_une_reference_existe_pour_chaque_langue_proposee(self):
+        """Les langues du menu et celles du catalogue doivent coincider."""
+        for langue in ("fr", "en", "es", "de", "it", "pt"):
+            assert catalogue.reference_for(langue), f"aucune référence pour {langue}"
+
+    def test_la_reference_francaise_est_celle_du_depot_officiel(self):
+        assert catalogue.reference_for("fr").endswith("mtl_prompts/fr_f1.flac")
+
+    def test_une_langue_inconnue_ne_donne_pas_une_reference_inventee(self):
+        assert catalogue.reference_for("klingon") == ""
+
+    def test_la_reference_part_sous_la_forme_attendue_par_gradio(self):
+        """handle_file() construit la charge utile que le serveur sait résoudre."""
+        charge = zerogpu_client._reference_payload(catalogue.params_for(language="fr"))
+        assert charge["meta"]["_type"] == "gradio.FileData"
+        assert charge["url"].startswith("https://")
+
+    def test_le_fichier_de_l_utilisateur_prime_sur_l_echantillon_officiel(self, tmp_path):
+        fichier = tmp_path / "ma_voix.wav"
+        fichier.write_bytes(b"RIFF")
+        charge = zerogpu_client._reference_payload(
+            catalogue.params_for(language="fr", reference=str(fichier)))
+        assert charge["orig_name"] == "ma_voix.wav"
+        assert "url" not in charge, "un fichier local n'est pas une adresse"
+
+    def test_un_fichier_inexistant_est_dit_clairement(self, tmp_path):
+        with pytest.raises(zerogpu_client.ZeroGpuError) as erreur:
+            zerogpu_client._reference_payload(
+                catalogue.params_for(reference=str(tmp_path / "absent.wav")))
+        assert "introuvable" in str(erreur.value)
+
+    def test_sans_aucune_reference_disponible_on_envoie_none(self, monkeypatch):
+        """Ne rien envoyer reste preferable a envoyer une adresse inventee."""
+        monkeypatch.setattr(catalogue, "reference_for", lambda langue: "")
+        assert zerogpu_client._reference_payload(catalogue.params_for()) is None
+
+    def test_le_message_d_erreur_explique_la_panne_du_space(self):
+        message = zerogpu_client._explain(Exception("FileNotFoundError"), "X/Y")
+        assert "voix de référence" in message
+        assert "pas chez toi" in message, "l'utilisateur ne doit pas chercher de son côté"

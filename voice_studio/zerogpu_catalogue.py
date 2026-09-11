@@ -74,6 +74,19 @@ def defaults() -> dict:
     return merged
 
 
+def reference_for(language: str) -> str:
+    """Adresse de la voix de reference officielle pour cette langue, ou "".
+
+    Elle est NECESSAIRE, pas decorative : sans elle, le Space retombe sur son
+    propre defaut, qui est une adresse HTTPS qu'il passe telle quelle a un
+    chargeur audio -- d'ou un FileNotFoundError cote serveur. Voir le
+    commentaire de `reference_voices` dans config/zerogpu.json.
+    """
+    block = config().get("reference_voices", {}) or {}
+    table = block.get("by_language", {}) or {}
+    return str(table.get((language or "").strip().lower()) or "")
+
+
 def quota_note() -> dict:
     return config().get("quota", {}) or {}
 
