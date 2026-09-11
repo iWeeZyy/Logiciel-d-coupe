@@ -277,7 +277,10 @@ def generate_chunk(client, connection: Connection, text: str,
         raise ZeroGpuError(_explain(error, connection.space)) from error
 
     while True:
-        if cancel_token is not None and cancel_token.cancelled():
+        # `is_cancelled` est une PROPRIETE de CancelToken, pas une methode :
+        # l'appeler comme une fonction levait un AttributeError des le premier
+        # tour de boucle, donc a chaque generation. Defaut reel, vu en usage.
+        if cancel_token is not None and cancel_token.is_cancelled:
             job.cancel()
             raise CancelledError()
 

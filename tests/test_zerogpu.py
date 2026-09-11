@@ -514,3 +514,148 @@ class TestAucunAppelArbitraire:
         source = (REPO / "voice_studio" / "zerogpu_client.py").read_text(encoding="utf-8")
         assert source.index("check_arguments(connection.parameter_names") < \
             source.index("job = client.submit")
+
+
+class TestLaBoucleDeSondage:
+    """La boucle de generate_chunk, executee POUR DE VRAI.
+
+    DEFAUT REEL SIGNALE EN USAGE : « AttributeError — 'CancelToken' object has
+    no attribute 'cancelled' », a chaque generation. `is_cancelled` est une
+    PROPRIETE, pas une methode.
+
+    POURQUOI LES TESTS PRECEDENTS NE L'ONT PAS VU, et c'est la vraie lecon :
+    le test de bout en bout remplacait `generate_chunk` en entier par un faux.
+    La boucle de sondage n'etait donc JAMAIS executee -- un test qui remplace
+    la fonction a verifier ne verifie rien de son contenu. Ceux-ci font tourner
+    la vraie boucle avec un faux client, et auraient attrape la faute a la
+    premiere ligne.
+    """
+
+    class _FauxJob:
+        """Imite gradio_client.Job : file d'attente puis generation."""
+
+        def __init__(self, path, tours_en_file=2):
+            self.path = path
+            self.tours = 0
+            self.tours_en_file = tours_en_file
+            self.annule = False
+
+        def status(self):
+            from gradio_client.utils import Status, StatusUpdate
+
+            self.tours += 1
+            code = (Status.IN_QUEUE if self.tours <= self.tours_en_file
+                    else Status.PROCESSING)
+            return StatusUpdate(code=code, rank=0, queue_size=1, eta=None,
+                                success=None, time=None, progress_data=None,
+                                log=None)
+
+        def done(self):
+            return self.tours > self.tours_en_file + 1
+
+        def cancel(self):
+            self.annule = True
+
+        def result(self):
+            return self.path
+
+    class _FauxClient:
+        def __init__(self, job):
+            self._job = job
+            self.appels = []
+
+        def submit(self, *args, api_name=None):
+            self.appels.append((args, api_name))
+            return self._job
+
+    @pytest.fixture
+    def piece(self, tmp_path):
+        import numpy as np
+        import soundfile as sf
+
+        chemin = tmp_path / "morceau.wav"
+        sf.write(str(chemin), np.zeros(2400, dtype="float32"), 24000)
+        return str(chemin)
+
+    def _connexion(self):
+        return zerogpu_client.Connection(
+            space="faux/space", api_name="/generate",
+            parameter_names=["text_input", "language_id"])
+
+    def test_la_boucle_tourne_sans_erreur_avec_un_vrai_jeton(self, piece, monkeypatch):
+        """Le test qui manquait : un CancelToken REEL traverse la boucle."""
+        from core.cancellation import CancelToken
+        from voice_studio import zerogpu_client as module
+
+        monkeypatch.setattr(module, "POLL_S", 0.0)
+        job = self._FauxJob(piece)
+        resultat = zerogpu_client.generate_chunk(
+            self._FauxClient(job), self._connexion(), "Bonjour.",
+            catalogue.params_for(), cancel_token=CancelToken())
+        assert resultat.path == piece
+
+    def test_l_attente_et_la_generation_sont_bien_separees(self, piece, monkeypatch):
+        from voice_studio import zerogpu_client as module
+
+        monkeypatch.setattr(module, "POLL_S", 0.0)
+        resultat = zerogpu_client.generate_chunk(
+            self._FauxClient(self._FauxJob(piece)), self._connexion(),
+            "Bonjour.", catalogue.params_for())
+        assert resultat.queue_s >= 0 and resultat.gpu_s >= 0
+        assert resultat.total_s == pytest.approx(resultat.queue_s + resultat.gpu_s)
+
+    def test_une_annulation_arrete_la_boucle_et_le_job(self, piece, monkeypatch):
+        from core.cancellation import CancelToken
+        from utils.errors import CancelledError
+        from voice_studio import zerogpu_client as module
+
+        monkeypatch.setattr(module, "POLL_S", 0.0)
+        jeton = CancelToken()
+        jeton.cancel()
+        job = self._FauxJob(piece)
+        with pytest.raises(CancelledError):
+            zerogpu_client.generate_chunk(
+                self._FauxClient(job), self._connexion(), "Bonjour.",
+                catalogue.params_for(), cancel_token=jeton)
+        assert job.annule, "le job distant doit être annulé, pas seulement abandonné"
+
+    def test_les_etats_sont_rapportes_a_l_interface(self, piece, monkeypatch):
+        from voice_studio import zerogpu_client as module
+
+        monkeypatch.setattr(module, "POLL_S", 0.0)
+        vus = []
+        zerogpu_client.generate_chunk(
+            self._FauxClient(self._FauxJob(piece)), self._connexion(),
+            "Bonjour.", catalogue.params_for(), on_status=vus.append)
+        assert any(etat["in_queue"] for etat in vus), "la file doit être visible"
+        assert any(etat["phase"] == "gpu" for etat in vus)
+
+    def test_l_endpoint_decouvert_est_bien_celui_appele(self, piece, monkeypatch):
+        from voice_studio import zerogpu_client as module
+
+        monkeypatch.setattr(module, "POLL_S", 0.0)
+        client = self._FauxClient(self._FauxJob(piece))
+        zerogpu_client.generate_chunk(client, self._connexion(), "Bonjour.",
+                                      catalogue.params_for())
+        args, api_name = client.appels[0]
+        assert api_name == "/generate"
+        assert args[0] == "Bonjour." and args[1] == "fr"
+
+    def test_une_reponse_sans_fichier_est_une_erreur_lisible(self, monkeypatch, tmp_path):
+        from voice_studio import zerogpu_client as module
+
+        monkeypatch.setattr(module, "POLL_S", 0.0)
+        job = self._FauxJob(str(tmp_path / "inexistant.wav"))
+        with pytest.raises(zerogpu_client.ZeroGpuError) as erreur:
+            zerogpu_client.generate_chunk(
+                self._FauxClient(job), self._connexion(), "Bonjour.",
+                catalogue.params_for())
+        assert "sans fichier audio" in str(erreur.value)
+
+    def test_le_chemin_est_accepte_sous_ses_trois_formes(self, piece):
+        """Un composant Audio de Gradio rend un chemin, mais certains Spaces
+        rendent un tuple ou un dictionnaire."""
+        assert zerogpu_client._audio_path(piece) == piece
+        assert zerogpu_client._audio_path([piece, None]) == piece
+        assert zerogpu_client._audio_path({"path": piece}) == piece
+        assert zerogpu_client._audio_path(None) == ""
