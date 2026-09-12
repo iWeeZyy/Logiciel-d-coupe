@@ -111,6 +111,52 @@ FIT_MODES = (FIT_CROP, FIT_WHOLE)
 # parait rempli plutot que barre de noir.
 BLUR_SIGMA = 24
 
+# ALGORITHME DE REDIMENSIONNEMENT. ffmpeg utilise bicubique par defaut ; on
+# demande lanczos, qui conserve mieux les hautes frequences.
+#
+# POURQUOI CA COMPTE ICI PLUS QU'AILLEURS. Un clip vertical est presque
+# toujours un AGRANDISSEMENT : la fenetre 9:16 d'une source 1280x720 ne fait
+# que 404x720, soit un facteur 2,67 pour atteindre 1080x1920. C'est la plus
+# grosse perte de nettete de toute la chaine, bien avant le zoom.
+#
+# MESURE (maitre 3840x2160 a detail fin, reduit en source puis remonte en
+# 1080x1920 ; energie des hautes frequences de la sortie, moyenne du gradient
+# absolu) : bicubique 4,94 -> lanczos 5,28 sur une source 720p, 4,96 -> 5,33
+# sur une source 1080p, soit +7 % dans les deux cas. Le gain est le meme a
+# zoom 1.0, donc il porte sur TOUT le clip et pas seulement sur les zooms.
+#
+# Le SSIM baisse legerement (0,882 -> 0,872) : c'est la signature connue de
+# lanczos, qui garde le detail au prix d'un leger rebond sur les contours,
+# ce que le SSIM penalise. La nettete mesuree et l'oeil vont dans l'autre
+# sens, et c'est ce qui a decide.
+SCALE_FLAGS = "lanczos"
+
+
+_DEFAUT = object()      # « non precise », distinct de None qui veut dire « le defaut ffmpeg »
+
+
+def _scale(w: int, h: int, flags=_DEFAUT, extra: str = "") -> str:
+    """Un `scale=` avec l'algorithme choisi.
+
+    `flags=None` laisse le defaut de ffmpeg : c'est ce qu'on veut pour une
+    image destinee a etre FLOUTEE juste apres, ou soigner l'interpolation ne
+    servirait a rien et couterait du temps.
+
+    SCALE_FLAGS est lu DANS le corps et non comme valeur par defaut : une
+    valeur par defaut est evaluee une seule fois, a la definition, donc
+    remplacer la constante n'aurait eu aucun effet. Ce piege a fausse une
+    mesure pendant l'ecriture de ce code -- les deux variantes sortaient
+    identiques.
+    """
+    if flags is _DEFAUT:
+        flags = SCALE_FLAGS
+    parts = [f"scale={w}:{h}"]
+    if extra:
+        parts.append(extra)
+    if flags:
+        parts.append(f"flags={flags}")
+    return ":".join(parts)
+
 
 def landscape_fill_chain(out_w: int, out_h: int, fill: str = FILL_BLACK) -> str:
     """Comment remplir un cadre plus large que l'image.
@@ -126,13 +172,15 @@ def landscape_fill_chain(out_w: int, out_h: int, fill: str = FILL_BLACK) -> str:
     et devant une sortie, il reste un filtrage a une entree et une sortie.
     """
     if fill != FILL_BLUR:
-        return (f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
+        return (f"{_scale(out_w, out_h, extra='force_original_aspect_ratio=decrease')},"
                 f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2")
     return (
         "split=2[vsbg][vsfg];"
-        f"[vsbg]scale={out_w}:{out_h}:force_original_aspect_ratio=increase,"
+        # Le fond garde l'algorithme par defaut : il finit floute, donc
+        # soigner son interpolation serait du temps depense pour rien.
+        f"[vsbg]{_scale(out_w, out_h, flags=None, extra='force_original_aspect_ratio=increase')},"
         f"crop={out_w}:{out_h},gblur=sigma={BLUR_SIGMA}[vsbgb];"
-        f"[vsfg]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease[vsfgs];"
+        f"[vsfg]{_scale(out_w, out_h, extra='force_original_aspect_ratio=decrease')}[vsfgs];"
         "[vsbgb][vsfgs]overlay=(W-w)/2:(H-h)/2"
     )
 
@@ -200,7 +248,7 @@ def build_video_chain(
         # resolutions verticales reelles (1080x1920, 720x1280, 540x960...) ; un
         # format seulement proche garde l'ancien chemin.
         if src_w > 0 and src_h > 0 and src_w * out_h == src_h * out_w:
-            chain = [f"scale={out_w}:{out_h}"]
+            chain = [_scale(out_w, out_h)]
         else:
             chain = [landscape_fill_chain(out_w, out_h, fill)]
         chain.extend(_delire_filters(delire_plan))
@@ -236,13 +284,13 @@ def build_video_chain(
         stage_h = _even(out_h * max_zoom)
         points = [(edit_list.to_output_time_clamped(kf.t), kf.zoom) for kf in zoom_track.keyframes]
         z_expr = piecewise_expression(points, variable="it")
-        chain.append(f"scale={stage_w}:{stage_h}")
+        chain.append(_scale(stage_w, stage_h))
         chain.append(
             f"zoompan=z='{z_expr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
             f":d=1:s={out_w}x{out_h}:fps={fps:.4f}"
         )
     else:
-        chain.append(f"scale={out_w}:{out_h}")
+        chain.append(_scale(out_w, out_h))
 
     chain.extend(_delire_filters(delire_plan))
 

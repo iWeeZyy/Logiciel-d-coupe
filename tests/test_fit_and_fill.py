@@ -276,3 +276,73 @@ class TestVoiceStudio:
         hint, plan, notes = video_service._framing(
             request, 60.0, video_service.Reporter(), None)
         assert hint is None and plan is None and notes == []
+
+
+class TestAlgorithmeDeRedimensionnement:
+    """Quel interpolateur produit l'image finale.
+
+    POURQUOI C'EST LE LEVIER DE QUALITE ICI. Un clip vertical est presque
+    toujours un AGRANDISSEMENT : la fenetre 9:16 d'une source 1280x720 ne fait
+    que 404x720, soit un facteur 2,67 pour atteindre 1080x1920. C'est la plus
+    grosse perte de nettete de toute la chaine, bien avant le zoom.
+
+    Mesure (maitre 3840x2160 a detail fin, energie des hautes frequences de la
+    sortie) : bicubique 4,94 -> lanczos 5,28 en source 720p, 4,96 -> 5,33 en
+    source 1080p. Sur un encodage complet aux reglages de production, le temps
+    est identique et le fichier grossit de 3 %.
+    """
+
+    def test_l_image_nette_est_redimensionnee_en_lanczos(self):
+        produced = chain(target_size=PORTRAIT_SIZE)
+        assert "scale=1080:1920:flags=lanczos" in produced
+
+    def test_le_fond_floute_garde_le_defaut(self):
+        """Soigner l'interpolation d'une image qui finit floutee serait du
+        temps depense pour rien."""
+        produced = chain(src_w=1080, src_h=1920, target_size=LANDSCAPE_SIZE,
+                         fill=FILL_BLUR)
+        # Decoupe par etiquette de sortie : « [vsbg] » apparait aussi dans la
+        # declaration du split, donc chercher la premiere occurrence designe
+        # la mauvaise branche.
+        segments = produced.split(";")
+        fond = next(seg for seg in segments if "gblur" in seg)
+        assert "flags=" not in fond
+        net = next(seg for seg in segments if seg.startswith("[vsfg]"))
+        assert "flags=lanczos" in net
+
+    def test_l_etage_du_zoom_aussi(self):
+        """C'est le redimensionnement qui porte le detail avant que zoompan
+        choisisse sa fenetre."""
+        from editing.zoom import ZoomKeyframe, ZoomTrack
+
+        track = ZoomTrack(keyframes=(ZoomKeyframe(t=1.0, zoom=1.0),
+                                     ZoomKeyframe(t=1.5, zoom=1.08),
+                                     ZoomKeyframe(t=2.0, zoom=1.0)), events=1)
+        produced = chain(target_size=PORTRAIT_SIZE, zoom_track=track)
+        etage = produced.split("zoompan")[0]
+        assert "flags=lanczos" in etage
+        assert "zoompan" in produced
+
+    def test_le_choix_est_relu_a_chaque_appel(self):
+        """PIEGE REEL, rencontre en ecrivant ce code : une valeur par defaut
+        d'argument est evaluee UNE SEULE FOIS, a la definition de la fonction.
+        Tant que SCALE_FLAGS servait de valeur par defaut, le remplacer
+        n'avait aucun effet -- et une mesure comparant les deux variantes les
+        a trouvees identiques, ce qui etait le bug et non le resultat.
+        """
+        from video import filter_graph
+
+        garde = filter_graph.SCALE_FLAGS
+        try:
+            filter_graph.SCALE_FLAGS = "bicubic"
+            assert filter_graph._scale(1080, 1920) == "scale=1080:1920:flags=bicubic"
+        finally:
+            filter_graph.SCALE_FLAGS = garde
+        assert filter_graph._scale(1080, 1920).endswith("flags=lanczos")
+
+    def test_none_veut_dire_le_defaut_de_ffmpeg(self):
+        """Distinct de « non precise » : c'est ce qui permet au fond floute de
+        demander explicitement l'absence d'option."""
+        from video.filter_graph import _scale
+
+        assert _scale(1080, 1920, flags=None) == "scale=1080:1920"

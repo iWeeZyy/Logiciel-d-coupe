@@ -1171,6 +1171,51 @@ Quand la case est cochee, la duree des clips et leur nombre sont grises : ces
 deux decisions n'ont plus d'objet, et les laisser actives laisserait croire
 qu'elles comptent encore.
 
+### Qualite d'image : ou elle se perd vraiment
+
+La question posee etait : peut-on gagner en qualite quand un zoom est fait ?
+La reponse mesuree est oui, mais pas la ou on l'attend.
+
+**Le plus gros facteur n'est pas le zoom, c'est l'agrandissement.** La fenetre
+9:16 d'une source 1280x720 ne fait que 404x720 : il faut l'agrandir 2,67 fois
+pour atteindre 1080x1920. Une source 1080p donne 606x1080, soit 1,78 fois. Le
+telechargement prend deja la meilleure qualite disponible, sans plafond de
+hauteur -- c'est le premier levier, et il est deja tire.
+
+**Le levier trouve : l'algorithme de redimensionnement.** ffmpeg utilise
+bicubique par defaut ; la chaine demande maintenant lanczos, qui conserve mieux
+les hautes frequences.
+
+| | bicubique | lanczos |
+|---|---|---|
+| nettete, source 720p | 4,94 | **5,28** |
+| nettete, source 1080p | 4,96 | **5,33** |
+| encodage d'un clip de 10 s | 12,4 s | 12,4 s |
+| taille du fichier | 5,62 Mo | 5,80 Mo |
+
+La nettete est l'energie des hautes frequences de la sortie (moyenne du
+gradient absolu), mesuree contre un maitre 3840x2160 a detail fin. Le gain est
+le meme a zoom 1.0, donc il porte sur TOUT le clip et pas seulement sur les
+zooms. Le temps d'encodage ne bouge pas : le redimensionnement est negligeable
+devant x264. Le SSIM baisse legerement (0,882 -> 0,872), signature connue de
+lanczos qui garde le detail au prix d'un leger rebond sur les contours ; la
+nettete mesuree et l'inspection visuelle vont dans l'autre sens, et c'est ce
+qui a decide.
+
+**Ce qui n'a PAS ete change, et pourquoi.** Pendant un zoom, l'image subit deux
+redimensionnements au lieu d'un : l'etage, puis la fenetre choisie par
+`zoompan`. Un seul passage serait meilleur, mais `ffmpeg` ne sait pas animer la
+TAILLE d'un `crop` -- seules ses coordonnees acceptent une expression -- donc
+`zoompan` est le seul outil disponible, et son interpolateur interne n'est pas
+reglable. J'ai essaye trois geometries d'etage differentes ; les mesures se
+contredisaient d'un facteur de zoom a l'autre, parce que le PSNR contre une
+reference s'effondre pour un decalage d'un demi-pixel. **Faute de mesure
+concluante, la geometrie n'a pas ete touchee.** La perte due a ce double
+passage reste donc presente, bornee par l'amplitude des zooms (1,05 a 1,18).
+
+L'encodage, lui, etait deja regle par la mesure : CRF 18, preset medium (voir
+le commentaire de `config/settings.json`).
+
 ### Remplir le cadre : recadrer ou garder l'image entiere
 
 Une image qui n'a pas la forme du cadre demande une decision, et les deux
