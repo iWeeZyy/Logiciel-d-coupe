@@ -1269,6 +1269,28 @@ donc, et surtout rien qui justifie de payer le surechantillonnage.
 L'encodage, lui, etait deja regle par la mesure : CRF 18, preset medium (voir
 le commentaire de `config/settings.json`).
 
+#### Ce qui resterait a gagner, et ce que ca couterait
+
+Le seul levier vraiment plus puissant est un **agrandissement par reseau de
+neurones** (Real-ESRGAN et equivalents), que les services en ligne utilisent
+sur leurs serveurs. C'est ce qui explique l'essentiel de l'ecart quand on
+compare a un outil du marche sur une source basse definition. Il n'est pas
+utilisable ici en l'etat, pour trois raisons concretes :
+
+- l'`ffmpeg` livre avec l'application (build « essentials » de gyan.dev) n'a
+  pas les greffons DNN compiles ; ses filtres `sr` et `dnn_processing` existent
+  dans le catalogue mais sans moteur derriere ;
+- `nnedi`, l'agrandisseur de bonne qualite qui ne demande pas de moteur DNN,
+  a besoin d'un fichier de poids (~13 Mo, qui pourrait etre livre) mais coute
+  plusieurs secondes PAR IMAGE sur processeur ;
+- un vrai modele de super-resolution demande un telechargement de modele et,
+  en pratique, une carte graphique -- soit exactement l'installation
+  supplementaire que ce projet s'interdit.
+
+C'est donc un choix a faire, pas un oubli : tant que la contrainte « rien a
+installer, tout en local » tient, la compensation de l'agrandissement decrite
+au-dessus est le meilleur rapport qualite/cout disponible.
+
 ### Remplir le cadre : recadrer ou garder l'image entiere
 
 Une image qui n'a pas la forme du cadre demande une decision, et les deux
