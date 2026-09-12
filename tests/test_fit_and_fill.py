@@ -346,3 +346,119 @@ class TestAlgorithmeDeRedimensionnement:
         from video.filter_graph import _scale
 
         assert _scale(1080, 1920, flags=None) == "scale=1080:1920"
+
+
+class TestCompensationDeLAgrandissement:
+    """Le masque flou qui recupere le detail perdu a l'agrandissement.
+
+    CE QUE LA MESURE A ETABLI, contre un maitre 3840x2160 servant de verite,
+    sur deux images differentes et en geometrie a mappage entier :
+
+      agrandissement   force optimale   gain en PSNR
+      x1,78            0,20 a 0,35      +0,17 / +0,22 dB
+      x2,67            0,50 a 0,80      +0,30 / +0,20 dB
+      x3,58            0,80 a 1,00      +0,26 / +0,19 dB
+
+    Deux garde-fous que ces tests defendent : la force doit CROITRE avec
+    l'agrandissement (une force forte sur un faible agrandissement coute
+    -0,54 dB), et il ne doit y avoir AUCUN filtre quand il n'y a rien a
+    recuperer (sur une source deja a la taille de sortie, le masque flou
+    mesure -65 dB : l'image n'est plus elle-meme).
+    """
+
+    def test_aucun_filtre_sans_agrandissement(self):
+        from video.filter_graph import sharpen_amount
+
+        assert sharpen_amount(1.0) == 0.0
+        assert sharpen_amount(0.5) == 0.0, "une reduction n'a rien a recuperer"
+        assert sharpen_amount(0) == 0.0, "taille inconnue : on ne devine pas"
+
+    def test_la_force_croit_avec_l_agrandissement(self):
+        from video.filter_graph import sharpen_amount
+
+        forces = [sharpen_amount(f) for f in (1.2, 1.5, 1.78, 2.2, 2.67)]
+        assert forces == sorted(forces)
+        assert len(set(forces)) == len(forces), "chaque agrandissement a sa force"
+
+    def test_les_forces_mesurees_tombent_dans_la_plage_optimale(self):
+        """Les plages viennent du banc de mesure, pas d'une intuition."""
+        from video.filter_graph import sharpen_amount
+
+        assert 0.20 <= sharpen_amount(1.78) <= 0.35
+        assert 0.50 <= sharpen_amount(2.67) <= 0.80
+        assert 0.80 <= sharpen_amount(3.58) <= 1.00
+
+    def test_la_force_est_plafonnee(self):
+        """Au-dela, les halos se voient plus que le detail recupere."""
+        from video.filter_graph import SHARPEN_MAX, sharpen_amount
+
+        assert sharpen_amount(20.0) == SHARPEN_MAX
+
+    def test_la_chrominance_reste_intacte(self):
+        """Accentuer la couleur d'une image 4:2:0 produit des franges sur les
+        contours pour un gain de nettete nul."""
+        from video.filter_graph import _sharpen
+
+        assert _sharpen(2.67).endswith(":5:5:0.0")
+
+    def test_une_source_720p_est_compensee(self):
+        """Le cas le plus courant : un clip Twitch 1280x720, dont la fenetre
+        9:16 ne fait que 404 px de large."""
+        produced = chain(src_w=1280, src_h=720, target_size=PORTRAIT_SIZE)
+        assert "unsharp=" in produced
+        # l'ordre compte : apres la mise a l'echelle, jamais avant
+        assert produced.index("scale=") < produced.index("unsharp=")
+
+    def test_une_source_deja_a_la_taille_n_est_pas_touchee(self):
+        produced = chain(src_w=1080, src_h=1920, target_size=PORTRAIT_SIZE,
+                         fit=FIT_WHOLE)
+        assert "unsharp=" not in produced
+
+    def test_une_source_reduite_n_est_pas_touchee(self):
+        """Une source verticale dans un cadre horizontal est REDUITE pour
+        tenir : il n'y a aucun adoucissement a compenser."""
+        produced = chain(src_w=1080, src_h=1920, target_size=LANDSCAPE_SIZE,
+                         fill=FILL_BLUR)
+        assert "unsharp=" not in produced
+
+    def test_le_fond_floute_n_est_jamais_accentue(self):
+        """Accentuer un fond deliberement floute est contradictoire, et sur un
+        degrade lisse un masque flou fait apparaitre des bandes."""
+        produced = chain(src_w=480, src_h=856, target_size=PORTRAIT_SIZE,
+                         fit=FIT_WHOLE, fill=FILL_BLUR)
+        segments = produced.split(";")
+        fond = next(seg for seg in segments if "gblur" in seg)
+        assert "unsharp" not in fond
+        net = next(seg for seg in segments if seg.startswith("[vsfg]"))
+        assert "unsharp" in net, "l'image nette, elle, est compensee"
+
+    def test_la_fenetre_decide_et_non_l_image_entiere(self):
+        """C'est la fenetre 9:16 qui doit remplir le cadre, pas la source : une
+        source 1280x720 n'est pas agrandie 0,84 fois mais 2,67 fois."""
+        from video.filter_graph import base_crop_size, sharpen_amount
+
+        fenetre = base_crop_size(1280, 720)[0]
+        attendue = sharpen_amount(PORTRAIT_SIZE[0] / fenetre)
+        produced = chain(src_w=1280, src_h=720, target_size=PORTRAIT_SIZE)
+        assert f"unsharp=5:5:{attendue:g}:" in produced
+
+    def test_le_zoom_ne_change_pas_la_force(self):
+        """Le zoom augmente l'agrandissement pendant quelques dixiemes de
+        seconde. On ne suit pas cette variation : la force resterait dans la
+        meme plage, et le filtre ne sait pas s'animer proprement."""
+        from editing.zoom import ZoomKeyframe, ZoomTrack
+
+        track = ZoomTrack(keyframes=(ZoomKeyframe(t=1.0, zoom=1.0),
+                                     ZoomKeyframe(t=1.5, zoom=1.08),
+                                     ZoomKeyframe(t=2.0, zoom=1.0)), events=1)
+        sans = chain(src_w=1280, src_h=720, target_size=PORTRAIT_SIZE)
+        avec = chain(src_w=1280, src_h=720, target_size=PORTRAIT_SIZE, zoom_track=track)
+        force = sans.split("unsharp=")[1]
+        assert avec.split("unsharp=")[1] == force
+
+    def test_l_accentuation_precede_les_sous_titres(self):
+        """Accentuer un texte deja net lui ajoute des halos : les sous-titres
+        sont incrustes APRES."""
+        produced = chain(src_w=1280, src_h=720, target_size=PORTRAIT_SIZE,
+                         ass_path="/tmp/x.ass")
+        assert produced.index("unsharp=") < produced.index("subtitles=")

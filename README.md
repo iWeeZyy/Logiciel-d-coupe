@@ -1202,16 +1202,63 @@ lanczos qui garde le detail au prix d'un leger rebond sur les contours ; la
 nettete mesuree et l'inspection visuelle vont dans l'autre sens, et c'est ce
 qui a decide.
 
-**Ce qui n'a PAS ete change, et pourquoi.** Pendant un zoom, l'image subit deux
-redimensionnements au lieu d'un : l'etage, puis la fenetre choisie par
-`zoompan`. Un seul passage serait meilleur, mais `ffmpeg` ne sait pas animer la
-TAILLE d'un `crop` -- seules ses coordonnees acceptent une expression -- donc
-`zoompan` est le seul outil disponible, et son interpolateur interne n'est pas
-reglable. J'ai essaye trois geometries d'etage differentes ; les mesures se
-contredisaient d'un facteur de zoom a l'autre, parce que le PSNR contre une
-reference s'effondre pour un decalage d'un demi-pixel. **Faute de mesure
-concluante, la geometrie n'a pas ete touchee.** La perte due a ce double
-passage reste donc presente, bornee par l'amplitude des zooms (1,05 a 1,18).
+**Le second levier : compenser l'agrandissement.** Aucun interpolateur ne cree
+le detail qui manque, donc l'image ressort adoucie. Un masque flou leger
+(`unsharp`) en recupere une partie -- et ce n'est pas du maquillage, parce que
+la mesure ne compare pas la sortie a elle-meme mais a la VERITE : le maitre
+3840x2160 dont la source a ete tiree. Si le filtre rapproche la sortie de
+l'image vraie, il recupere du detail reel.
+
+| agrandissement | force optimale | gain en PSNR |
+|---|---|---|
+| x1,78 (source 1080p) | 0,20 a 0,35 | +0,17 / +0,22 dB |
+| x2,67 (source 720p) | 0,50 a 0,80 | +0,30 / +0,20 dB |
+| x3,58 (source 540p) | 0,80 a 1,00 | +0,26 / +0,19 dB |
+| x4,46 (source 432p) | 0,80 a 1,00 | +0,14 / +0,08 dB |
+
+Les deux chiffres sont les deux maitres de test. La force optimale **croit**
+avec l'agrandissement, d'ou une loi proportionnelle (`0,35 x (agrandissement -
+1)`, plafonnee a 0,9) plutot qu'une valeur fixe : une force forte sur un faible
+agrandissement coute -0,54 dB. **Sans agrandissement, aucun filtre n'est
+pose** -- sur une source deja a la taille de sortie le masque flou mesure
+-65 dB, l'image n'est plus elle-meme. La chrominance reste intacte, et le fond
+flou du cadrage « image entiere » n'est jamais accentue. Cout mesure sur un
+clip de 10 s aux reglages de production : encodage 8,0 -> 8,9 s (+11 %),
+fichier 0,96 -> 1,05 Mo (+9 %).
+
+#### Ce qui a ete essaye et ecarte, avec la mesure qui l'a decide
+
+Le zoom fait subir a l'image **deux** redimensionnements au lieu d'un :
+l'etage, puis la fenetre choisie par `zoompan`. Quatre pistes ont ete testees
+pour n'en faire qu'un.
+
+- **Un seul passage, en pilotant les dimensions du recadrage par `sendcmd`.**
+  `crop` accepte des commandes sur sa largeur et sa hauteur (drapeau `T`), donc
+  on peut recadrer a la resolution source puis ne redimensionner qu'une fois.
+  **Ca fonctionne et ca atteint exactement le plafond theorique** (25,9 dB
+  contre 23,0). Ecarte pour son cout : changer une dimension en cours de flux
+  force `ffmpeg` a reconfigurer le graphe a chaque image, ce qui rend le rendu
+  **au moins 70 fois plus lent** (un clip de 10 s n'avait pas fini apres
+  10 minutes, contre 8 s) et finit par se bloquer.
+- **Surechantillonner l'etage du zoom** (toile 2x ou 3x, retour en lanczos a la
+  fin). Nettete inchangee, cout **x4 et x8**. Ecarte.
+- **Reduire l'etage a la taille de sortie**, pour que `zoompan` n'agrandisse
+  plus que du facteur de zoom : -3 dB. Ecarte.
+- **Faire sortir `zoompan` a la taille de son etage** puis reduire en lanczos :
+  aucun changement mesurable.
+
+Et surtout, **la perte due au double passage est bien plus petite que ce
+qu'elle semblait** : les 2,9 dB d'ecart mesures au depart etaient un decalage
+d'UN pixel introduit par `zoompan`, pas de la nettete perdue. Les deux rendus
+concordent a 36,6 dB une fois recales, et l'energie des hautes frequences est
+identique a 0,5 % pres. La perte reelle est d'environ 0,6 dB, invisible.
+
+Le tremblement du zoom a aussi ete mesure, avec un repere suivi image par
+image. Sur une montee lente et artificielle de 4 secondes, 23 images sur 99
+reculaient au lieu d'avancer -- `zoompan` tronque en pixels entiers. Mais avec
+le **vrai** profil (attaque 0,25 s, tenue 0,5 s, relachement 0,4 s), le
+deplacement est de 5 px par image et il n'y a **aucun recul**. Rien a corriger,
+donc, et surtout rien qui justifie de payer le surechantillonnage.
 
 L'encodage, lui, etait deja regle par la mesure : CRF 18, preset medium (voir
 le commentaire de `config/settings.json`).
