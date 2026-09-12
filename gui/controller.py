@@ -213,9 +213,17 @@ class AppController(QObject):
         settings = load_settings(cli_args)
         if editing_overrides:
             editing = {k: dict(v) if isinstance(v, dict) else v for k, v in settings.editing.items()}
-            for module, active in editing_overrides.items():
-                if isinstance(editing.get(module), dict):
-                    editing[module]["enabled"] = bool(active)
+            for module, override in editing_overrides.items():
+                if not isinstance(editing.get(module), dict):
+                    continue
+                if isinstance(override, dict):
+                    # Un module peut porter plus que son interrupteur : le
+                    # filigrane doit dire AUSSI quelle chaine signe la video.
+                    # Les cles inconnues du module sont ignorees par lui, donc
+                    # cette fusion ne peut rien casser de ce qu'il lit deja.
+                    editing[module].update(override)
+                else:
+                    editing[module]["enabled"] = bool(override)
             settings.editing = editing
 
         project_store.write_manifest(

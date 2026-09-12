@@ -216,6 +216,50 @@ second moteur de synthese, seulement un champ qui se remplit.
 passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
 un seul formateur de minutage dans tout le projet.
 
+### Filigrane : deux chaines, un choix dans l'accueil
+
+Le filigrane existait deja, avec sa position, sa taille en pourcentage de la
+largeur de sortie et son opacite. Ce qui s'ajoute est un CATALOGUE, lu dans
+`config/editing.json`, et un menu dans l'accueil a cote de la case
+« Filigrane ».
+
+| Choix | Fichier |
+|---|---|
+| ClipsOfStreams | `assets/branding/watermark.png` |
+| LandsCapesFR | `assets/branding/watermark-landscapesfr-badge.png` |
+
+**Les deux logos sont detoures au meme diametre (512 px), fond transparent,
+bord adouci.** Ce n'est pas cosmetique : `size_percent` est un pourcentage de
+la largeur de sortie, donc deux logos de diametres differents ne peseraient pas
+pareil a l'oeil ; un bord net laisserait un escalier de pixels visible a
+l'encodage, et `prepare_filter()` MULTIPLIE l'alpha existant precisement pour
+preserver ce degrade au lieu de le carrer. Des tests verifient le diametre,
+la transparence des quatre coins et le caractere carre du cadre.
+
+**Une cle inconnue ne donne JAMAIS le logo d'une autre chaine.**
+`image_for_choice()` rend une chaine vide plutot que le premier du catalogue :
+retomber silencieusement sur le voisin signerait une video du mauvais nom sans
+que personne s'en apercoive. C'est `from_config()` qui decide alors de revenir
+au logo historique -- un filigrane a bien ete demande, mieux vaut celui-la que
+pas de filigrane.
+
+**Trois sources, dans l'ordre :** `image` designee a la main (elle
+court-circuite tout, c'est ce qui permet un logo hors catalogue), puis
+`choice`, puis le defaut historique. Un utilisateur qui n'a rien choisi
+retrouve donc exactement ce qu'il avait avant.
+
+**Deux badges LandsCapes coexistent, volontairement.** Le menu propose le badge
+COMPLET (le disque bleu nuit avec le nom et « voyage · nature · france »).
+`watermark-landscapesfr.png`, le medaillon interieur seul sans texte, reste
+livre et sert a Voice Studio : basculer l'un sur l'autre ne demande qu'un
+changement de chemin dans `config/editing.json`.
+
+**Le filigrane est le seul module a porter plus que son interrupteur.** Les
+surcharges venues de l'accueil etaient un booleen par module ; elles acceptent
+desormais AUSSI un dictionnaire, fusionne dans le bloc du module. Les reglages
+non mentionnes survivent, et un booleen continue de ne toucher que `enabled` --
+sinon les autres cases auraient cesse de fonctionner.
+
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
 **CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de

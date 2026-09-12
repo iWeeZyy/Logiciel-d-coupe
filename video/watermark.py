@@ -81,6 +81,51 @@ def voice_studio_image_path() -> Path:
     return asset_path(VOICE_STUDIO_IMAGE)
 
 
+# ------------------------------------------------------------- catalogue
+# Repli si config/editing.json ne declare aucun choix : l'ancien comportement,
+# un seul logo. Une liste vide vaut mieux qu'un choix invente.
+_FALLBACK_CHOICES = [{"key": "clipsofstreams", "label": "ClipsOfStreams",
+                      "image": DEFAULT_IMAGE}]
+
+
+def choices(config: dict | None = None) -> list:
+    """Les filigranes proposes, dans l'ordre du catalogue.
+
+    Une entree dont le PNG est absent du disque est ECARTEE : proposer un logo
+    qu'on ne saura pas poser donnerait une video sans filigrane sans rien dire.
+    """
+    config = config or {}
+    declared = config.get("choices")
+    if not isinstance(declared, list) or not declared:
+        declared = _FALLBACK_CHOICES
+
+    out = []
+    for entry in declared:
+        if not isinstance(entry, dict):
+            continue
+        key = str(entry.get("key") or "").strip()
+        image = str(entry.get("image") or "").strip()
+        if not (key and image) or not asset_path(image).is_file():
+            continue
+        out.append({"key": key, "label": str(entry.get("label") or key),
+                    "image": image})
+    return out
+
+
+def image_for_choice(key: str, config: dict | None = None) -> str:
+    """Chemin absolu du logo choisi, ou "" si le choix est inconnu.
+
+    Rendre "" plutot que le premier de la liste est volontaire : c'est
+    l'appelant qui decide de retomber sur le defaut, et une faute de frappe
+    dans un fichier de configuration ne doit pas se traduire par le logo d'une
+    autre chaine, publie sans qu'on s'en apercoive.
+    """
+    for entry in choices(config):
+        if entry["key"] == (key or "").strip():
+            return str(asset_path(entry["image"]))
+    return ""
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -91,8 +136,15 @@ def from_config(config: dict | None) -> Watermark | None:
     if not config.get("enabled", False):
         return None
 
+    # Trois sources, dans cet ordre : une image designee a la main (elle
+    # court-circuite tout, c'est ce qui permet un logo hors catalogue), puis le
+    # choix de chaine, puis le defaut historique.
     image = str(config.get("image") or "").strip()
-    path = Path(image) if image else default_image_path()
+    if image:
+        path = Path(image)
+    else:
+        chosen = image_for_choice(str(config.get("choice") or ""), config)
+        path = Path(chosen) if chosen else default_image_path()
     if not path.is_file():
         return None
 

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from video import watermark
 from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
 from video.filter_graph import FIT_CROP, FIT_WHOLE
 
@@ -54,6 +55,19 @@ FIT_CHOICES = [
     (FIT_CROP, "Recadrer sur le sujet (l'image est rognée)"),
     (FIT_WHOLE, "Image entière + fond de remplissage"),
 ]
+
+
+def _watermark_config() -> dict:
+    """La section « watermark » de config/editing.json, ou {}.
+
+    Lue a la construction : un fichier illisible ne doit pas empecher la page
+    de s'afficher, le menu se contente alors du repli du module."""
+    try:
+        from core.config_loader import _load_editing_config
+
+        return (_load_editing_config() or {}).get("watermark") or {}
+    except Exception:                                  # pragma: no cover
+        return {}
 
 
 class ProductionOptionsBox(QWidget):
@@ -127,7 +141,34 @@ class ProductionOptionsBox(QWidget):
             row.addStretch(1)
             layout.addLayout(row)
 
+        # --- quelle chaine signe la video ---
+        # Le catalogue vient de config/editing.json : ajouter une chaine ne
+        # demande pas de toucher a ce fichier. Une entree dont le PNG manque
+        # est ecartee en amont, donc le menu ne propose jamais un logo qu'on ne
+        # saurait pas poser.
+        self.watermark_row = QHBoxLayout()
+        watermark_label = QLabel("Filigrane")
+        watermark_label.setProperty("role", "fieldLabel")
+        self.watermark_row.addWidget(watermark_label)
+        self.watermark_combo = QComboBox()
+        for entry in watermark.choices(_watermark_config()):
+            self.watermark_combo.addItem(entry["label"], entry["key"])
+        self.watermark_row.addWidget(self.watermark_combo)
+        self.watermark_row.addStretch(1)
+        layout.addLayout(self.watermark_row)
+
+        # Grise avec la case : un menu actif alors que le filigrane est coupe
+        # laisserait croire qu'il sera pose.
+        box = self.boxes.get("watermark")
+        if box is not None:
+            box.toggled.connect(self._on_watermark_toggled)
+        self._on_watermark_toggled(box.isChecked() if box is not None else False)
+
         self._on_aspect_changed()
+
+    def _on_watermark_toggled(self, enabled: bool) -> None:
+        self.watermark_combo.setEnabled(bool(enabled)
+                                        and self.watermark_combo.count() > 1)
 
     # ------------------------------------------------------------ lecture
     def aspect(self) -> str:
@@ -159,7 +200,23 @@ class ProductionOptionsBox(QWidget):
         overrides = {key: box.isChecked() for key, box in self.boxes.items()}
         if self.keeps_whole_image():
             overrides["framing"] = False
+        # Le filigrane porte DEUX informations : actif ou non, et lequel. D'ou
+        # un dictionnaire la ou les autres modules se contentent d'un booleen
+        # -- le controleur accepte les deux formes.
+        choice = self.watermark_choice()
+        if choice:
+            overrides["watermark"] = {"enabled": bool(overrides.get("watermark")),
+                                      "choice": choice}
         return overrides
+
+    def watermark_choice(self) -> str:
+        """Cle de la chaine choisie, ou "" si le catalogue est vide."""
+        return str(self.watermark_combo.currentData() or "")
+
+    def set_watermark_choice(self, key: str) -> None:
+        index = self.watermark_combo.findData(key)
+        if index >= 0:
+            self.watermark_combo.setCurrentIndex(index)
 
     def set_module_enabled(self, key: str, enabled: bool) -> None:
         box = self.boxes.get(key)
