@@ -424,7 +424,10 @@ class HomePage(QWidget):
             pre_roll=None,
             post_roll=None,
             min_gap=None,
-            subtitle_style=settings_store.get("default_subtitle_style"),
+            # Le style de montage impose son style de sous-titres ; sans style
+            # de montage, celui des Parametres reprend la main.
+            subtitle_style=(self.production_options.subtitle_style()
+                            or settings_store.get("default_subtitle_style")),
             device=settings_store.get("default_device"),
             no_cache=False,
             debug_scores=False,

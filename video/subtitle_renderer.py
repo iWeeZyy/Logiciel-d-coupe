@@ -51,6 +51,18 @@ def _header(style: dict, margin_v: int | None = None,
     passe explicitement -- sinon libass etire le texte horizontalement (une
     toile portrait posee sur une image paysage) et les marges ne veulent plus
     rien dire.
+
+    `border_style` vaut 1 (un contour autour des lettres, le defaut
+    historique) ou 3 (un rectangle opaque derriere le texte). Les deux etaient
+    ecrits en dur, donc inatteignables depuis un style.
+
+    DEUX PIEGES VERIFIES PAR L'EXPERIENCE, contre ce qu'on lit partout :
+    - avec `border_style: 3`, libass peint le rectangle avec la couleur de
+      CONTOUR (`outline_color`), pas avec `back_color` ;
+    - et ce rectangle couvre la LIGNE ENTIERE, pas le mot.
+      `back_color` reste la couleur de l'ombre portee.
+    Le surlignage au marqueur d'UN SEUL MOT ne passe donc pas par ce 3 : il
+    passe par un contour epais pose sur ce mot (`emphasis_marker`, plus bas).
     """
     bold = -1 if style.get("bold", True) else 0
     if margin_v is None:
@@ -68,7 +80,9 @@ def _header(style: dict, margin_v: int | None = None,
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Default,{style.get('font_name', 'Arial')},{style.get('font_size', 64)},"
         f"{style.get('primary_color', '&H00FFFFFF')},{style.get('highlight_color', '&H0035C3FF')},"
-        f"{style.get('outline_color', '&H00000000')},&H00000000,{bold},0,0,0,100,100,0,0,1,"
+        f"{style.get('outline_color', '&H00000000')},"
+        f"{style.get('back_color', '&H00000000')},{bold},0,0,0,100,100,0,0,"
+        f"{int(style.get('border_style', 1))},"
         f"{style.get('outline_width', 4)},{style.get('shadow', 1)},{style.get('alignment', 2)},"
         f"20,20,{margin_v},1\n\n"
         "[Events]\n"
@@ -76,25 +90,72 @@ def _header(style: dict, margin_v: int | None = None,
     )
 
 
+# Les animations disponibles. « none », « fade » et « pop » existaient deja ;
+# les trois suivantes sont les looks du marche qui manquaient.
+ANIMATIONS = ("none", "fade", "pop", "bounce", "shake", "glow")
+
+
 def _emphasis_tags(style: dict) -> tuple[str, str]:
-    """Balises ASS ouvrantes/fermantes d'un mot mis en evidence."""
+    """Balises ASS ouvrantes/fermantes d'un mot mis en evidence.
+
+    L'animation porte sur LE MOT, jamais sur la ligne entiere : faire trembler
+    ou rebondir tout un bloc rend la lecture penible, alors qu'un seul mot qui
+    bouge attire l'oeil exactement la ou on le veut.
+    """
     font_size = style.get("font_size", 64)
     ratio = float(style.get("emphasis_scale", 1.15))
     color = style.get("emphasis_color", style.get("highlight_color", "&H0035C3FF"))
+    animation = style.get("animation", "none")
 
     tags = f"\\fs{int(round(font_size * ratio))}\\c{color}"
-    if style.get("animation", "none") == "pop":
+
+    if animation == "pop":
         # Leger effet d'apparition, borne a ~120 ms : au-dela ca "saute" et ca
         # devient fatigant sur un clip entier.
         tags += "\\t(0,120,\\fscx112\\fscy112)"
+    elif animation == "bounce":
+        # UN VRAI REBOND, c'est-a-dire un DEPASSEMENT puis un retour. Le
+        # « pop » ci-dessus grossit et s'arrete : l'oeil n'y lit pas un choc.
+        # Trois etapes -- on entre trop grand, on passe sous la cible, on s'y
+        # pose -- donnent la detente d'un ressort.
+        haut = int(round(100 * 1.18))
+        creux = int(round(100 * 0.94))
+        tags += (f"\\fscx{haut}\\fscy{haut}"
+                 f"\\t(0,90,\\fscx{creux}\\fscy{creux})"
+                 f"\\t(90,190,\\fscx100\\fscy100)")
+    elif animation == "shake":
+        # Une secousse tient en un aller-retour : deux degres suffisent, et
+        # au-dela le mot cesse d'etre lisible.
+        tags += "\\frz2\\t(0,70,\\frz-2)\\t(70,140,\\frz0)"
+    elif animation == "glow":
+        # Le neon : le contour est FLOUTE, pas epaissi. Un contour epais reste
+        # net et durcit le texte ; c'est le flou qui donne la lueur.
+        tags += f"\\blur{float(style.get('glow_blur', 4)):g}"
+
+    if style.get("emphasis_marker"):
+        # LE SURLIGNAGE AU MARQUEUR. Un contour tres epais, de la couleur du
+        # marqueur, pose sur CE MOT : libass dessine le contour derriere la
+        # lettre, ce qui donne une pastille pleine autour du mot et de lui
+        # seul. C'est la seule facon d'obtenir l'effet, verifiee au rendu --
+        # `border_style: 3` peindrait la ligne entiere (voir _header).
+        marker = style.get("marker_color", style.get("highlight_color", "&H0000D7FF"))
+        tags += f"\\bord{float(style.get('marker_width', 14)):g}\\3c{marker}\\shad0"
+
     return "{" + tags + "}", "{\\r}"
 
 
 def _line_prefix(style: dict) -> str:
+    """Balises posees sur la LIGNE entiere."""
     animation = style.get("animation", "none")
-    if animation in ("fade", "pop"):
-        return "{\\fad(80,60)}"
-    return ""
+    tags = ""
+    if animation in ("fade", "pop", "bounce", "shake", "glow"):
+        tags += "\\fad(80,60)"
+    if animation == "glow":
+        # La lueur vaut aussi pour le reste de la ligne, a demi-force : sans
+        # cela le mot important aurait l'air d'appartenir a un autre
+        # sous-titre.
+        tags += f"\\blur{float(style.get('glow_blur', 4)) / 2.0:g}"
+    return "{" + tags + "}" if tags else ""
 
 
 def _render_groups(groups: list[CaptionGroup], style: dict, with_emphasis: bool) -> str:
@@ -132,6 +193,19 @@ def _render_progressive(words: list[Word], clip_start: float, style: dict) -> st
 
 
 def _render_classic(words: list[Word], clip_start: float, style: dict) -> str:
+    """Karaoke : la phrase entiere reste lisible, le remplissage suit la parole.
+
+    DANS QUEL SENS, exactement -- c'est contre-intuitif et ca se lit a l'envers
+    si on se trompe. Le tag ASS \k fait passer le texte de la couleur
+    SECONDAIRE a la couleur PRIMAIRE au fur et a mesure. Or l'en-tete de ce
+    module met `primary_color` en primaire et `highlight_color` en secondaire.
+    Donc : `highlight_color` est la couleur du texte PAS ENCORE DIT, et
+    `primary_color` celle du texte DEJA DIT.
+
+    Pour le rendu qu'on attend d'un karaoke -- du texte neutre qui se remplit
+    d'une couleur d'accent -- il faut donc mettre l'accent dans
+    `primary_color` et le neutre dans `highlight_color`, et non l'inverse.
+    """
     uppercase = style.get("uppercase", False)
     # Regroupe uniquement sur les pauses : une "phrase" au sens karaoke.
     sentences = [g for g in build_captions(
@@ -156,6 +230,73 @@ def _render_classic(words: list[Word], clip_start: float, style: dict) -> str:
             f"Dialogue: 0,{_format_time(group.start)},{_format_time(group.end)},Default,,0,0,0,,{text}"
         )
     return "\n".join(lines)
+
+
+def _render_typewriter(words: list[Word], clip_start: float, style: dict) -> str:
+    """Le texte s'ecrit lettre par lettre, comme a la machine.
+
+    POURQUOI C'EST UN MODE ET NON UNE ANIMATION. Les autres animations sont une
+    balise posee sur un texte deja ecrit ; celle-ci change le TEXTE a chaque
+    pas. Il faut donc un evenement ASS par etape, ce qu'aucune balise ne sait
+    faire -- d'ou un mode a part plutot qu'une option de plus.
+
+    LE RYTHME SUIT LA PAROLE, pas une cadence fixe. Les lettres d'un groupe
+    sont reparties sur la duree reellement prononcee : un mot dit lentement
+    s'ecrit lentement. Une cadence fixe aurait pris de l'avance sur la voix ou
+    du retard, et le decalage se voit immediatement.
+
+    Le texte deja ecrit reste affiche : seul le curseur avance. Sans cela on
+    lirait un clignotement, pas une frappe.
+    """
+    groups = build_captions(
+        words,
+        clip_start=clip_start,
+        max_words_per_group=style.get("words_per_group", 3),
+        sentence_gap_s=_SENTENCE_GAP_S,
+        min_display_s=style.get("min_display_ms", 250) / 1000.0,
+        gap_s=style.get("gap_ms", 30) / 1000.0,
+    )
+    uppercase = style.get("uppercase", True)
+    prefix = _line_prefix(style)
+    curseur = str(style.get("caret", "") or "")
+    # Au-dela d'une dizaine de pas par groupe, on ecrit par paquets de
+    # lettres : un evenement par caractere sur un texte long produit des
+    # centaines de lignes pour un effet que l'oeil ne distingue plus.
+    pas_max = max(2, int(style.get("typewriter_steps", 12)))
+
+    lignes = []
+    for group in groups:
+        texte = " ".join(w.text for w in group.words)
+        if uppercase:
+            texte = texte.upper()
+        if not texte:
+            continue
+
+        duree = max(0.05, group.end - group.start)
+        # On ne fait defiler que la duree de FRAPPE : le groupe reste ensuite
+        # affiche en entier jusqu'a sa fin.
+        frappe = duree * float(style.get("typewriter_ratio", 0.6))
+        nombre = min(len(texte), pas_max)
+        # -(-a//b) : la division ENTIERE arrondie vers le haut. Arrondie vers
+        # le bas, un texte non divisible produisait un pas de plus que demande,
+        # et le plafond n'en etait plus un.
+        taille = max(1, -(-len(texte) // nombre))
+
+        coupes = list(range(taille, len(texte), taille)) + [len(texte)]
+        precedent = group.start
+        for index, coupe in enumerate(coupes):
+            part = frappe * (index + 1) / len(coupes)
+            fin = group.start + part if index < len(coupes) - 1 else group.end
+            fin = min(fin, group.end)
+            if fin <= precedent:
+                continue
+            visible = _escape_ass(texte[:coupe])
+            queue = curseur if index < len(coupes) - 1 else ""
+            lignes.append(
+                f"Dialogue: 0,{_format_time(precedent)},{_format_time(fin)},"
+                f"Default,,0,0,0,,{prefix}{visible}{_escape_ass(queue)}")
+            precedent = fin
+    return "\n".join(lignes)
 
 
 def render_ass_file(
@@ -192,6 +333,8 @@ def render_ass_file(
         body = _render_groups(groups, style, with_emphasis=True)
     elif mode == "classic":
         body = _render_classic(words, clip_start, style)
+    elif mode == "typewriter":
+        body = _render_typewriter(words, clip_start, style)
     else:
         body = _render_progressive(words, clip_start, style)
 

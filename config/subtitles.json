@@ -1,8 +1,6 @@
 {
   "_comment": "Styles de sous-titres incrustes (video/subtitle_renderer.py genere un fichier .ass a partir de ces parametres + des timestamps mot-par-mot de Whisper). --subtitle-style choisit l'entree utilisee dans 'styles'.",
-
   "default_style": "dynamic",
-
   "styles": {
     "bold": {
       "description": "Sous-titres intelligents, gros et lourds : 3 mots, contour epais, mot important en ambre. Le passe-partout des Reels.",
@@ -26,7 +24,6 @@
       "gap_ms": 30,
       "animation": "fade"
     },
-
     "dynamic": {
       "description": "Sous-titres intelligents tres rythmes : 2 mots, tres grands, leger effet d'apparition sur le mot important.",
       "mode": "smart",
@@ -49,7 +46,6 @@
       "gap_ms": 25,
       "animation": "pop"
     },
-
     "minimal": {
       "description": "Sous-titres intelligents discrets : 5 mots, taille moderee, minuscules, contour fin, aucune animation.",
       "mode": "smart",
@@ -72,7 +68,6 @@
       "gap_ms": 20,
       "animation": "none"
     },
-
     "podcast": {
       "description": "Sous-titres intelligents pour interview/podcast : 4 mots, minuscules, lisibles longtemps, places plus haut pour laisser le buste visible.",
       "mode": "smart",
@@ -95,7 +90,6 @@
       "gap_ms": 25,
       "animation": "fade"
     },
-
     "gaming": {
       "description": "Sous-titres intelligents tres contrastes : 3 mots, majuscules, accent jaune vif, contour tres epais pour rester lisible sur une image chargee.",
       "mode": "smart",
@@ -118,7 +112,6 @@
       "gap_ms": 25,
       "animation": "pop"
     },
-
     "progressive": {
       "description": "Mots/petits groupes qui apparaissent progressivement en grand, un a la fois (ex: CE TRUC / VA / CHANGER).",
       "mode": "progressive",
@@ -137,7 +130,6 @@
       "min_display_ms": 260,
       "gap_ms": 30
     },
-
     "classic": {
       "description": "Sous-titres classiques par phrase/segment, mot courant surligne (karaoke).",
       "mode": "classic",
@@ -156,7 +148,6 @@
       "min_display_ms": 0,
       "gap_ms": 0
     },
-
     "big_text": {
       "description": "Un seul mot a la fois, tres grand -- variante la plus punchy de 'progressive' (meme mode, words_per_group=1).",
       "mode": "progressive",
@@ -174,9 +165,139 @@
       "margin_v": 420,
       "min_display_ms": 220,
       "gap_ms": 20
+    },
+    "karaoke": {
+      "description": "Karaoke punchy : la phrase entiere reste lisible et le mot prononce se remplit d'or au fil de la parole. Meme mecanisme que « classic », mais en gros, gras et majuscules.",
+      "mode": "classic",
+      "words_per_group": 4,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 84,
+      "primary_color": "&H0000D7FF",
+      "highlight_color": "&H00FFFFFF",
+      "outline_color": "&H00000000",
+      "outline_width": 6,
+      "shadow": 2,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 360,
+      "min_display_ms": 300,
+      "gap_ms": 20
+    },
+    "marqueur": {
+      "description": "Mot-cle surligne au marqueur : une pastille pleine derriere le mot important, et lui seul. Le style le plus copie aujourd'hui.",
+      "mode": "smart",
+      "words_per_group": 3,
+      "max_chars_per_group": 22,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 92,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H0000D7FF",
+      "emphasis_color": "&H00000000",
+      "emphasis_scale": 1.0,
+      "emphasis_marker": true,
+      "marker_color": "&H0000D7FF",
+      "marker_width": 14,
+      "outline_color": "&H00000000",
+      "outline_width": 6,
+      "shadow": 2,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 400,
+      "min_display_ms": 260,
+      "gap_ms": 25,
+      "animation": "none"
+    },
+    "neon": {
+      "description": "Lueur néon : le contour est flouté, pas épaissi. Un contour épais reste net et durcit le texte.",
+      "mode": "smart",
+      "words_per_group": 2,
+      "max_chars_per_group": 18,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 104,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H00FF4FD8",
+      "emphasis_color": "&H00FF4FD8",
+      "emphasis_scale": 1.18,
+      "outline_color": "&H00FF4FD8",
+      "outline_width": 5,
+      "shadow": 0,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 400,
+      "min_display_ms": 240,
+      "gap_ms": 25,
+      "animation": "glow",
+      "glow_blur": 5
+    },
+    "ressort": {
+      "description": "Le mot important entre en dépassant sa taille puis se pose : la détente d'un ressort, là où « pop » se contente de grossir et de s'arrêter.",
+      "mode": "smart",
+      "words_per_group": 2,
+      "max_chars_per_group": 18,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 112,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H0035C3FF",
+      "emphasis_color": "&H0035C3FF",
+      "emphasis_scale": 1.2,
+      "outline_color": "&H00000000",
+      "outline_width": 7,
+      "shadow": 2,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 400,
+      "min_display_ms": 240,
+      "gap_ms": 25,
+      "animation": "bounce"
+    },
+    "secousse": {
+      "description": "Le mot important tremble une demi-seconde : deux degrés d'aller-retour, au-delà il cesse d'être lisible.",
+      "mode": "smart",
+      "words_per_group": 2,
+      "max_chars_per_group": 18,
+      "uppercase": true,
+      "font_name": "Arial Black",
+      "font_size": 108,
+      "primary_color": "&H00FFFFFF",
+      "highlight_color": "&H004C4CFF",
+      "emphasis_color": "&H004C4CFF",
+      "emphasis_scale": 1.16,
+      "outline_color": "&H00000000",
+      "outline_width": 7,
+      "shadow": 2,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 400,
+      "min_display_ms": 240,
+      "gap_ms": 25,
+      "animation": "shake"
+    },
+    "machine": {
+      "description": "Machine à écrire : le texte s'écrit lettre par lettre, au rythme réel de la parole et non à cadence fixe.",
+      "mode": "typewriter",
+      "words_per_group": 3,
+      "uppercase": true,
+      "font_name": "Consolas",
+      "font_size": 76,
+      "primary_color": "&H0000FF7F",
+      "highlight_color": "&H0000FF7F",
+      "outline_color": "&H00000000",
+      "outline_width": 4,
+      "shadow": 1,
+      "bold": true,
+      "alignment": 2,
+      "margin_v": 380,
+      "min_display_ms": 300,
+      "gap_ms": 30,
+      "caret": "_",
+      "typewriter_steps": 14,
+      "typewriter_ratio": 0.6
     }
   },
-
   "_notes": {
     "modes": "'smart' = sous-titres intelligents (decoupage adapte, mots importants mis en evidence, placement evitant le visage). 'progressive'/'classic' = styles historiques, conserves tels quels.",
     "personnalisation": "Chaque style expose police, taille, couleurs, contour, ombre, position (margin_v), animation, mots par groupe (words_per_group) et longueur de ligne (max_chars_per_group).",

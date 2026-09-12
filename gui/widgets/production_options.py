@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from editing import delire
+from editing import delire, presets
 from video import watermark
 from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
 from video.filter_graph import FIT_CROP, FIT_WHOLE
@@ -94,6 +94,33 @@ class ProductionOptionsBox(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
+
+        # --- style de montage ---
+        # EN PREMIER, et volontairement : c'est lui qui positionne les autres.
+        # Le laisser en bas de la liste laisserait croire qu'il s'ajoute aux
+        # reglages du dessus alors qu'il les remplace.
+        preset_row = QHBoxLayout()
+        preset_label = QLabel("Style de montage")
+        preset_label.setProperty("role", "fieldLabel")
+        preset_row.addWidget(preset_label)
+        self.preset_combo = QComboBox()
+        for preset in presets.PRESETS:
+            self.preset_combo.addItem(preset.label, preset.key)
+        self.preset_combo.setCurrentIndex(
+            max(0, self.preset_combo.findData(presets.DEFAULT_KEY)))
+        self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
+        # Aligne sur les menus Format/Cadrage juste en dessous : une liste
+        # dimensionnee sur son libelle le plus court se lisait comme une
+        # commande secondaire, alors que c'est la principale.
+        self.preset_combo.setMinimumWidth(260)
+        preset_row.addWidget(self.preset_combo)
+        preset_row.addStretch(1)
+        layout.addLayout(preset_row)
+
+        self.preset_hint = QLabel(presets.get(presets.DEFAULT_KEY).description)
+        self.preset_hint.setProperty("role", "muted")
+        self.preset_hint.setWordWrap(True)
+        layout.addWidget(self.preset_hint)
 
         format_row = QHBoxLayout()
         label = QLabel("Format")
@@ -211,6 +238,81 @@ class ProductionOptionsBox(QWidget):
 
         self._on_aspect_changed()
 
+        # Branche APRES la construction : un signal parti pendant qu'on posait
+        # les commandes ferait passer le menu sur « Personnalise » avant meme
+        # que la page soit visible.
+        self._applying_preset = False
+        self.aspect_combo.currentIndexChanged.connect(self._on_manual_change)
+        self.fit_combo.currentIndexChanged.connect(self._on_manual_change)
+        self.delire_combo.currentIndexChanged.connect(self._on_manual_change)
+        for key, box in self.boxes.items():
+            # Le filigrane est hors sujet : la chaine qui signe la video n'est
+            # pas un parti pris de montage, et changer de logo ne doit pas
+            # annuler le style choisi.
+            if key != "watermark":
+                box.toggled.connect(self._on_manual_change)
+
+    # --------------------------------------------------------- styles de montage
+    def preset(self) -> str:
+        return str(self.preset_combo.currentData() or presets.DEFAULT_KEY)
+
+    def subtitle_style(self) -> str:
+        """Style de sous-titres impose par le style de montage, ou "".
+
+        Vide veut dire « garde celui des Parametres » : c'est le cas de
+        « Personnalise », et c'est ce qui garantit qu'un utilisateur qui n'a
+        jamais ouvert ce menu voit exactement le rendu d'avant.
+        """
+        return presets.get(self.preset()).subtitle_style or ""
+
+    def set_preset(self, key: str) -> None:
+        index = self.preset_combo.findData(key)
+        if index >= 0:
+            self.preset_combo.setCurrentIndex(index)
+
+    def _on_preset_changed(self) -> None:
+        """Applique le style choisi aux commandes visibles.
+
+        Les commandes sont reglees POUR DE VRAI, pas contournees en coulisse :
+        l'utilisateur voit ce qui va se passer et peut corriger n'importe quel
+        point ensuite.
+        """
+        preset = presets.get(self.preset())
+        self.preset_hint.setText(preset.description)
+        if preset.is_free:
+            return
+
+        self._applying_preset = True
+        try:
+            if preset.aspect is not None:
+                index = self.aspect_combo.findData(preset.aspect)
+                if index >= 0:
+                    self.aspect_combo.setCurrentIndex(index)
+            if preset.fit_mode is not None:
+                index = self.fit_combo.findData(preset.fit_mode)
+                if index >= 0:
+                    self.fit_combo.setCurrentIndex(index)
+            box = self.boxes.get("delire")
+            if box is not None:
+                box.setChecked(preset.delire is not None)
+            if preset.delire is not None:
+                self.set_delire_level(preset.delire)
+        finally:
+            self._applying_preset = False
+        self._on_aspect_changed()
+
+    def _on_manual_change(self, *_args) -> None:
+        """Un reglage touche a la main : le menu repasse sur « Personnalise ».
+
+        Afficher « Punchline » au-dessus de reglages qui ne sont plus ceux de
+        Punchline serait un mensonge de l'interface -- et c'est le nom affiche
+        qu'on croit, pas les cases.
+        """
+        if getattr(self, "_applying_preset", False):
+            return
+        if self.preset() != presets.FREE_KEY:
+            self.set_preset(presets.FREE_KEY)
+
     def _on_delire_toggled(self, enabled: bool) -> None:
         """Le cran et son explication ne servent a rien si le delire est
         coupe : on les grise plutot que de les laisser actifs sans effet."""
@@ -269,6 +371,14 @@ class ProductionOptionsBox(QWidget):
         # Meme forme pour le delire : actif ou non, et a quel cran.
         overrides["delire"] = {"enabled": bool(overrides.get("delire")),
                                "level": self.delire_level()}
+        # Le style de montage ajoute ce que les cases ne savent pas exprimer :
+        # l'ampleur et le nombre des zooms. Il vient APRES, mais ne peut pas
+        # contredire les cases -- son bloc « delire » est reecrit juste en
+        # dessous avec l'etat reellement affiche, qui reste la verite.
+        for module, override in presets.editing_overrides(self.preset()).items():
+            if module == "delire":
+                continue
+            overrides[module] = override
         return overrides
 
     def watermark_choice(self) -> str:

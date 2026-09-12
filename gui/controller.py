@@ -28,6 +28,33 @@ _CANCELLED_SENTINEL = "__cancelled__"
 _FORCE_CANCEL_DELAY_MS = 4000
 
 
+def _deep_copy_block(value):
+    """Copie un bloc de configuration sans jamais partager un sous-dictionnaire.
+
+    Une copie de surface suffisait tant qu'un module etait plat. Les styles de
+    montage surchargent montage.dynamic_zoom, donc un niveau plus bas : sans
+    copie profonde, la surcharge d'un run ecrirait dans la configuration
+    chargee et contaminerait le run suivant.
+    """
+    if isinstance(value, dict):
+        return {k: _deep_copy_block(v) for k, v in value.items()}
+    return value
+
+
+def _deep_update(target: dict, override: dict) -> None:
+    """Fusionne `override` dans `target` en DESCENDANT dans les sous-blocs.
+
+    Un `dict.update` remplacerait montage.dynamic_zoom en entier : demander un
+    zoom plus ample ferait perdre du meme coup son attaque, sa tenue et son
+    relachement. On ne remplace donc que les feuilles reellement fournies.
+    """
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value
+
+
 class AnalysisThread(QThread):
     progress = Signal(object)       # ProgressEvent
     finished_ok = Signal(list)      # list[ClipResult]
@@ -212,7 +239,7 @@ class AppController(QObject):
 
         settings = load_settings(cli_args)
         if editing_overrides:
-            editing = {k: dict(v) if isinstance(v, dict) else v for k, v in settings.editing.items()}
+            editing = {k: _deep_copy_block(v) for k, v in settings.editing.items()}
             for module, override in editing_overrides.items():
                 if not isinstance(editing.get(module), dict):
                     continue
@@ -221,7 +248,7 @@ class AppController(QObject):
                     # filigrane doit dire AUSSI quelle chaine signe la video.
                     # Les cles inconnues du module sont ignorees par lui, donc
                     # cette fusion ne peut rien casser de ce qu'il lit deja.
-                    editing[module].update(override)
+                    _deep_update(editing[module], override)
                 else:
                     editing[module]["enabled"] = bool(override)
             settings.editing = editing

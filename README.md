@@ -982,7 +982,32 @@ Decoupage adapte au contenu plutot qu'a un simple compteur de mots : la coupe su
 
 **Placement vertical** : quand un visage occupe le bas du cadre, les sous-titres remontent au-dessus de lui. Sans visage detecte de facon fiable, la marge du style est conservee telle quelle.
 
-**Six presets** dans `config/subtitles.json` -- `classic` (karaoke par phrase), `bold`, `dynamic` (defaut), `minimal`, `podcast`, `gaming` -- tous personnalisables : police, taille, couleurs, contour, ombre, position, animation (`none`/`fade`/`pop`), mots par groupe, longueur de ligne. Les styles historiques `progressive` et `big_text` sont conserves et produisent exactement le meme decoupage qu'avant.
+**Quatorze styles** dans `config/subtitles.json`, tous personnalisables : police, taille, couleurs, contour, ombre, position, animation, mots par groupe, longueur de ligne.
+
+| Style | Ce qu'il fait |
+|---|---|
+| `dynamic` (defaut) | deux mots tres grands, leger effet d'apparition sur le mot important |
+| `bold` | trois mots, contour epais, mot important en ambre -- le passe-partout |
+| `minimal` | discret, minuscules, contour fin, aucune animation |
+| `podcast` | quatre mots lisibles longtemps, places plus haut |
+| `gaming` | tres contraste, accent jaune, contour tres epais |
+| `progressive` / `big_text` | deux mots / un seul mot a la fois, styles historiques |
+| `classic` | sous-titres par phrase, remplissage karaoke |
+| `karaoke` | idem en gros, gras et majuscules, remplissage dore |
+| `marqueur` | le mot-cle surligne au marqueur, sur une pastille pleine |
+| `neon` | lueur floutee autour du texte |
+| `ressort` | le mot important depasse sa taille puis se pose |
+| `secousse` | le mot important tremble une demi-seconde |
+| `machine` | le texte s'ecrit lettre par lettre, au rythme reel de la parole |
+
+Les styles historiques (`progressive`, `big_text`, `classic`, `bold`, `dynamic`, `minimal`, `podcast`, `gaming`) produisent **exactement** le meme fichier `.ass` qu'avant ces ajouts, verifie par comparaison d'empreintes.
+
+**Six animations** : `none`, `fade`, `pop`, `bounce`, `shake`, `glow`. Elles portent sur LE MOT mis en evidence, jamais sur la ligne entiere -- faire trembler tout un bloc rend la lecture penible. `fade` est la seule exception, par nature : elle habille la ligne.
+
+**Deux pieges verifies au rendu**, contre ce qu'on lit souvent :
+
+- `border_style: 3` (rectangle opaque) est peint par libass avec la couleur de **contour**, pas avec `back_color`, et couvre la **ligne entiere**. Le surlignage au marqueur d'un seul mot passe donc par un contour epais pose sur ce mot (`emphasis_marker`), pas par ce reglage.
+- le tag ASS `\k` fait passer le texte de la couleur **secondaire** a la couleur **primaire**. `highlight_color` habille donc le texte **pas encore dit**, et `primary_color` le texte **deja dit** : pour un karaoke qui se remplit d'une couleur d'accent, c'est l'accent qui va dans `primary_color`.
 
 **Export** : les sous-titres sont toujours incrustes dans le MP4 ; `export_srt`/`export_vtt` ecrivent en plus `subtitles/clip_XX.srt` / `.vtt`, construits a partir des **memes blocs** que la video -- un fichier exporte ne peut donc pas afficher un decoupage ou des timings differents de ce qu'on voit a l'ecran.
 
@@ -1184,12 +1209,56 @@ trouve. Le meme composant sert aux deux, donc les choix y sont identiques.
 
 | Option | Accueil et Radar | Ligne de commande |
 | --- | --- | --- |
+| Style de montage | menu "Style de montage" | -- (il compose les options ci-dessous) |
 | Sous-titres | case "Sous-titres" | `--no-subtitles` |
 | Format | menu "Format" | `--aspect 9:16` / `--aspect 16:9` |
 | Fond flou en 16:9 | case "Fond flou" | `--black-bars` pour l'inverse |
 | Cadrage intelligent | case "Cadrage intelligent" | `--no-smart-framing` |
 | Montage auto | case "Montage auto" | `--no-auto-montage` |
 | Filigrane | case "Filigrane" | `--no-watermark` |
+
+### Styles de montage
+
+Un clip reussi n'est pas la somme de reglages independants : des sous-titres de
+deux mots tres grands appellent un cadrage serre et des zooms francs, un clip
+narratif appelle l'inverse. Le menu **Style de montage** pose une combinaison
+coherente d'un seul coup -- format, cadrage, style de sous-titres, ampleur et
+nombre des zooms, intensite du delire.
+
+| Style | Sous-titres | Format | Zooms | Delire |
+| --- | --- | --- | --- | --- |
+| Personnalise | ceux des Parametres | inchange | inchanges | inchange |
+| Punchline | `dynamic` | 9:16 recadre | francs (x1.14, 6 max) | doux |
+| Recit | `podcast` | 9:16 image entiere | a peine perceptibles (x1.05, 3 max) | aucun |
+| Surligne | `marqueur` | 9:16 recadre | mesures | aucun |
+| Karaoke | `karaoke` | 9:16 recadre | mesures | aucun |
+| Neon | `neon` | 9:16 recadre | appuyes (x1.10, 5 max) | doux |
+| Chaos | `secousse` | 9:16 recadre | nombreux (x1.18, 8 max) | maximum |
+| Sobre | `minimal` | **inchange** | aucun | aucun |
+
+Trois choix de conception :
+
+- **Rien n'est verrouille.** Le style regle les commandes POUR DE VRAI, et
+  elles restent visibles et modifiables : on voit ce qui va se passer. Toucher
+  l'une d'elles fait repasser le menu sur « Personnalise » plutot que de
+  laisser afficher le nom d'un style qui ne decrit plus la sortie.
+- **Un style ne coupe aucun mecanisme.** Il ne touche qu'au delire et aux
+  zooms. Eteindre les sous-titres, le cadrage intelligent ou les miniatures
+  n'est pas un parti pris esthetique, et « Sobre » coupe les zooms sans couper
+  le montage automatique -- qui porte aussi la coupe des silences et la
+  normalisation du son.
+- **« Sobre » ne dit rien du format**, volontairement : un clip sobre se
+  justifie aussi bien en vertical qu'en horizontal, et trancher a la place de
+  l'utilisateur serait une perte d'information plutot qu'un service.
+
+**Disponible aux deux endroits** : sur la page Accueil et dans la fenetre du
+Radar, apres avoir selectionne un clip -- c'est le meme composant d'options,
+donc les deux chemins proposent exactement les memes styles.
+
+Le menu n'a pas d'equivalent en ligne de commande : il ne fait que composer des
+reglages qui y sont deja accessibles un par un (`--subtitle-style`, `--aspect`,
+`--fit-mode`), a l'exception de l'ampleur des zooms et du cran de delire, qui se
+reglent dans `config/editing.json`.
 
 - **Sous-titres decoches** : aucun fichier de sous-titres n'est produit, aucun
   n'est incruste. Jusqu'a la version qui introduit ce tableau, la case coupait
