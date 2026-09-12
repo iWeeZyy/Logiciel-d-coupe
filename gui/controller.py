@@ -230,9 +230,14 @@ class AppController(QObject):
         editing_overrides: Optional[dict] = None,
     ) -> None:
         """`editing_overrides` : {nom_de_module: actif} choisi pour CE run
-        depuis l'accueil. Les valeurs par defaut restent celles de
-        config/editing.json (page Parametres) -- l'accueil ne fait que les
-        surcharger le temps d'une analyse."""
+        depuis l'accueil ou la fenetre du Radar. Les valeurs par defaut restent
+        celles de config/editing.json (page Parametres) -- l'appelant ne fait
+        que les surcharger le temps d'une analyse.
+
+        Un module peut porter plus que son interrupteur : un dictionnaire est
+        alors fusionne dans son bloc, en descendant dans les sous-blocs (c'est
+        ce qui permet a un style de montage de ne changer que l'ampleur des
+        zooms sans toucher a leur attaque ni a leur tenue)."""
         project_folder = project_store.create_project_folder(name, projects_dir=settings_store.projects_dir())
         cli_args.output = str(project_folder)
         cli_args.overwrite = True
