@@ -198,11 +198,18 @@ class TestInterfaceDeLAccueil:
         box.set_watermark_choice("chaine-inexistante")
         assert box.watermark_choice() == avant
 
-    def test_les_autres_modules_restent_de_simples_booleens(self, box):
-        """Le filigrane est le seul a porter plus que son interrupteur."""
+    # Les modules qui portent PLUS que leur interrupteur. Le filigrane doit
+    # dire quelle chaine signe la video ; le delire, a quel cran il joue. Tous
+    # les autres restent un simple booleen, et cette liste existe pour que
+    # l'ajout d'un troisieme soit un choix visible et non un glissement.
+    RICHES = {"watermark", "delire"}
+
+    def test_seuls_les_modules_connus_portent_plus_qu_un_booleen(self, box):
         overrides = box.editing_overrides()
         for cle, valeur in overrides.items():
-            if cle != "watermark":
+            if cle in self.RICHES:
+                assert isinstance(valeur, dict), cle
+            else:
                 assert isinstance(valeur, bool), cle
 
 

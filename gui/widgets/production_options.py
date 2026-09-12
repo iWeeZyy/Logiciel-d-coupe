@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from editing import delire
 from video import watermark
 from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
 from video.filter_graph import FIT_CROP, FIT_WHOLE
@@ -38,7 +39,13 @@ QUICK_MODULES = [
     ("metadata", "Titres et descriptions"),
     ("thumbnails", "Miniatures"),
     ("watermark", "Filigrane"),
+    ("delire", "Délire"),
 ]
+
+# Les modules DECOCHES au demarrage. Tous les autres sont actifs par defaut,
+# parce qu'ils ameliorent un clip ; le delire est un parti pris esthetique, pas
+# une amelioration, et il n'a rien a faire sur un clip sobre.
+_DEFAULT_OFF = {"delire"}
 
 LANDSCAPE_HINT = ("L'image d'origine est conservée : aucun recadrage, "
                   "donc pas de cadrage intelligent.")
@@ -54,6 +61,15 @@ WHOLE_HINT = ("L'image entière est conservée et centrée : le haut et le bas d
 FIT_CHOICES = [
     (FIT_CROP, "Recadrer sur le sujet (l'image est rognée)"),
     (FIT_WHOLE, "Image entière + fond de remplissage"),
+]
+
+
+# Libelles des trois crans. Les cles viennent de editing/delire.py : c'est lui
+# qui decide ce que chacun autorise, pas cette liste.
+_DELIRE_LEVELS = [
+    ("doux", "Doux — quelques glitchs discrets"),
+    ("moyen", "Moyen — glitchs, saturation, éclairs"),
+    ("maximum", "Maximum — tout, y compris pixels et inversions"),
 ]
 
 
@@ -127,7 +143,7 @@ class ProductionOptionsBox(QWidget):
             grid.setContentsMargins(0, 0, 0, 0)
             for index, (key, text) in enumerate(QUICK_MODULES):
                 box = QCheckBox(text)
-                box.setChecked(True)
+                box.setChecked(key not in _DEFAULT_OFF)
                 self.boxes[key] = box
                 grid.addWidget(box, index // columns, index % columns)
             layout.addLayout(grid)
@@ -135,7 +151,7 @@ class ProductionOptionsBox(QWidget):
             row = QHBoxLayout()
             for key, text in QUICK_MODULES:
                 box = QCheckBox(text)
-                box.setChecked(True)
+                box.setChecked(key not in _DEFAULT_OFF)
                 self.boxes[key] = box
                 row.addWidget(box)
             row.addStretch(1)
@@ -157,6 +173,35 @@ class ProductionOptionsBox(QWidget):
         self.watermark_row.addStretch(1)
         layout.addLayout(self.watermark_row)
 
+        # --- intensite du delire ---
+        # Trois crans, pas un curseur continu : chaque cran ouvre aussi de
+        # NOUVEAUX effets, ce qu'un pourcentage ne saurait pas exprimer.
+        self.delire_row = QHBoxLayout()
+        delire_label = QLabel("Intensité du délire")
+        delire_label.setProperty("role", "fieldLabel")
+        self.delire_row.addWidget(delire_label)
+        self.delire_combo = QComboBox()
+        for niveau, libelle in _DELIRE_LEVELS:
+            self.delire_combo.addItem(libelle, niveau)
+        self.delire_combo.setCurrentIndex(
+            max(0, self.delire_combo.findData(delire.DEFAULT_LEVEL)))
+        self.delire_row.addWidget(self.delire_combo)
+        self.delire_row.addStretch(1)
+        layout.addLayout(self.delire_row)
+
+        self.delire_hint = QLabel(
+            "Des effets francs (glitch, saturation, VHS, pixels, éclairs) posés "
+            "sur les moments forts, en nombre borné. La durée de la vidéo ne "
+            "change pas : sous-titres et son restent synchrones.")
+        self.delire_hint.setProperty("role", "muted")
+        self.delire_hint.setWordWrap(True)
+        layout.addWidget(self.delire_hint)
+
+        delire_box = self.boxes.get("delire")
+        if delire_box is not None:
+            delire_box.toggled.connect(self._on_delire_toggled)
+        self._on_delire_toggled(delire_box.isChecked() if delire_box else False)
+
         # Grise avec la case : un menu actif alors que le filigrane est coupe
         # laisserait croire qu'il sera pose.
         box = self.boxes.get("watermark")
@@ -165,6 +210,20 @@ class ProductionOptionsBox(QWidget):
         self._on_watermark_toggled(box.isChecked() if box is not None else False)
 
         self._on_aspect_changed()
+
+    def _on_delire_toggled(self, enabled: bool) -> None:
+        """Le cran et son explication ne servent a rien si le delire est
+        coupe : on les grise plutot que de les laisser actifs sans effet."""
+        self.delire_combo.setEnabled(bool(enabled))
+        self.delire_hint.setEnabled(bool(enabled))
+
+    def delire_level(self) -> str:
+        return str(self.delire_combo.currentData() or delire.DEFAULT_LEVEL)
+
+    def set_delire_level(self, level: str) -> None:
+        index = self.delire_combo.findData(level)
+        if index >= 0:
+            self.delire_combo.setCurrentIndex(index)
 
     def _on_watermark_toggled(self, enabled: bool) -> None:
         self.watermark_combo.setEnabled(bool(enabled)
@@ -207,6 +266,9 @@ class ProductionOptionsBox(QWidget):
         if choice:
             overrides["watermark"] = {"enabled": bool(overrides.get("watermark")),
                                       "choice": choice}
+        # Meme forme pour le delire : actif ou non, et a quel cran.
+        overrides["delire"] = {"enabled": bool(overrides.get("delire")),
+                               "level": self.delire_level()}
         return overrides
 
     def watermark_choice(self) -> str:

@@ -268,5 +268,14 @@
     "explication": "Explication",
     "liste": "Liste",
     "conseil": "Conseil"
+  },
+  "delire": {
+    "_comment": "Montage delire : des effets francs poses sur les moments deja reperes comme marquants. DESACTIVE PAR DEFAUT -- c'est un parti pris esthetique, pas une amelioration, et il n'a rien a faire sur un clip sobre. La case et le cran d'intensite sont dans l'accueil. Les bornes de chaque cran (nombre d'effets par minute, ecart minimal, part maximale du clip sous effet, duree et force) vivent dans editing/delire.py, parce qu'elles forment un reglage coherent qu'il serait dangereux de mixer a moitie.",
+    "enabled": false,
+    "_level_comment": "doux | moyen | maximum. Chaque cran ouvre aussi de nouveaux effets.",
+    "level": "moyen",
+    "_seed_comment": "0 = derive du debut du clip, donc reproductible sans etre identique d'un clip a l'autre. Une valeur fixe rend DEUX rendus du meme clip rigoureusement identiques : utile pour comparer deux reglages.",
+    "seed": 0,
+    "_no_timeline_comment": "AUCUN effet ne change la duree : ni ralenti, ni arret sur image, ni retour arriere. Ils deplaceraient tout ce qui suit, donc desynchroniseraient les sous-titres (calcules en temps absolu) et l'audio. Les ajouter demande une carte de correspondance appliquee aux trois a la fois."
   }
 }

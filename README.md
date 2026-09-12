@@ -216,6 +216,74 @@ second moteur de synthese, seulement un champ qui se remplit.
 passent par `export/subtitles_export.py`, deja utilise par le pipeline video --
 un seul formateur de minutage dans tout le projet.
 
+### Montage delire
+
+Des effets francs poses sur les moments forts, avec une case et un cran
+d'intensite dans l'accueil. **Desactive par defaut** : c'est un parti pris
+esthetique, pas une amelioration, et il n'a rien a faire sur un clip sobre.
+
+Meme partage que les zooms dynamiques : `editing/delire.py` PLANIFIE (module
+pur, aucun encodage pour le tester), `video/delire_filters.py` TRADUIT en
+filtres ffmpeg.
+
+**LA DUREE NE CHANGE JAMAIS, et c'est la contrainte qui a dessine le reste.**
+Les sous-titres sont cales en temps absolu et l'audio aussi : un seul effet qui
+allongerait la video les desynchroniserait tous les deux. D'ou l'usage de
+l'option `enable='between(t,a,b)'` de ffmpeg, qui active un filtre sur un
+intervalle et le laisse transparent ailleurs, plutot qu'un decoupage-recollage.
+Verifie par un rendu reel : hors intervalle, l'image produite est
+BYTE-IDENTIQUE a un rendu sans effet, et la duree sort a 10.000 s pour 10 s
+demandees.
+
+**Ce qui est volontairement absent, et pourquoi :**
+
+- Pas de ralenti, d'arret sur image ni de retour arriere. Ce sont ceux qui
+  deplacent la suite. Les ajouter demande une carte de correspondance temps
+  source vers temps sortie appliquee aux sous-titres, a l'audio et a l'image a
+  la fois. C'est une autre etape, pas un oubli.
+- Pas de texte a l'ecran. Le texte lisible de cette application passe par un
+  fichier ASS, qui gere les polices correctement sur Windows ; `drawtext` de
+  ffmpeg exige un chemin de police en dur. Les punchlines viendront par la voie
+  des sous-titres.
+- Pas de secousse. Elle demande d'agrandir l'image de quelques pour cent sur
+  TOUT le clip pour avoir de la marge, donc de l'adoucir partout pour trois
+  dixiemes de seconde d'effet.
+
+**Six effets, tous verifies comme acceptant `enable`** (indicateur « T » dans
+`ffmpeg -filters`) : glitch (separation des canaux), deepfry (saturation et
+contraste pousses), VHS (grain et chrominance decalee), pixelisation, eclair
+blanc, inversion breve. `crop`, `scale` et `zoompan` ne l'acceptent PAS, ce qui
+explique l'absence de zoom ici -- il est deja assure par `dynamic_zoom`.
+
+**Le glitch est decoupe en tranches, et ce detail a une histoire.** Premiere
+tentative : faire trembler le decalage avec le temps, `rh='18*sin(t*61)'`.
+ffmpeg l'a refuse -- `rh` de `rgbashift` est un ENTIER, pas une expression,
+contrairement aux parametres de `crop`. L'intervalle est donc coupe en trois
+tranches adjacentes a decalages fixes et inegaux : le resultat saute d'une
+valeur a l'autre, ce qui est exactement l'effet cherche.
+
+**Trois bornes, comme pour les zooms**, parce qu'un effet toutes les deux
+secondes donne une video que personne ne regarde : un nombre d'evenements par
+minute, un ecart minimal entre deux, et une part maximale du clip sous effet.
+Sur un clip de 45 secondes cela donne 3, 6 ou 10 effets selon le cran, couvrant
+de 1,7 % a 6,3 % de la duree. Le budget est la contrainte qui mord ; le
+plafond de couverture est un garde-fou.
+
+**Les instants ne sont pas tires au hasard** : ce sont ceux que
+`editing/captions.py` a deja retenus comme marquants, exactement la source
+qu'utilise `editing/zoom.py`. Aucun detecteur n'est ajoute, sinon deux modules
+pourraient designer des moments differents sur le meme clip. Aucun moment
+marquant, aucun effet.
+
+**Le plan est reproductible.** Une graine derivee du debut du clip par defaut :
+deux clips differents n'ont pas les memes effets, mais rejouer le meme clip
+redonne le meme resultat -- sans quoi comparer deux reglages serait impossible.
+Le plan complet est enregistre dans le manifeste du projet.
+
+**Les effets passent AVANT les sous-titres** dans la chaine : un texte qui
+glitche n'est plus lisible, et l'interet d'un sous-titre est qu'on le lise. Le
+filigrane est une incrustation posee plus loin encore, donc il reste net aussi.
+
 ### Filigrane : deux chaines, un choix dans l'accueil
 
 Le filigrane existait deja, avec sa position, sa taille en pourcentage de la

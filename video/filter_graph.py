@@ -137,6 +137,21 @@ def landscape_fill_chain(out_w: int, out_h: int, fill: str = FILL_BLACK) -> str:
     )
 
 
+def _delire_filters(plan) -> list:
+    """Les effets du montage delire, ou une liste vide.
+
+    POSES AVANT LES SOUS-TITRES, et c'est deliberé : un texte qui glitche
+    n'est plus lisible, alors que l'interet des sous-titres est justement
+    qu'on les lise. Le filigrane, lui, est applique plus loin encore (c'est
+    une incrustation separee), donc il reste net aussi.
+    """
+    if plan is None:
+        return []
+    from video.delire_filters import build_filters
+
+    return build_filters(plan)
+
+
 def build_video_chain(
     *,
     edit_list: EditList,
@@ -150,6 +165,7 @@ def build_video_chain(
     target_size: tuple[int, int] = (TARGET_W, TARGET_H),
     fill: str = FILL_BLACK,
     fit: str = FIT_CROP,
+    delire_plan=None,
 ) -> str:
     """Chaine video (sans le montage, applique en amont) : cadrage, zoom,
     mise a l'echelle, sous-titres.
@@ -171,6 +187,7 @@ def build_video_chain(
         # bandes noires, ou par une copie floutee de l'image (voir
         # landscape_fill_chain).
         chain = [landscape_fill_chain(out_w, out_h, fill)]
+        chain.extend(_delire_filters(delire_plan))
         if ass_path:
             chain.append(subtitle_filter(ass_path))
         return ",".join(chain)
@@ -210,6 +227,8 @@ def build_video_chain(
         )
     else:
         chain.append(f"scale={out_w}:{out_h}")
+
+    chain.extend(_delire_filters(delire_plan))
 
     if ass_path:
         chain.append(subtitle_filter(ass_path))
@@ -257,6 +276,7 @@ def build_ffmpeg_args(
     watermark=None,
     fill: str = FILL_BLACK,
     fit: str = FIT_CROP,
+    delire_plan=None,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -265,7 +285,7 @@ def build_ffmpeg_args(
     video_chain = build_video_chain(
         edit_list=edit_list, framing_plan=framing_plan, zoom_track=zoom_track,
         src_w=src_w, src_h=src_h, fps=fps, face_hint=face_hint, ass_path=ass_path,
-        target_size=target_size, fill=fill, fit=fit,
+        target_size=target_size, fill=fill, fit=fit, delire_plan=delire_plan,
     )
     audio_chain = build_audio_chain(audio_cfg)
 

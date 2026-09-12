@@ -46,6 +46,8 @@ from editing.silence_cut import MontagePlan, build_montage_plan
 from editing.speaker import detect_active_speaker
 from editing.timeline import EditList
 from editing.thumbnail import choose_text
+from editing.delire import Plan as DelirePlan
+from editing.delire import build_plan as build_delire_plan
 from editing.zoom import ZoomTrack, build_zoom_track
 from export.exporter import (
     clip_relative_path,
@@ -285,7 +287,7 @@ def run(
             )
 
             emphasis_scores = _emphasis_scores(c, settings, subtitle_style, audio_analyzer)
-            montage_plan, zoom_track = _build_montage(
+            montage_plan, zoom_track, delire_plan = _build_montage(
                 c, settings, audio_analyzer, sentence_index, emphasis_scores
             )
             edit_list = montage_plan.edit_list
@@ -335,6 +337,7 @@ def run(
                     edit_list=edit_list,
                     framing_plan=framing_plan,
                     zoom_track=zoom_track,
+                    delire_plan=delire_plan,
                     audio_cfg=montage_audio_cfg,
                     fps=source_fps,
                     target_size=settings.target_size(),
@@ -384,8 +387,11 @@ def run(
                 context=ctx.to_dict() if ctx is not None else {},
                 subtitles=subtitle_files,
                 framing=framing_plan.to_dict() if framing_plan is not None else {},
-                montage={**montage_plan.to_dict(), "zoom": zoom_track.to_dict()}
-                if montage_plan.applied or zoom_track.events else {},
+                montage={**montage_plan.to_dict(), "zoom": zoom_track.to_dict(),
+                         **({"delire": delire_plan.to_dict()}
+                            if not delire_plan.is_empty else {})}
+                if montage_plan.applied or zoom_track.events
+                or not delire_plan.is_empty else {},
             )
             write_clip_metadata(settings.output, clip_result)
             clip_results.append(clip_result)
@@ -634,8 +640,13 @@ def _build_montage(
     audio_analyzer: AudioAnalyzer,
     sentences,
     emphasis_scores: dict[int, float],
-) -> tuple[MontagePlan, ZoomTrack]:
-    """Montage (silences, hesitations) et zooms dynamiques du clip."""
+) -> tuple[MontagePlan, ZoomTrack, DelirePlan]:
+    """Montage (silences, hesitations), zooms dynamiques et effets delire.
+
+    Les trois partent des MEMES instants marquants (`emphasis_times`) : ce sont
+    ceux que editing/captions.py a deja retenus. Aucun detecteur n'est ajoute
+    pour le delire, sinon deux modules pourraient designer des moments
+    differents sur le meme clip."""
     cfg = settings.editing_module("montage")
     identity = MontagePlan(EditList.identity(candidate.start, candidate.end))
     if not cfg.get("enabled", False):
@@ -683,7 +694,16 @@ def _build_montage(
             max_events=int(zoom_cfg.get("max_events", 4)),
         )
 
-    return plan, zoom_track
+    delire_cfg = settings.editing_module("delire")
+    delire_plan = DelirePlan()
+    if delire_cfg.get("enabled", False):
+        delire_plan = build_delire_plan(
+            emphasis_times, candidate.start, candidate.end,
+            level=str(delire_cfg.get("level") or "moyen"),
+            seed=int(delire_cfg.get("seed") or 0) or None,
+        )
+
+    return plan, zoom_track, delire_plan
 
 
 def _build_captions_for_clip(
