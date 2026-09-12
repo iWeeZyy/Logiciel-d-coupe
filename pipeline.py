@@ -286,9 +286,11 @@ def run(
                 settings, str(input_path), c, audio_analyzer, face_cfg
             )
 
-            emphasis_scores = _emphasis_scores(c, settings, subtitle_style, audio_analyzer)
+            emphasis_scores, word_loudness, loud_threshold = _emphasis_scores(
+                c, settings, subtitle_style, audio_analyzer)
             montage_plan, zoom_track, delire_plan = _build_montage(
-                c, settings, audio_analyzer, sentence_index, emphasis_scores
+                c, settings, audio_analyzer, sentence_index, emphasis_scores,
+                word_loudness=word_loudness, loud_threshold=loud_threshold,
             )
             edit_list = montage_plan.edit_list
 
@@ -499,16 +501,21 @@ def _emphasis_scores(
     settings: Settings,
     subtitle_style: dict,
     audio_analyzer: AudioAnalyzer,
-) -> dict[int, float]:
-    """Importance de chaque mot du clip (index sur candidate.words).
+) -> tuple[dict[int, float], list[float], float | None]:
+    """Importance de chaque mot du clip (index sur candidate.words), ET le
+    niveau audio par mot avec son seuil.
 
-    Calculee une seule fois et partagee par les trois modules qui en ont
-    besoin : mise en evidence des sous-titres, protection des pauses
-    volontaires au montage, et choix des instants de zoom."""
+    Calculee une seule fois et partagee par les modules qui en ont besoin :
+    mise en evidence des sous-titres, protection des pauses volontaires au
+    montage, choix des instants de zoom, et signaux du montage delire.
+
+    Le niveau audio est RENDU plutot que jete : le montage delire distingue un
+    mot crie d'un mot simplement marquant, et le recalculer serait refaire mot
+    a mot un travail deja fait."""
     cfg = settings.editing_module("captions")
     emphasis_cfg = cfg.get("emphasis", {})
     if not cfg.get("enabled", False) or not emphasis_cfg.get("enabled", False) or not candidate.words:
-        return {}
+        return {}, [], None
 
     loudness = [audio_analyzer.mean_db(w.start, w.end) for w in candidate.words]
     threshold = None
@@ -517,13 +524,14 @@ def _emphasis_scores(
         variance = sum((x - mean) ** 2 for x in loudness) / len(loudness)
         threshold = mean + float(emphasis_cfg.get("loudness_threshold_sigma", 0.75)) * (variance ** 0.5)
 
-    return score_emphasis(
+    scores = score_emphasis(
         candidate.words,
         keyword_terms=settings.keywords_config.get("strong_keywords", []),
         weight_overrides=settings.keywords_config.get("keyword_weight_overrides", {}),
         loudness_db=loudness,
         loud_threshold_db=threshold,
     )
+    return scores, loudness, threshold
 
 
 def _build_ranker(settings, sentences, audio_analyzer, video_duration):
@@ -634,12 +642,71 @@ def _analyse_framing(
     return face_hint, plan
 
 
+def _delire_cues(cfg: dict) -> dict:
+    """Le lexique des signaux : celui du module, surcharge par la
+    configuration. La surcharge est par SIGNAL, pas globale -- redefinir
+    « colere » ne doit pas effacer « rire »."""
+    from editing.delire import DEFAULT_CUES
+
+    table = {nom: dict(entree) for nom, entree in DEFAULT_CUES.items()}
+    for nom, entree in (cfg.get("cues") or {}).items():
+        if isinstance(entree, dict):
+            table.setdefault(nom, {}).update(entree)
+    return table
+
+
+def _delire_moments(candidate, emphasis_scores, sentences,
+                    word_loudness, loud_threshold) -> list:
+    """Les moments marquants du clip, AVEC ce qui les rend marquants.
+
+    Aucun detecteur nouveau : `keyword` et `digit` sont relus des memes regles
+    que editing/captions.py, `loud`/`very_loud` du niveau audio deja mesure, et
+    `question` de editing/sentences.py. Le montage delire ne fait donc que
+    LIRE des signaux, il n'en invente aucun.
+
+    « Tres fort » est deliberement plus exigeant que « fort » : un mot au-dessus
+    du seuil est marquant, un mot nettement au-dessus est CRIE, et les deux ne
+    meritent pas le meme effet.
+    """
+    from editing.delire import Moment
+
+    words = candidate.words or []
+    loud = list(word_loudness or [])
+    seuil = loud_threshold
+    # Marge du cri : le seuil est deja « moyenne + 0,75 ecart-type ». Trois
+    # decibels au-dessus separent nettement un mot appuye d'un mot hurle.
+    marge_cri = 3.0
+
+    questions = [s for s in (sentences or []) if getattr(s, "is_question", False)]
+
+    moments = []
+    for index in sorted(emphasis_scores):
+        if index >= len(words):
+            continue
+        word = words[index]
+        niveau = loud[index] if index < len(loud) else None
+        dans_question = any(s.start <= word.start <= s.end for s in questions)
+        moments.append(Moment(
+            t=word.start,
+            text=word.text,
+            keyword=bool(emphasis_scores.get(index, 0) >= 0.5),
+            digit=any(c.isdigit() for c in word.text),
+            loud=bool(seuil is not None and niveau is not None and niveau >= seuil),
+            very_loud=bool(seuil is not None and niveau is not None
+                           and niveau >= seuil + marge_cri),
+            question=dans_question,
+        ))
+    return moments
+
+
 def _build_montage(
     candidate: Candidate,
     settings: Settings,
     audio_analyzer: AudioAnalyzer,
     sentences,
     emphasis_scores: dict[int, float],
+    word_loudness: list[float] | None = None,
+    loud_threshold: float | None = None,
 ) -> tuple[MontagePlan, ZoomTrack, DelirePlan]:
     """Montage (silences, hesitations), zooms dynamiques et effets delire.
 
@@ -698,9 +765,12 @@ def _build_montage(
     delire_plan = DelirePlan()
     if delire_cfg.get("enabled", False):
         delire_plan = build_delire_plan(
-            emphasis_times, candidate.start, candidate.end,
+            _delire_moments(candidate, emphasis_scores, sentences,
+                            word_loudness, loud_threshold),
+            candidate.start, candidate.end,
             level=str(delire_cfg.get("level") or "moyen"),
             seed=int(delire_cfg.get("seed") or 0) or None,
+            cues=_delire_cues(delire_cfg),
         )
 
     return plan, zoom_track, delire_plan

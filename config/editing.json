@@ -276,6 +276,97 @@
     "level": "moyen",
     "_seed_comment": "0 = derive du debut du clip, donc reproductible sans etre identique d'un clip a l'autre. Une valeur fixe rend DEUX rendus du meme clip rigoureusement identiques : utile pour comparer deux reglages.",
     "seed": 0,
-    "_no_timeline_comment": "AUCUN effet ne change la duree : ni ralenti, ni arret sur image, ni retour arriere. Ils deplaceraient tout ce qui suit, donc desynchroniseraient les sous-titres (calcules en temps absolu) et l'audio. Les ajouter demande une carte de correspondance appliquee aux trois a la fois."
+    "_no_timeline_comment": "AUCUN effet ne change la duree : ni ralenti, ni arret sur image, ni retour arriere. Ils deplaceraient tout ce qui suit, donc desynchroniseraient les sous-titres (calcules en temps absolu) et l'audio. Les ajouter demande une carte de correspondance appliquee aux trois a la fois.",
+    "_cues_comment": "L'EFFET SUIT CE QUI EST DIT OU FAIT. A chaque signal correspond une FAMILLE d'effets ; le meme signal donne toujours la meme famille, c'est ce qui rend le montage lisible plutot que decoratif. Deux clips evitent malgre tout de se ressembler parce que le sens choisit la famille et la graine du clip choisit LE MEMBRE, et parce qu'un effet n'est jamais repete deux fois de suite quand sa famille en propose plusieurs. ORDRE DE PRIORITE, ce qui est DIT avant ce qui est entendu : colere, rire, surprise, question, crie, chiffre, motcle, defaut -- un juron hurle est d'abord un juron, sinon le lexique ne servirait jamais. Les signaux SANS lexique viennent d'une mesure : 'question' de editing/sentences.py, 'crie' du niveau audio nettement au-dessus du seuil du clip, 'chiffre' d'un chiffre dans le mot, 'motcle' des mots-cles de config/hooks_keywords.json. La surcharge est par signal : redefinir 'colere' n'efface pas 'rire'. Ces listes sont des propositions de depart, pas des verites -- personne n'a mesure que le rire appelle la saturation plutot que la pixelisation.",
+    "cues": {
+      "colere": {
+        "words": [
+          "putain",
+          "merde",
+          "fdp",
+          "connard",
+          "enculé",
+          "bordel",
+          "salope",
+          "batard",
+          "ta gueule",
+          "wesh",
+          "nique"
+        ],
+        "effects": [
+          "glitch",
+          "deepfry"
+        ]
+      },
+      "rire": {
+        "words": [
+          "mdr",
+          "ptdr",
+          "lol",
+          "haha",
+          "hahaha",
+          "ahah",
+          "ahaha",
+          "xptdr",
+          "jpp",
+          "mort",
+          "je meurs"
+        ],
+        "effects": [
+          "deepfry",
+          "pixel"
+        ]
+      },
+      "surprise": {
+        "words": [
+          "quoi",
+          "hein",
+          "sérieux",
+          "serieux",
+          "what",
+          "wtf",
+          "nan",
+          "impossible",
+          "incroyable",
+          "attends",
+          "comment"
+        ],
+        "effects": [
+          "blip",
+          "flash"
+        ]
+      },
+      "question": {
+        "effects": [
+          "glitch",
+          "pixel"
+        ]
+      },
+      "crie": {
+        "effects": [
+          "flash",
+          "blip"
+        ]
+      },
+      "chiffre": {
+        "effects": [
+          "pixel",
+          "glitch"
+        ]
+      },
+      "motcle": {
+        "effects": [
+          "glitch",
+          "vhs"
+        ]
+      },
+      "defaut": {
+        "effects": [
+          "glitch",
+          "vhs",
+          "deepfry"
+        ]
+      }
+    }
   }
 }

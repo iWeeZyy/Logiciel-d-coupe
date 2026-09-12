@@ -269,11 +269,48 @@ Sur un clip de 45 secondes cela donne 3, 6 ou 10 effets selon le cran, couvrant
 de 1,7 % a 6,3 % de la duree. Le budget est la contrainte qui mord ; le
 plafond de couverture est un garde-fou.
 
-**Les instants ne sont pas tires au hasard** : ce sont ceux que
-`editing/captions.py` a deja retenus comme marquants, exactement la source
-qu'utilise `editing/zoom.py`. Aucun detecteur n'est ajoute, sinon deux modules
-pourraient designer des moments differents sur le meme clip. Aucun moment
-marquant, aucun effet.
+**Ni les instants ni les effets ne sont tires au hasard.**
+
+Les instants sont ceux que `editing/captions.py` a deja retenus comme
+marquants, exactement la source qu'utilise `editing/zoom.py`. Aucun detecteur
+n'est ajoute, sinon deux modules pourraient designer des moments differents sur
+le meme clip. Aucun moment marquant, aucun effet.
+
+**L'EFFET DECOULE DE CE QUI EST DIT OU FAIT.** A chaque signal correspond une
+famille d'effets, et le meme signal donne toujours la meme famille : c'est ce
+qui rend le montage lisible plutot que decoratif.
+
+| Signal | D'ou il vient | Famille d'effets |
+|---|---|---|
+| colere | lexique | glitch, deepfry |
+| rire | lexique | deepfry, pixel |
+| surprise | lexique | inversion, eclair |
+| question | `editing/sentences.py` | glitch, pixel |
+| crie | niveau audio nettement au-dessus du seuil du clip | eclair, inversion |
+| chiffre | un chiffre dans le mot | pixel, glitch |
+| motcle | `config/hooks_keywords.json` | glitch, VHS |
+| defaut | rien de reconnu | glitch, VHS, deepfry |
+
+**L'ordre de priorite est explicite, et ce qui est DIT passe avant ce qui est
+ENTENDU.** Un « putain ! » hurle est classe en colere, pas en cri. Dans l'autre
+ordre le lexique ne servirait jamais, une montee de volume accompagnant presque
+toujours un mot fort. Le signal retenu est conserve dans le plan avec le mot qui
+l'a declenche : un montage qu'on ne sait pas expliquer ne se corrige pas.
+
+**Comment deux clips evitent malgre tout de se ressembler.** Le sens choisit la
+FAMILLE, la graine du clip choisit LE MEMBRE. Et un effet n'est jamais repete
+deux fois de suite quand sa famille en propose plusieurs, ce qui evite qu'un
+clip entier de rires soit une seule texture. Deux clips dont l'un est fait de
+jurons et l'autre de rires ne se ressemblent donc pas du tout ; le meme clip
+rejoue donne exactement le meme montage.
+
+**Le cran d'intensite a le dernier mot sur la famille.** Une surprise appelle
+un eclair, mais « doux » ne l'autorise pas : on reste alors dans ce que le cran
+permet, sinon le cran ne voudrait plus rien dire. Le lexique est surchargeable
+par signal dans `config/editing.json` -- redefinir « colere » n'efface pas
+« rire ». Ces listes sont des propositions de depart, pas des verites :
+personne n'a mesure que le rire appelle la saturation plutot que la
+pixelisation.
 
 **Le plan est reproductible.** Une graine derivee du debut du clip par defaut :
 deux clips differents n'ont pas les memes effets, mais rejouer le meme clip

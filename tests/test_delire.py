@@ -319,3 +319,159 @@ class TestInterfaceDeLAccueil:
         for cle in ("captions", "framing", "montage", "metadata"):
             valeur = overrides[cle]
             assert (valeur["enabled"] if isinstance(valeur, dict) else valeur)
+
+
+class TestLEffetSuitLeSens:
+    """« Que ce ne soit pas trop aléatoire. »
+
+    Le choix de l'effet ne doit pas etre un tirage : un mot de colere, un rire
+    et un chiffre ne meritent pas le meme traitement. Le SENS choisit la
+    famille d'effets, et il la choisit toujours de la meme facon.
+    """
+
+    def _moment(self, texte: str, **signaux):
+        return delire.Moment(t=5.0, text=texte, **signaux)
+
+    def test_la_colere_est_reconnue(self):
+        assert delire.classify(self._moment("Putain")) == "colere"
+
+    def test_le_rire_est_reconnu(self):
+        for mot in ("mdr", "MDR", "ptdr", "haha"):
+            assert delire.classify(self._moment(mot)) == "rire", mot
+
+    def test_la_surprise_est_reconnue(self):
+        assert delire.classify(self._moment("Sérieux ?!")) == "surprise"
+
+    def test_les_accents_et_la_ponctuation_ne_genent_pas(self):
+        """« Sérieux ?! » et « serieux » doivent tomber sur la meme entree."""
+        assert delire.classify(self._moment("sérieux")) == \
+            delire.classify(self._moment("SERIEUX..."))
+
+    def test_un_chiffre_est_reconnu(self):
+        assert delire.classify(self._moment("42", digit=True)) == "chiffre"
+
+    def test_un_cri_est_reconnu(self):
+        assert delire.classify(self._moment("maintenant", very_loud=True)) == "crie"
+
+    def test_une_question_est_reconnue(self):
+        assert delire.classify(self._moment("alors", question=True)) == "question"
+
+    def test_un_mot_cle_configure_est_reconnu(self):
+        assert delire.classify(self._moment("clutch", keyword=True)) == "motcle"
+
+    def test_un_mot_ordinaire_retombe_sur_le_defaut(self):
+        """Plutot que d'etre ignore : c'est un moment marquant, il a droit a un
+        effet, simplement pas a un effet particulier."""
+        assert delire.classify(self._moment("table")) == "defaut"
+
+    def test_ce_qui_est_DIT_passe_avant_ce_qui_est_ENTENDU(self):
+        """LE TEST QUI COMPTE. Un juron hurle est d'abord un juron. Dans
+        l'autre ordre, le lexique ne servirait jamais : une montee de volume
+        accompagne presque toujours un mot fort."""
+        crie = self._moment("putain", very_loud=True, loud=True, keyword=True)
+        assert delire.classify(crie) == "colere"
+
+    def test_un_rire_crie_reste_un_rire(self):
+        assert delire.classify(self._moment("mdr", very_loud=True)) == "rire"
+
+    def test_l_ordre_de_priorite_est_declare_explicitement(self):
+        assert delire.CUE_ORDER[:3] == ("colere", "rire", "surprise")
+        assert delire.CUE_ORDER[-1] == "defaut"
+
+    def test_le_lexique_est_surchargeable_par_signal(self):
+        """Redefinir un signal ne doit pas effacer les autres."""
+        cues = {nom: dict(e) for nom, e in delire.DEFAULT_CUES.items()}
+        cues["colere"] = {"words": ["flûte"], "effects": [delire.PIXEL]}
+        assert delire.classify(self._moment("flûte"), cues) == "colere"
+        assert delire.classify(self._moment("putain"), cues) == "defaut"
+        assert delire.classify(self._moment("mdr"), cues) == "rire"
+
+    def test_chaque_signal_du_catalogue_a_une_famille_d_effets(self):
+        for nom in delire.CUE_ORDER:
+            effets = delire.DEFAULT_CUES[nom]["effects"]
+            assert effets, nom
+            for effet in effets:
+                assert effet in delire.EFFECTS, (nom, effet)
+
+    def test_la_configuration_livree_reprend_le_catalogue(self):
+        livree = _config()["cues"]
+        assert set(livree) == set(delire.DEFAULT_CUES)
+        for nom, entree in delire.DEFAULT_CUES.items():
+            assert livree[nom]["effects"] == list(entree["effects"]), nom
+
+
+class TestMemeSensMemeFamille:
+    def _plan(self, mots, **kw):
+        moments = [delire.Moment(t=2.0 + 5.0 * i, text=mot)
+                   for i, mot in enumerate(mots)]
+        return delire.build_plan(moments, 0.0, 60.0, level="maximum", **kw)
+
+    def test_le_signal_est_conserve_dans_le_plan(self):
+        """Un montage qu'on ne sait pas expliquer ne se corrige pas."""
+        plan = self._plan(["putain", "mdr", "quoi"], seed=1)
+        assert [e.cue for e in plan.events] == ["colere", "rire", "surprise"]
+        assert [e.word for e in plan.events] == ["putain", "mdr", "quoi"]
+
+    def test_chaque_effet_appartient_a_la_famille_de_son_signal(self):
+        plan = self._plan(["putain", "mdr", "quoi", "table"], seed=3)
+        for event in plan.events:
+            famille = delire.DEFAULT_CUES[event.cue]["effects"]
+            assert event.kind in famille, (event.cue, event.kind)
+
+    def test_le_meme_mot_donne_toujours_le_meme_signal(self):
+        premier = self._plan(["putain", "table", "putain"], seed=5)
+        signaux = [e.cue for e in premier.events]
+        assert signaux[0] == signaux[2] == "colere"
+
+    def test_le_cran_a_le_dernier_mot_sur_la_famille(self):
+        """« Doux » n'autorise que glitch et VHS. Une surprise appelle un
+        eclair, mais le cran doit gagner -- sinon il ne voudrait plus rien
+        dire."""
+        moments = [delire.Moment(t=5.0, text="quoi")]
+        plan = delire.build_plan(moments, 0.0, 30.0, level="doux", seed=1)
+        assert plan.events[0].cue == "surprise"
+        assert plan.events[0].kind in delire.rules_for("doux")["kinds"]
+
+    def test_jamais_deux_fois_le_meme_effet_de_suite(self):
+        """Un clip entier de rires ne doit pas etre une seule texture."""
+        plan = self._plan(["mdr"] * 8, seed=7)
+        assert len(plan.events) >= 3
+        for avant, apres in zip(plan.events, plan.events[1:]):
+            assert avant.kind != apres.kind
+
+    def test_un_signal_a_famille_unique_peut_se_repeter(self):
+        """La regle precedente ne doit pas bloquer un plan quand il n'y a qu'un
+        seul effet possible."""
+        cues = {nom: dict(e) for nom, e in delire.DEFAULT_CUES.items()}
+        cues["rire"] = {"words": ["mdr"], "effects": [delire.PIXEL]}
+        moments = [delire.Moment(t=2.0 + 5.0 * i, text="mdr") for i in range(4)]
+        plan = delire.build_plan(moments, 0.0, 60.0, level="maximum",
+                                 seed=1, cues=cues)
+        assert len(plan.events) >= 3
+        assert {e.kind for e in plan.events} == {delire.PIXEL}
+
+    def test_le_compte_par_signal_est_rapporte(self):
+        plan = self._plan(["mdr", "mdr", "putain"], seed=2)
+        assert "rire x2" in " ".join(plan.reasons)
+
+    def test_des_instants_nus_restent_acceptes(self):
+        """Mode degrade : sans signal, tout vient de la famille « defaut ».
+        Le montage reste borne, il ne suit simplement plus ce qui est dit."""
+        plan = delire.build_plan([5.0, 15.0], 0.0, 30.0, level="maximum", seed=1)
+        assert not plan.is_empty
+        assert {e.cue for e in plan.events} == {"defaut"}
+
+    def test_deux_clips_differents_ne_se_ressemblent_pas(self):
+        """« Que les clips ne se ressemblent pas. » Le contenu differe, donc
+        les signaux different, donc les effets different."""
+        colere = self._plan(["putain", "merde", "bordel"], seed=1)
+        rires = self._plan(["mdr", "ptdr", "haha"], seed=1)
+        assert [e.kind for e in colere.events] != [e.kind for e in rires.events]
+
+    def test_deux_graines_varient_le_membre_pas_la_famille(self):
+        """Le sens reste, l'habillage bouge."""
+        a = self._plan(["mdr", "mdr", "mdr"], seed=11)
+        b = self._plan(["mdr", "mdr", "mdr"], seed=12)
+        assert [e.cue for e in a.events] == [e.cue for e in b.events]
+        for event in list(a.events) + list(b.events):
+            assert event.kind in delire.DEFAULT_CUES["rire"]["effects"]
