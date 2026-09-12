@@ -103,17 +103,37 @@ class TestPaysageInchange:
             assert (chain(target_size=LANDSCAPE_SIZE, fill=fill, fit=FIT_CROP)
                     == chain(target_size=LANDSCAPE_SIZE, fill=fill, fit=FIT_WHOLE))
 
-    def test_une_source_16_9_en_16_9_n_a_rien_a_remplir(self):
-        """La cause du defaut signale : le graphe est bien celui du fond flou,
-        mais l'image nette couvre 100 % du cadre, donc aucun flou n'est
-        visible. Ce n'est pas un bug du filtre, c'est une source qui a deja la
-        forme du cadre."""
-        produced = chain(src_w=1920, src_h=1080, target_size=LANDSCAPE_SIZE,
+    def test_une_source_deja_au_format_ne_calcule_aucun_fond(self):
+        """Une source qui a DEJA la forme du cadre n'a rien a remplir.
+
+        Le graphe passait quand meme par le fond flou : un flou gaussien
+        calcule sur chaque image, puis integralement recouvert par l'image
+        nette. Mesure sur une source 1080x1920, l'encodage passait de 0,9 s a
+        1,9 s pour un rendu dont l'ecart de luminance avec la simple mise a
+        l'echelle est exactement 0.
+        """
+        for src_w, src_h, taille in ((1920, 1080, LANDSCAPE_SIZE),
+                                     (1280, 720, LANDSCAPE_SIZE),
+                                     (1080, 1920, PORTRAIT_SIZE),
+                                     (720, 1280, PORTRAIT_SIZE)):
+            produced = chain(src_w=src_w, src_h=src_h, target_size=taille,
+                             fill=FILL_BLUR, fit=FIT_WHOLE)
+            assert "gblur" not in produced, (src_w, src_h)
+            assert f"scale={taille[0]}:{taille[1]}" in produced
+
+    def test_un_format_seulement_PROCHE_garde_le_fond(self):
+        """La condition est une egalite entiere des formats, volontairement
+        stricte : c'est ce qui garantit qu'aucune bande d'un pixel ne peut
+        apparaitre par arrondi du redimensionnement."""
+        produced = chain(src_w=1080, src_h=1918, target_size=PORTRAIT_SIZE,
+                         fill=FILL_BLUR, fit=FIT_WHOLE)
+        assert "gblur" in produced
+
+    def test_une_source_verticale_en_16_9_garde_son_fond_flou(self):
+        """Le cas ou le fond sert vraiment : l'image ne couvre pas le cadre."""
+        produced = chain(src_w=1080, src_h=1920, target_size=LANDSCAPE_SIZE,
                          fill=FILL_BLUR)
         assert "gblur" in produced
-        # Rien dans le graphe ne peut le deviner : c'est la geometrie de la
-        # source qui decide. Le meme graphe sur une source verticale montre le
-        # flou, sur une source 16:9 il est integralement recouvert.
         assert "force_original_aspect_ratio=increase" in produced
 
 

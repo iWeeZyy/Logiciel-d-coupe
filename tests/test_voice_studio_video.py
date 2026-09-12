@@ -188,11 +188,22 @@ class TestCadre:
         assert "crop=" in graph and "scale=1080:1920" in graph
 
     def test_le_16_9_garde_l_image_entiere_et_remplit_les_bords(self):
+        """Une source verticale dans un cadre horizontal : c'est la que le
+        fond flou sert, puisque l'image ne couvre pas le cadre."""
         graph = video_edit.build_video_graph(
-            src_w=1280, src_h=720, target_size=(1920, 1080), fill="flou",
+            src_w=1080, src_h=1920, target_size=(1920, 1080), fill="flou",
             ass_path=None)
         assert "gblur" in graph
         assert "crop=1920:1080" in graph, "le fond flou couvre tout le cadre"
+
+    def test_une_source_deja_au_format_ne_calcule_aucun_fond(self):
+        """Voice Studio partage la geometrie des clips, donc l'economie aussi :
+        un fond entierement recouvert n'est plus calcule."""
+        graph = video_edit.build_video_graph(
+            src_w=1280, src_h=720, target_size=(1920, 1080), fill="flou",
+            ass_path=None)
+        assert "gblur" not in graph
+        assert "scale=1920:1080" in graph
 
     def test_le_gel_est_pose_sur_la_source_avant_le_recadrage(self):
         """Pose apres, la derniere image figee n'aurait pas de sous-titres."""

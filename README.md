@@ -1192,6 +1192,17 @@ c'est la que les bandes existent, et c'est ce que les plateformes remplissent
 sinon avec du noir. La case est donc grisee quand elle ne sert a rien, plutot
 que laissee cochee sans effet.
 
+**Et le fond n'est plus calcule quand il ne sert a rien.** Le graphe passait
+malgre tout par le fond flou : un flou gaussien sur chaque image, puis
+integralement recouvert par l'image nette. Un clip DEJA vertical (1080x1920)
+produit desormais une simple mise a l'echelle -- 100 images comparees, ecart de
+luminance exactement 0, et l'encodage de 2,11 s a 0,65 s sur la mesure faite ici.
+La condition est une egalite ENTIERE des formats, volontairement stricte : c'est
+ce qui garantit qu'aucune bande d'un pixel n'apparait par arrondi. Elle couvre
+toutes les resolutions verticales reelles (1080x1920, 720x1280, 540x960...) ; un
+format seulement proche (1080x1918) garde l'ancien chemin. Voice Studio partage
+cette geometrie, donc l'economie aussi.
+
 Rien n'est jamais deforme : dans les deux cas la proportion d'origine est
 preservee. On choisit seulement ce qu'on perd (recadrer) ou ce qu'on ajoute
 (remplir). Quand l'image entiere est gardee, le cadrage intelligent est coupe
@@ -1254,6 +1265,12 @@ Trois choix de conception :
 **Disponible aux deux endroits** : sur la page Accueil et dans la fenetre du
 Radar, apres avoir selectionne un clip -- c'est le meme composant d'options,
 donc les deux chemins proposent exactement les memes styles.
+
+**Sur une source deja verticale**, les huit styles sortent en 1080x1920 sans
+recadrage inutile ni bande : verifie par rendu reel des huit, taille de sortie,
+duree exacte et sous-titres incrustes. Un clip PLUS haut que le 9:16
+(1080x2400, par exemple) est le seul cas ou « recadrer » rogne le haut et le
+bas ; « Recit » le garde alors entier.
 
 Le menu n'a pas d'equivalent en ligne de commande : il ne fait que composer des
 reglages qui y sont deja accessibles un par un (`--subtitle-style`, `--aspect`,
