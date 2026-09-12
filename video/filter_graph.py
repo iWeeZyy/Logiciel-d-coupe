@@ -161,6 +161,13 @@ _DEFAUT = object()      # « non precise », distinct de None qui veut dire « l
 # SANS AGRANDISSEMENT, AUCUN FILTRE : sur une source deja a la taille de
 # sortie, le masque flou n'a rien a recuperer et ne fait que degrader -- mesure
 # a -65 dB, l'image n'est plus identique a elle-meme. D'ou le seuil.
+#
+# LE RISQUE CONNU DE CE FILTRE est d'amplifier le bruit autant que le detail,
+# et un stream sombre est granuleux la ou un maitre de synthese est propre. Du
+# bruit a donc ete ajoute a la source, en mesurant toujours contre la verite
+# PROPRE : le gain reste positif et diminue seulement -- +0,29 dB sans bruit,
+# +0,28 avec un bruit leger, +0,23 moyen, +0,11 fort. Le reglage n'a donc pas
+# eu a etre abaisse pour les sources bruitees.
 SHARPEN_PER_FACTOR = 0.35      # force par unite d'agrandissement au-dela de 1
 SHARPEN_MAX = 0.9              # au-dela, les halos se voient plus que le detail
 SHARPEN_MIN_FACTOR = 1.15      # en dessous, il n'y a rien a recuperer

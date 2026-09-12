@@ -1226,6 +1226,12 @@ flou du cadrage « image entiere » n'est jamais accentue. Cout mesure sur un
 clip de 10 s aux reglages de production : encodage 8,0 -> 8,9 s (+11 %),
 fichier 0,96 -> 1,05 Mo (+9 %).
 
+Le risque connu de ce filtre est d'amplifier le bruit autant que le detail, et
+un stream sombre est granuleux la ou un maitre de synthese est propre. Du bruit
+a donc ete ajoute a la source, en mesurant toujours contre la verite propre :
+le gain reste positif et diminue seulement -- +0,29 dB sans bruit, +0,28 avec
+un bruit leger, +0,23 moyen, +0,11 fort. Le reglage n'a pas eu a etre abaisse.
+
 #### Ce qui a ete essaye et ecarte, avec la mesure qui l'a decide
 
 Le zoom fait subir a l'image **deux** redimensionnements au lieu d'un :
