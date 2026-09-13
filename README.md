@@ -1320,6 +1320,33 @@ produites, avec credit pour une vente directe ; elle interdit de monetiser
 l'acces au logiciel lui-meme, et les poids des modeles gardent chacun leur
 propre licence, a verifier modele par modele.
 
+**Et surtout : la marge restante depend de la SOURCE, pas de la technique.** Sur
+une source 1920x1080 -- celle d'un clip Twitch pris en « Source » -- la fenetre
+9:16 fait 606 px et n'est agrandie que 1,78 fois. Mesure contre l'image vraie
+tiree du maitre :
+
+| | PSNR | SSIM |
+|---|---|---|
+| avant (bicubique, sans compensation) | 29,46 dB | 0,9612 |
+| aujourd'hui (lanczos + compensation) | 29,95 dB | 0,9515 |
+| l'image vraie | plafond absolu | 1,0000 |
+
+Aucun agrandisseur, aussi bon soit-il, ne peut depasser cette image vraie. A
+0,95 de SSIM, ce qui reste a reconstruire est faible -- l'essentiel du detail
+manquant est genuinement absent d'une fenetre de 606 px. La super-resolution par
+reseau de neurones transforme une source 360p ou 480p ; sur une source deja
+bonne agrandie 1,78 fois, elle a peu a reprendre. **Le gain attendu est donc
+inversement proportionnel a la qualite de la source**, ce qui retire beaucoup
+d'interet a cette piste pour qui travaille depuis du 1080p.
+
+Un doute leve au passage : la compensation laisse a l'oeil un fin lisere sur les
+contours, qui ressemble a du sur-accentuement. La mesure dit le contraire. En
+separant l'erreur MOYENNE de l'erreur EXTREME, l'erreur extreme DIMINUE quand la
+force augmente (54 -> 51 et 57 -> 53 sur les deux maitres) tandis que l'erreur
+moyenne augmente legerement. Un vrai lisere ferait l'inverse. Le PSNR,
+quadratique, pese les gros ecarts : il s'ameliore parce que les contours
+retombent plus pres de leur vraie place. Le reglage n'a donc pas ete adouci.
+
 Conclusion : utilisable comme outil EXTERNE et optionnel sur une machine equipee
 d'un GPU, jamais comme dependance livree avec l'application. Sur une machine sans
 GPU compatible, il ne tourne pas du tout -- la ligne « GPU detecte / Aucun GPU
