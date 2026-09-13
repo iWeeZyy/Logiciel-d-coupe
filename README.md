@@ -1178,9 +1178,25 @@ La reponse mesuree est oui, mais pas la ou on l'attend.
 
 **Le plus gros facteur n'est pas le zoom, c'est l'agrandissement.** La fenetre
 9:16 d'une source 1280x720 ne fait que 404x720 : il faut l'agrandir 2,67 fois
-pour atteindre 1080x1920. Une source 1080p donne 606x1080, soit 1,78 fois. Le
+pour atteindre 1080x1920. Une source 1080p donne 608x1080, soit 1,78 fois. Le
 telechargement prend deja la meilleure qualite disponible, sans plafond de
 hauteur -- c'est le premier levier, et il est deja tire.
+
+**Ce que vous obtenez reellement est ecrit dans le journal**, et c'est la seule
+facon de le verifier plutot que de le supposer :
+
+```
+Video : 31.4s, 1920x1080, 60 images/s.
+Cadrage : fenetre 608x1080 -> 1080x1920, agrandissement x1.78, compensation 0.27.
+```
+
+Un clip Twitch pris en « Source » n'est pas en 720p : selon ce que le streamer
+diffuse, c'est le plus souvent du 1080p60, parfois du 1440p ou une definition
+batarde comme 1664x936. La compensation suit ce que la source donne vraiment --
+0,27 a x1,78, 0,12 a x1,33, rien du tout au-dela de la taille de sortie -- donc
+plus la source est bonne, moins le logiciel a besoin d'intervenir. La cadence
+est conservee telle quelle, 60 images/s incluses, zoom compris (verifie par
+rendu : 180 images pour 3 secondes en entree comme en sortie).
 
 **Le levier trouve : l'algorithme de redimensionnement.** ffmpeg utilise
 bicubique par defaut ; la chaine demande maintenant lanczos, qui conserve mieux

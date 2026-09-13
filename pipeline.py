@@ -71,6 +71,41 @@ from video.thumbnailer import generate_thumbnails
 logger = get_logger()
 
 
+def _log_upscale(src_w: int, src_h: int, settings) -> None:
+    """Dit, en clair, de combien l'image va etre agrandie et ce qui compense.
+
+    C'EST LA SEULE FACON DE VERIFIER CE QUI A VRAIMENT ETE TELECHARGE. La
+    definition de la source decide de tout le reste : la fenetre 9:16 d'un clip
+    1280x720 ne fait que 404 px de large et doit etre agrandie 2,67 fois, celle
+    d'un 1920x1080 en fait 608 et n'est agrandie que 1,78 fois -- la
+    compensation de l'agrandissement suit cet ecart, et sur une source encore
+    plus grande elle ne s'applique plus du tout. Sans cette ligne il faut
+    deviner la definition, et c'est precisement l'erreur qui a motive ce
+    message.
+    """
+    from video.cropper import target_size
+    from video.filter_graph import base_crop_size, sharpen_amount
+
+    try:
+        out_w, out_h = target_size(getattr(settings, "aspect_ratio", None) or "9:16")
+        if out_w >= out_h or getattr(settings, "fit_mode", "recadrer") != "recadrer":
+            # L'image est gardee entiere : c'est la plus petite des deux mises a
+            # l'echelle qui la limite, pas la fenetre.
+            facteur = min(out_w / src_w, out_h / src_h) if src_w and src_h else 0.0
+            fenetre = f"{src_w}x{src_h} (image entiere)"
+        else:
+            crop_w, crop_h = base_crop_size(src_w, src_h)
+            facteur = out_w / crop_w if crop_w else 0.0
+            fenetre = f"{crop_w}x{crop_h}"
+        force = sharpen_amount(facteur)
+        compense = f"compensation {force:g}" if force else "aucune compensation"
+        logger.info(f"Cadrage : fenetre {fenetre} -> {out_w}x{out_h}, "
+                    f"agrandissement x{facteur:.2f}, {compense}.")
+    except Exception:                                    # pragma: no cover
+        # Une ligne de journal ne doit jamais faire echouer un traitement.
+        pass
+
+
 def run(
     settings: Settings,
     on_progress: Optional[Callable[[ProgressEvent], None]] = None,
@@ -85,7 +120,10 @@ def run(
 
     video_duration = ffmpeg_utils.video_duration(str(input_path))
     src_w, src_h = ffmpeg_utils.video_resolution(str(input_path))
-    logger.info(f"Video : {video_duration:.1f}s, {src_w}x{src_h}.")
+    source_fps = ffmpeg_utils.video_fps(str(input_path))
+    logger.info(f"Video : {video_duration:.1f}s, {src_w}x{src_h}, "
+                f"{source_fps:g} images/s.")
+    _log_upscale(src_w, src_h, settings)
 
     from video.watermark import from_config as watermark_from_config
     from video.watermark import reserved_bottom_px as watermark_reserved_bottom
@@ -265,7 +303,6 @@ def run(
         ensure_output_dir(settings.output)
         subtitle_style = settings.subtitle_style_params()
         face_cfg = settings.face_detection
-        source_fps = ffmpeg_utils.video_fps(str(input_path))
         clip_results: list[ClipResult] = []
         # Temps de parole et priorite par clip : connus ici seulement, et
         # necessaires a la fiche technique enregistree en fin de production.
