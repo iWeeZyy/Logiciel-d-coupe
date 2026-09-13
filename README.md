@@ -959,6 +959,79 @@ Regle commune : **mieux vaut ne rien modifier que mal modifier**. Chaque module 
 
 Ce sont des heuristiques explicables construites sur les memes mesures que le Hook Score, **pas** une prediction de viralite reelle : aucune donnee de performance ne permettrait de les calibrer.
 
+### Ou commencent les fenetres candidates
+
+Les passages sont notes par fenetres glissantes. Ces fenetres etaient posees sur
+une **grille reguliere** : avec un clip de 45 s et `stride_ratio` 0,33, le pas
+vaut 14,85 s, donc une fenetre ne pouvait commencer qu'a 0, 14,85, 29,7... quelle
+que soit la structure de la parole.
+
+C'est un probleme, parce que deux composantes du score lisent directement ces
+bornes. `silence_build_up` lit le silence AVANT la fenetre : une fenetre qui
+demarre en pleine phrase n'en a aucun, la composante tombe a son plancher de 10
+sur 100, alors qu'une fenetre demarrant apres une pause obtient 100. Et la
+completude de fin vaut 100 si le dernier mot termine une phrase, 40 sinon.
+Quatre-vingt-dix points d'ecart decides par la grille.
+
+Mesure sur 759 s de parole (1702 mots, 220 phrases, clip de 45 s) :
+
+| | grille seule | grille + phrases |
+|---|---|---|
+| fenetres sans silence devant | 45/50 (90 %) | 45/263 (17 %) |
+| fenetres finissant sur une phrase terminee | 17/50 (34 %) | 230/263 (87 %) |
+
+Les fenetres **ancrees** commencent au debut d'une phrase et se referment sur la
+fin de la derniere phrase qui tient dans la duree demandee. La grille est
+conservee a cote : un monologue sans ponctuation ni pause ne produit presque
+aucune phrase, et il faut bien le couvrir.
+
+**Ce que ca change concretement.** Sur une transcription ou un moment fort est
+place expres entre deux points de grille, a 22 s : la grille choisissait un
+passage de bavardage a 104 s (potentiel viral 59,2), l'ancrage choisit
+17,5 -> 59,1 s (68,8), qui contient le moment fort. La grille ne pouvait pas le
+cadrer -- sa fenetre de 14,85 s l'ouvrait avec sept secondes de bavardage devant,
+celle de 29,7 s en coupait le debut.
+
+Reglable dans `config/settings.json` -> `hook_detection.sentence_anchored`.
+`enabled` a false ramene exactement le comportement d'avant.
+
+### Le cout de l'analyse, et la hauteur de voix
+
+Multiplier les fenetres par sept aurait ete impossible sans corriger d'abord un
+defaut de performance bien plus gros. `librosa.pyin` etait relance sur l'audio
+**brut** de chaque fenetre candidate, alors que les fenetres se chevauchent
+largement : chaque seconde d'audio etait analysee trois fois avec la grille
+seule. L'en-tete du module affirmait pourtant qu'aucun re-traitement n'avait
+lieu par fenetre -- c'etait vrai du RMS, faux de la hauteur.
+
+Mesure sur ce sandbox, fenetre de 45 s : **6,25 secondes par fenetre**, soit
+environ 750 s pour les 118 fenetres d'une video de 30 minutes. Pour une
+composante qui pese 20 % du seul score audio.
+
+Deux corrections, chacune mesuree :
+
+- `pyin` tourne avec une fenetre d'analyse plus large et un pas plus grossier
+  (4096 / 1024 au lieu des defauts). Les valeurs bougent de 1,5 % et le cout est
+  divise par trois. On ne cherche qu'un ecart-type sur des dizaines de secondes.
+- Au-dela du point de rentabilite, la trajectoire de hauteur est calculee **une
+  fois** sur la piste entiere puis simplement decoupee. Verifie contre le calcul
+  par fenetre : ecart median 1,5 %, maximum 2,2 %, correlation 0,9988.
+
+| video de 30 minutes | fenetres | duree de l'analyse |
+|---|---|---|
+| avant | 118 | ~750 s |
+| apres | 118 | 134 s |
+| apres, avec l'ancrage | 852 | 167 s |
+
+Le point de rentabilite est un **rapport**, pas un compte : le calcul par
+fenetre coute environ 1,8 fois plus par seconde d'audio que le calcul global, et
+l'appelant annonce a l'analyseur combien de fenetres il va demander. Une seule
+fenetre sur une longue source, le chemin du Radar, reste donc calculee seule.
+
+`librosa.yin` a ete essaye, soixante fois plus rapide : **ecarte**. Il n'a pas de
+detection des trames voisees, donc il attribue une hauteur arbitraire aux pauses
+et renvoyait des valeurs cinq fois trop grandes sur un signal a hauteur variable.
+
 ### Detection du contexte (`context_detection`)
 
 Recale les bornes de chaque clip sur la structure reelle du discours plutot que sur un decoupage arbitraire :

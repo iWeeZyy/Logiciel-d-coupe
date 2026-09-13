@@ -212,6 +212,17 @@ def run(
         )
         text_analyzer = TextAnalyzer(transcript, settings.keywords_config, settings.scoring_params)
 
+        # Phrases de toute la video, calculees une seule fois et partagees :
+        # les fenetres candidates s'y calent, la qualite de contexte du Priority
+        # Score en a besoin des la selection, et le montage s'en sert ensuite
+        # pour proteger les pauses volontaires. Elles servent dans tous les cas,
+        # meme quand il n'y a rien a selectionner.
+        sentence_index = build_sentences(
+            transcript.words(),
+            max_gap_s=settings.editing_module("context_detection").get("sentence_gap_s", 0.6),
+            question_starters=settings.keywords_config.get("question_starters", []),
+        )
+
         if whole_source:
             # Une seule fenetre : le clip entier. Rien n'est compare, donc rien
             # ne peut etre rogne.
@@ -224,6 +235,8 @@ def run(
                 clip_duration=settings.clip_duration,
                 stride_ratio=settings.hook_detection.get("stride_ratio", 0.33),
                 min_words_in_window=settings.scoring_params.get("min_words_in_window", 8),
+                sentences=sentence_index,
+                anchored=settings.hook_detection.get("sentence_anchored"),
             )
 
         scorer = Scorer(
@@ -236,18 +249,6 @@ def run(
             clip_scores=settings.editing.get("clip_scores"),
         )
         scored = [scorer.score(c) for c in candidates]
-
-        # [4] Selection des meilleurs passages
-        # Phrases de toute la video, calculees une seule fois et partagees :
-        # la qualite de contexte du Priority Score en a besoin des la selection,
-        # le montage s'en sert ensuite pour proteger les pauses volontaires.
-        # Elles servent dans les deux cas : le montage en a besoin meme quand il
-        # n'y a rien a selectionner.
-        sentence_index = build_sentences(
-            transcript.words(),
-            max_gap_s=settings.editing_module("context_detection").get("sentence_gap_s", 0.6),
-            question_starters=settings.keywords_config.get("question_starters", []),
-        )
 
         if whole_source:
             # Choisir le meilleur parmi un seul, c'est le prendre. Pas d'etape

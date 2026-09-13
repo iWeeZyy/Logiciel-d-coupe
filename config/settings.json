@@ -1,6 +1,5 @@
 {
   "_comment": "Valeurs par defaut des options CLI + parametres internes du scoring. Toute valeur ici peut etre ecrasee par un argument --xxx en ligne de commande. Les coefficients dans 'weights' doivent sommer a 1.0 (verifie par core/config_loader.py).",
-
   "defaults": {
     "output": "output",
     "clip_duration": 45,
@@ -13,16 +12,14 @@
     "model": "small",
     "device": "auto"
   },
-
   "weights": {
-    "audio": 0.20,
-    "keywords": 0.20,
+    "audio": 0.2,
+    "keywords": 0.2,
     "questions": 0.15,
     "speech_density": 0.15,
     "silence_build_up": 0.15,
     "intensity": 0.15
   },
-
   "scoring_params": {
     "normal_words_per_second": 2.5,
     "short_sentence_word_threshold": 6,
@@ -37,25 +34,27 @@
     "intensity_rise_scale_db": 6,
     "rms_std_scale_db": 8
   },
-
   "hook_detection": {
     "stride_ratio": 0.33,
-    "max_overshoot_ratio": 0.2
+    "max_overshoot_ratio": 0.2,
+    "sentence_anchored": {
+      "_comment": "Fenetres candidates calees sur la structure de la parole, en plus de la grille reguliere. Le pas de la grille vaut clip_duration x stride_ratio, soit 14,85 s pour un clip de 45 s : une fenetre ne pouvait donc commencer qu'a 0, 14,85, 29,7... quelle que soit la parole. Or deux composantes du score lisent directement ces bornes -- le silence AVANT la fenetre (plancher a 10 sur 100 quand elle demarre en pleine phrase, 100 apres une pause) et la completude de la derniere phrase (100 ou 40). Mesure sur 759 s de parole : 6 fenetres de grille sur 50 commencaient a moins de 0,25 s d'un debut de phrase, 45 n'avaient aucun silence devant elles. Le classement suivait donc la chance de la grille plus que le contenu. 'enabled' a false ramene exactement le comportement d'avant. 'keep_grid' garde la grille a cote des fenetres ancrees : un monologue sans ponctuation ni pause ne produit presque aucune phrase et il faut bien le couvrir. 'min_duration_ratio' ecarte une fenetre trop courte -- une phrase isolee suivie d'un long silence -- plutot que de proposer un clip de quelques secondes quand on en demandait quarante-cinq.",
+      "enabled": true,
+      "keep_grid": true,
+      "min_duration_ratio": 0.6
+    }
   },
-
   "audio_analysis": {
     "sample_rate": 16000,
     "hop_length_ms": 20,
     "compute_pitch": true
   },
-
   "face_detection": {
     "enabled": true,
     "sample_interval_s": 1.0,
     "max_samples_per_clip": 20,
     "confidence_threshold": 0.6
   },
-
   "export": {
     "_comment": "Haute qualite par defaut : CRF 18. C'est le CRF qui porte la qualite -- le preset ne regle que le temps que l'encodeur passe a chercher une facon de compresser. Mesure sur un clip reel de 24 s en 1080x1920, meme chaine de filtres : preset slow 54 s / 25,2 Mo / SSIM 0,9892 ; preset medium 30 s / 25,4 Mo / SSIM 0,9893. slow coutait 24 secondes de plus sans rien rendre de mieux, d'ou medium. L'encodage reste la seule etape ou de la qualite se perd definitivement, et les plateformes reencodent ce qu'on leur envoie : c'est pour cela que le CRF, lui, reste a 18. Repassable en Standard (CRF 23) dans Parametres.",
     "video_bitrate_crf": 18,
