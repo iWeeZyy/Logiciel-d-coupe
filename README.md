@@ -1308,17 +1308,44 @@ installer, tout en local » tient, la compensation de l'agrandissement decrite
 au-dessus est le meilleur rapport qualite/cout disponible.
 
 **Un candidat concret a ete evalue : WanGP / Wan2GP** (github.com/deepbeepmeep/Wan2GP).
-Il contient bien ce qui manque -- de la super-resolution video (FlashVSR) et de
-l'interpolation temporelle (RIFE) -- et il est integrable sans son interface,
-par sa ligne de commande (`python wgp.py --process file.zip`) et son API. Ce qui
-bloque n'est pas l'integration mais le socle : **le fonctionnement sur
-processeur seul n'est pas pris en charge**, il faut une carte NVIDIA (GTX 10XX a
-RTX 50XX) ou AMD (RDNA 2 a 4) avec 6 Go de VRAM au minimum, plus Python 3.10/3.11,
-PyTorch avec CUDA 12.8/13.0, conda et plusieurs Go de poids par modele. Sa licence
-(WanGP Community License 2.0) autorise l'usage local et la vente des VIDEOS
-produites, avec credit pour une vente directe ; elle interdit de monetiser
-l'acces au logiciel lui-meme, et les poids des modeles gardent chacun leur
-propre licence, a verifier modele par modele.
+
+Premiere lecture trop etroite, corrigee : ce depot n'est pas un outil de
+retouche, c'est une **plateforme de generation video**. L'agrandissement
+(FlashVSR) et l'interpolation temporelle (RIFE) n'en sont qu'une fonction
+annexe. Son coeur, ce sont des modeles generatifs, et c'est de la que viendrait
+son interet ici :
+
+| Ce qu'il sait faire | Ce que ca resoudrait dans ce logiciel |
+|---|---|
+| Outpainting video (VACE, LTX-2.3) | **le fond flou**. Une source 16:9 en 9:16 est aujourd'hui soit rognee, soit posee sur une copie floutee d'elle-meme. L'outpainting dessinerait le haut et le bas du cadre au lieu de les flouter. |
+| Image vers video (Wan 2.2 I2V) | une photo de paysage mise en mouvement -- exactement le besoin de LandsCapesFR. |
+| Texte vers video (Wan 2.2, LTX-2.3, Kandinsky 5) | du b-roll, demande de longue date et jamais construit. |
+| Avatar parlant / synchro labiale (InfiniteTalk, LongCat Avatar) | un presentateur a partir d'un script, en prolongement direct du Voice Studio. |
+| Animation de personnage, remplacement d'interprete (SCAIL-2, Wan Animate) | sans usage identifie ici, et douteux sur le clip d'autrui. |
+
+Ce qui bloque n'est pas l'integration -- il s'utilise sans son interface, par sa
+ligne de commande (`python wgp.py --process file.zip`) et son API -- mais le
+socle : **le fonctionnement sur processeur seul n'est pas pris en charge**. Il
+faut une carte NVIDIA (GTX 10XX a RTX 50XX) ou AMD (RDNA 2 a 4), plusieurs Go de
+poids par modele, Python 3.10/3.11, PyTorch avec CUDA 12.8/13.0 et conda. La
+documentation des modeles precise d'ailleurs que « la taille du modele ne
+determine pas a elle seule si un checkpoint tournera » et que les anciens
+paliers « 6 Go / 12 Go / 20 Go » ne sont plus fiables : il n'y a donc pas de
+seuil simple a annoncer.
+
+Sa licence (WanGP Community License 2.0) autorise l'usage local et la vente des
+VIDEOS produites, avec credit pour une vente directe ; elle interdit de
+monetiser l'acces au logiciel lui-meme, et les poids des modeles gardent chacun
+leur propre licence, a verifier modele par modele.
+
+**Une distinction qui decide de tout, et qui n'est pas celle du GPU.** Une
+generation produit quelques secondes d'image ; un traitement image par image
+doit traverser tout le clip. Un clip de 45 s a 60 images/s, c'est 2700 images.
+Sur un GPU distant gratuit (ZeroGPU : environ 5 minutes de GPU par jour pour un
+compte gratuit), un plan genere de 5 secondes passe, alors qu'un outpainting ou
+un agrandissement de 2700 images consommerait la journee entiere pour un seul
+clip. **Les capacites generatives sont donc envisageables a distance ; celles
+qui traitent le clip entier ne le sont pas.**
 
 **Et surtout : la marge restante depend de la SOURCE, pas de la technique.** Sur
 une source 1920x1080 -- celle d'un clip Twitch pris en « Source » -- la fenetre
