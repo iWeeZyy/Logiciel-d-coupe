@@ -1307,6 +1307,26 @@ C'est donc un choix a faire, pas un oubli : tant que la contrainte « rien a
 installer, tout en local » tient, la compensation de l'agrandissement decrite
 au-dessus est le meilleur rapport qualite/cout disponible.
 
+**Un candidat concret a ete evalue : WanGP / Wan2GP** (github.com/deepbeepmeep/Wan2GP).
+Il contient bien ce qui manque -- de la super-resolution video (FlashVSR) et de
+l'interpolation temporelle (RIFE) -- et il est integrable sans son interface,
+par sa ligne de commande (`python wgp.py --process file.zip`) et son API. Ce qui
+bloque n'est pas l'integration mais le socle : **le fonctionnement sur
+processeur seul n'est pas pris en charge**, il faut une carte NVIDIA (GTX 10XX a
+RTX 50XX) ou AMD (RDNA 2 a 4) avec 6 Go de VRAM au minimum, plus Python 3.10/3.11,
+PyTorch avec CUDA 12.8/13.0, conda et plusieurs Go de poids par modele. Sa licence
+(WanGP Community License 2.0) autorise l'usage local et la vente des VIDEOS
+produites, avec credit pour une vente directe ; elle interdit de monetiser
+l'acces au logiciel lui-meme, et les poids des modeles gardent chacun leur
+propre licence, a verifier modele par modele.
+
+Conclusion : utilisable comme outil EXTERNE et optionnel sur une machine equipee
+d'un GPU, jamais comme dependance livree avec l'application. Sur une machine sans
+GPU compatible, il ne tourne pas du tout -- la ligne « GPU detecte / Aucun GPU
+compatible detecte » de la page Accueil repond a la question (elle interroge
+CTranslate2, donc elle ne voit que les cartes NVIDIA : une carte AMD y apparait
+comme absente).
+
 ### Remplir le cadre : recadrer ou garder l'image entiere
 
 Une image qui n'a pas la forme du cadre demande une decision, et les deux
