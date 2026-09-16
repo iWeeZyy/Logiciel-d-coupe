@@ -41,7 +41,7 @@ from radar.display import (
     is_readable_category,
     sort_key,
 )
-from radar.engine import DEFAULT_PERIOD, PERIODS, RadarEngine
+from radar.engine import DEFAULT_PERIOD, PERIODS, RadarEngine, since_iso
 from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE, PRIORITIES, PRIORITY_LABELS
 from radar.platforms.twitch import TwitchAdapter
 from radar.platforms.youtube import YouTubeAdapter
@@ -58,19 +58,25 @@ class ScanThread(QThread):
     finished_ok = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, engine, platforms, period, cancel_token):
+    def __init__(self, engine, platforms, period, cancel_token, max_results=None):
         super().__init__()
         self.engine = engine
         self.platforms = platforms
         self.period = period
         self.cancel_token = cancel_token
+        # Plafond de resultats par createur. None laisse celui du moteur : le
+        # fil ne doit pas porter une seconde valeur par defaut, qui finirait
+        # par diverger de celle de config/radar.json.
+        self.max_results = max_results
 
     def run(self) -> None:
         try:
+            extra = {} if self.max_results is None else {"max_results": self.max_results}
             result = self.engine.scan(
                 platforms=self.platforms, period=self.period,
                 cancel_token=self.cancel_token,
                 on_progress=lambda p: self.progressed.emit(p),
+                **extra,
             )
         except CancelledError:
             self.failed.emit("__cancelled__")
@@ -80,6 +86,16 @@ class ScanThread(QThread):
             self.failed.emit(f"Erreur inattendue pendant le scan : {error}")
         else:
             self.finished_ok.emit(result)
+
+
+# Combien de contenus sont relus, et combien sont dessines.
+#
+# Les deux sont distincts a dessein : on relit plus large que ce qu'on dessine
+# pour que le tri porte sur un ensemble representatif, et on borne le dessin
+# parce que plusieurs centaines de cartes rendent la page inutilisable. La
+# difference entre les deux n'est jamais silencieuse -- voir _refresh_tab.
+LIST_FETCH_LIMIT = 300
+LIST_DISPLAY_LIMIT = 120
 
 
 def _card() -> tuple[QFrame, QVBoxLayout]:
@@ -133,6 +149,12 @@ class RadarPage(QWidget):
         if configured not in PERIODS:
             configured = DEFAULT_PERIOD
         self.period_combo.setCurrentIndex(list(PERIODS).index(configured))
+        # La periode commande maintenant AUSSI ce qui est affiche : la changer
+        # doit donc reafficher tout de suite, sans relancer de scan. Avant, ce
+        # selecteur n'avait aucun effet visible tant qu'on n'avait pas
+        # rescanne -- pas meme sur les compteurs du bandeau, qui l'utilisent
+        # pourtant depuis toujours.
+        self.period_combo.currentIndexChanged.connect(self._refresh_period)
         header.addWidget(self.period_combo)
 
         # Trois lectures d'une meme liste : ce que le radar juge le plus fort,
@@ -211,6 +233,11 @@ class RadarPage(QWidget):
             self._refresh_tab(key)
         self._refresh_batch_button()
 
+    def _refresh_period(self) -> None:
+        """Changer la periode : bandeau et listes, jamais de scan."""
+        self._refresh_dashboard()
+        self._refresh_lists()
+
     def _refresh_lists(self) -> None:
         """Reaffiche les listes sans relancer de scan : changer l'ordre ne
         redemande rien a la plateforme, tout est deja enregistre."""
@@ -246,17 +273,30 @@ class RadarPage(QWidget):
             layout.addWidget(self._creators_card(key))
 
         order = self.order_combo.currentData()
+        # LA PERIODE VAUT AUSSI POUR CE QUI EST AFFICHE, pas seulement pour ce
+        # qui est scanne. Sans cette borne, la liste montrait tout ce qui avait
+        # ete enregistre depuis toujours : un clip trouve il y a trois semaines
+        # restait a l'ecran indefiniment, et le selecteur « Dernieres 24h » ne
+        # commandait que la fenetre du prochain scan et les compteurs du
+        # bandeau. C'est le tableau de bord, juste au-dessus, qui disait vrai --
+        # les deux doivent dire la meme chose.
+        threshold = since_iso(self.period_combo.currentData())
         opportunities = []
         for platform in platforms:
             opportunities.extend(self.store.list_opportunities(
-                platform=platform, limit=60, kinds=self.engine.searched_kinds(platform),
-                order=order))
+                platform=platform, since=threshold, limit=LIST_FETCH_LIMIT,
+                kinds=self.engine.searched_kinds(platform), order=order))
         opportunities.sort(key=sort_key(order), reverse=True)
 
         if not opportunities:
             frame, card_layout = _card()
-            card_layout.addWidget(QLabel("Aucun contenu détecté pour l'instant."))
-            hint = QLabel("Ajoutez des créateurs, puis lancez un scan. "
+            periode = self.period_combo.currentText().lower()
+            # La liste etant bornee par la periode, « vide » peut vouloir dire
+            # deux choses : rien du tout, ou rien D'ASSEZ RECENT. Le message le
+            # dit, sinon on cherche un scan qui a pourtant bien fonctionne.
+            card_layout.addWidget(QLabel(f"Aucun contenu sur les {periode.replace('dernières ', '')}."))
+            hint = QLabel("Élargissez la période, ajoutez des créateurs, "
+                          "puis lancez un scan. "
                           "Le scan nécessite une connexion internet ; "
                           "les résultats restent ensuite consultables hors ligne.")
             hint.setWordWrap(True)
@@ -265,8 +305,20 @@ class RadarPage(QWidget):
             layout.addWidget(frame)
             return
 
-        for opportunity in opportunities[:40]:
+        for opportunity in opportunities[:LIST_DISPLAY_LIMIT]:
             layout.addWidget(self._opportunity_card(opportunity))
+
+        # UNE TRONCATURE SE DIT. Couper en silence, c'est exactement ce dont on
+        # se plaint quand « un clip ne figure pas sur le Radar » : il a bien ete
+        # trouve, il est juste au-dela de la coupe. Affiner l'ordre ou reduire
+        # la periode fait remonter ce qu'on cherche.
+        if len(opportunities) > LIST_DISPLAY_LIMIT:
+            reste = QLabel(f"{LIST_DISPLAY_LIMIT} contenus affichés sur "
+                           f"{len(opportunities)} trouvés sur cette période. "
+                           f"Changez le tri ou réduisez la période pour voir les autres.")
+            reste.setWordWrap(True)
+            reste.setProperty("role", "muted")
+            layout.addWidget(reste)
 
     def _unavailable_card(self, platform: str, status) -> QFrame:
         frame, layout = _card()
@@ -548,6 +600,26 @@ class RadarPage(QWidget):
         self._open_analysis([opportunity])
 
     # ------------------------------------------------------------- scan
+    def _max_results_per_creator(self) -> int | None:
+        """Plafond de resultats par createur, lu dans config/radar.json.
+
+        CETTE CLE EXISTAIT DANS LE FICHIER SANS ETRE LUE NULLE PART : le scan
+        gardait le defaut du moteur quoi qu'on y ecrive. Sur une chaine active,
+        ce plafond est ce qui decide combien de clips remontent -- et comme
+        Helix les ordonne par nombre de vues, le depasser n'est pas « trop de
+        resultats », c'est « les clips recents encore peu vus ne remontent
+        jamais ».
+
+        Une valeur absente ou illisible renvoie None : le moteur garde alors sa
+        propre valeur par defaut, plutot qu'une seconde ecrite ici.
+        """
+        value = (self.config.get("scan", {}) or {}).get("max_results_per_creator")
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
     def _start_scan(self) -> None:
         if self._thread is not None and self._thread.isRunning():
             return
@@ -569,7 +641,8 @@ class RadarPage(QWidget):
         self.cancel_btn.setVisible(True)
 
         self._thread = ScanThread(self.engine, available,
-                                  self.period_combo.currentData(), self._cancel_token)
+                                  self.period_combo.currentData(), self._cancel_token,
+                                  max_results=self._max_results_per_creator())
         self._thread.progressed.connect(self._on_progress)
         self._thread.finished_ok.connect(self._on_finished)
         self._thread.failed.connect(self._on_failed)

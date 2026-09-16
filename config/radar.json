@@ -2,9 +2,9 @@
   "_comment": "Reglages du Radar. Le scan a besoin d'internet ; scores, tendances, historique et favoris sont calcules localement a partir de ce qui a deja ete recupere.",
 
   "scan": {
-    "_comment": "Periode analysee par defaut et nombre maximal de resultats par createur. Les periodes disponibles sont 6h, 12h, 24h, 3j et 7j.",
+    "_comment": "Periode analysee par defaut et nombre maximal de resultats par createur. Les periodes disponibles sont 6h, 12h, 24h, 3j et 7j. La periode borne AUSSI ce qui reste affiche, pas seulement ce qui est scanne : un contenu plus ancien qu'elle sort de la liste. Le plafond par createur compte plus qu'il n'en a l'air sur Twitch : /clips ordonne ses resultats par NOMBRE DE VUES, pas par date -- un plafond trop bas ne coupe donc pas la queue de liste, il coupe les clips recents qui n'ont pas encore ete vus. Une page vaut 100 resultats ; 200 tient en deux requetes par createur.",
     "default_period": "24h",
-    "max_results_per_creator": 50
+    "max_results_per_creator": 200
   },
 
   "twitch": {

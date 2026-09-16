@@ -45,8 +45,31 @@ KIND_VOD = "vod"
 KIND_LIVE = "live"
 
 
+def rfc3339(moment: datetime) -> str:
+    """Instant au format RFC3339 que les deux API documentent : 2026-09-16T05:22:33Z.
+
+    POURQUOI PAS `isoformat()` TOUT SEUL, qui est pourtant du RFC3339 valide.
+    Il produit « 2026-09-16T05:22:33.123456+00:00 » : microsecondes et decalage
+    numerique. Twitch documente ses bornes de date sous la forme a suffixe Z et
+    ignore les secondes ; YouTube documente `publishedAfter` de la meme facon.
+    Une borne qu'une API n'arrive pas a lire n'est pas signalee, elle est
+    IGNOREE -- et un scan sans borne ne renvoie plus les contenus recents mais
+    les plus vus de toute l'histoire de la chaine.
+
+    Le format compte une SECONDE fois, hors reseau : ces chaines sont comparees
+    telles quelles, en SQL (`published_at >= ?`) et en Python, a des dates
+    renvoyees par les API, qui sont toutes a suffixe Z. Comparer « ...33Z » a
+    « ...33.123456+00:00 » revient a comparer 'Z' a '.', ce qui n'a aucun sens.
+    Un seul format des deux cotes, et la comparaison redevient juste.
+    """
+    return (moment.astimezone(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"))
+
+
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return rfc3339(datetime.now(timezone.utc))
 
 
 def capture_stamp() -> str:

@@ -29,13 +29,13 @@ from __future__ import annotations
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
 from core.logging_setup import get_logger
 from core.paths import user_data_dir
-from radar.models import KIND_CLIP, KIND_LIVE, KIND_VOD, Creator, Opportunity
+from radar.models import KIND_CLIP, KIND_LIVE, KIND_VOD, Creator, Opportunity, rfc3339
 from radar.platforms.base import PlatformAdapter, PlatformStatus
 from utils.errors import TwitchApiError, TwitchConfigError
 
@@ -65,6 +65,25 @@ CREDENTIALS_FILE = "twitch_credentials.txt"
 DEFAULT_CONTENT_KINDS = (KIND_CLIP, KIND_LIVE)
 
 _DURATION_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
+
+# Taille de page maximale acceptee par Helix.
+CLIPS_PAGE_SIZE = 100
+
+# Marge portee sur la borne de FIN de la fenetre de clips.
+#
+# /clips n'applique sa periode que si les deux bornes sont fournies ; il faut
+# donc en donner une, et « maintenant » est la seule valeur honnete. Mais
+# « maintenant » selon l'horloge du PC, pas selon celle de Twitch : une machine
+# en retard de deux minutes exclurait les clips des deux dernieres minutes,
+# c'est-a-dire exactement ceux qu'on cherche. Une heure d'avance ne peut rien
+# faire entrer d'indu -- aucun clip n'est cree dans le futur -- et absorbe
+# n'importe quel decalage d'horloge realiste.
+CLIP_WINDOW_MARGIN = timedelta(hours=1)
+
+
+def _utc_now() -> datetime:
+    """Instant courant. Fonction de module pour qu'un test puisse la figer."""
+    return datetime.now(timezone.utc)
 
 
 def credentials_path():
@@ -358,13 +377,49 @@ class TwitchAdapter(PlatformAdapter):
                 self._games.setdefault(game_id, "")
         return {game_id: self._games.get(game_id, "") for game_id in wanted}
 
-    def _clips(self, creator: Creator, since_iso: str, max_results: int) -> list[Opportunity]:
-        data = self._get("clips", {
+    def _raw_clips(self, creator: Creator, since_iso: str, max_results: int) -> list[dict]:
+        """Clips bruts de la fenetre, EN SUIVANT LA PAGINATION.
+
+        DEUX PIEGES DE /clips, et le second explique des clips manquants.
+
+        1. La periode n'est appliquee que si les DEUX bornes sont donnees. On
+           envoie donc `ended_at` en plus de `started_at` -- voir
+           CLIP_WINDOW_MARGIN pour la marge portee dessus.
+
+        2. Helix ordonne les clips PAR NOMBRE DE VUES, pas par date. Ne lire
+           que la premiere page revient donc a ne garder que les N clips les
+           plus vus de la fenetre : sur une chaine active, un clip recent mais
+           encore peu vu n'apparait jamais, alors qu'il est visible sur la page
+           de la chaine. On suit donc le curseur jusqu'a `max_results`.
+        """
+        wanted = max(1, int(max_results))
+        base = {
             "broadcaster_id": creator.platform_id,
             "started_at": since_iso,
-            "first": min(100, max(1, max_results)),
-        })
-        clips = data.get("data") or []
+            "ended_at": rfc3339(_utc_now() + CLIP_WINDOW_MARGIN),
+        }
+        clips: list[dict] = []
+        cursor = ""
+        # Garde-fou : une API qui renverrait toujours le meme curseur ferait
+        # tourner cette boucle indefiniment. Le nombre de pages est de toute
+        # facon borne par `wanted`.
+        for _ in range(1 + wanted // CLIPS_PAGE_SIZE):
+            page = dict(base)
+            page["first"] = min(CLIPS_PAGE_SIZE, wanted - len(clips))
+            if cursor:
+                page["after"] = cursor
+            data = self._get("clips", page)
+            batch = data.get("data") or []
+            clips.extend(batch)
+            cursor = (data.get("pagination") or {}).get("cursor") or ""
+            # Une page incomplete signifie qu'il n'y a plus rien apres, meme
+            # quand Twitch renvoie quand meme un curseur.
+            if not cursor or not batch or len(batch) < page["first"] or len(clips) >= wanted:
+                break
+        return clips[:wanted]
+
+    def _clips(self, creator: Creator, since_iso: str, max_results: int) -> list[Opportunity]:
+        clips = self._raw_clips(creator, since_iso, max_results)
         games = self._game_names([clip.get("game_id") for clip in clips])
         out = []
         for clip in clips:

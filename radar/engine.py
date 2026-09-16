@@ -25,7 +25,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 
 from core.logging_setup import get_logger
-from radar.models import PRIORITY_NORMAL, Opportunity, ScanResult, utc_now_iso
+from radar.models import PRIORITY_NORMAL, Opportunity, ScanResult, rfc3339, utc_now_iso
 from radar.scoring import compute_radar_score
 from radar.trends import compute_trend
 from utils.errors import ClipFarmingError
@@ -42,7 +42,7 @@ DEFAULT_PERIOD = "24h"
 def since_iso(period: str = DEFAULT_PERIOD, reference=None) -> str:
     hours = PERIODS.get(period, PERIODS[DEFAULT_PERIOD])
     now = reference or datetime.now(timezone.utc)
-    return (now - timedelta(hours=hours)).isoformat()
+    return rfc3339(now - timedelta(hours=hours))
 
 
 @dataclass
