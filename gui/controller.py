@@ -61,11 +61,18 @@ class AnalysisThread(QThread):
     failed = Signal(str)
 
     def __init__(self, settings: Settings, cancel_token: CancelToken,
-                 youtube_source: Optional[str] = None, parent=None):
+                 youtube_source: Optional[str] = None,
+                 twitch_source: Optional[str] = None, parent=None):
         super().__init__(parent)
         self.settings = settings
         self.cancel_token = cancel_token
         self.youtube_source = youtube_source
+        # Un clip Twitch se telecharge par le moyen que Twitch propose lui-meme
+        # (menu Partager d'un clip), donc SANS case de consentement prealable --
+        # la difference avec YouTube est expliquee dans radar/clip_download.py.
+        # Les deux sources restent exclusives : c'est l'appelant qui en designe
+        # une, jamais les deux.
+        self.twitch_source = twitch_source
 
     def run(self) -> None:
         youtube_tmp_dir = None
@@ -83,6 +90,23 @@ class AnalysisThread(QThread):
                 # cliquable) -- ce thread ne fait qu'executer une decision deja prise.
                 self.settings.input = download_video(
                     self.youtube_source, youtube_tmp_dir, consent_confirmed=True,
+                )
+            elif self.twitch_source:
+                self.progress.emit(ProgressEvent(
+                    step_index=0, total_steps=5, label="Telechargement du clip Twitch",
+                    sub_label=None, elapsed_s=0.0,
+                ))
+                from radar.clip_download import download_clip
+
+                # MEME dossier que le Radar, pas un temporaire : le Radar
+                # reutilise un clip deja telecharge (media.cached_clip), et
+                # rien ne justifie de retelecharger le meme fichier selon la
+                # page par laquelle on est passe.
+                from radar.analysis.media import clips_dir
+
+                self.settings.input = download_clip(
+                    self.twitch_source, str(clips_dir()),
+                    cancel_token=self.cancel_token,
                 )
 
             results = pipeline.run(
@@ -227,6 +251,7 @@ class AppController(QObject):
         source_kind: str = "local",
         source_url: Optional[str] = None,
         youtube_source: Optional[str] = None,
+        twitch_source: Optional[str] = None,
         editing_overrides: Optional[dict] = None,
     ) -> None:
         """`editing_overrides` : {nom_de_module: actif} choisi pour CE run
@@ -286,7 +311,10 @@ class AppController(QObject):
 
         self._cancel_token = CancelToken()
         self._analysis_started_at = time.monotonic()
-        self._analysis_thread = AnalysisThread(settings, self._cancel_token, youtube_source=youtube_source)
+        self._analysis_thread = AnalysisThread(
+            settings, self._cancel_token,
+            youtube_source=youtube_source, twitch_source=twitch_source,
+        )
         self._analysis_thread.progress.connect(self.progress_updated)
         self._analysis_thread.finished_ok.connect(self._on_analysis_finished)
         self._analysis_thread.failed.connect(self._on_analysis_failed)

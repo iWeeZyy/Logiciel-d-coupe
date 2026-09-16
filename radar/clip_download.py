@@ -58,6 +58,62 @@ def clip_url(value: str) -> str:
     raise MediaNotAvailableError(f"Adresse de clip Twitch non reconnue : {value}")
 
 
+# Hotes Twitch reconnus. Liste EXPLICITE, pour la meme raison que
+# _YOUTUBE_HOSTS dans youtube/downloader.py : « twitch.tv.evil.example.com »
+# contient « twitch.tv » sans etre Twitch, et l'accueil ne doit pas envoyer
+# n'importe quelle adresse a yt-dlp sous pretexte qu'elle en a l'air.
+_TWITCH_HOSTS = {
+    "clips.twitch.tv", "www.clips.twitch.tv",
+    "twitch.tv", "www.twitch.tv", "m.twitch.tv",
+}
+
+
+def looks_like_twitch_clip(value: str) -> bool:
+    """Cette chaine designe-t-elle un CLIP Twitch ?
+
+    FONCTION PURE, sans reseau : elle sert a activer ou griser un bouton, pas a
+    garantir que le clip existe.
+
+    Deux formes acceptees, ce sont celles que Twitch produit lui-meme :
+    `clips.twitch.tv/<slug>` et `twitch.tv/<chaine>/clip/<slug>`.
+
+    Ce qu'elle REFUSE volontairement :
+
+    - un identifiant nu. `clip_url()` sait le completer, mais rien ne distingue
+      « SardocheLeKing » d'un titre de video ou d'un pseudo : sur un champ ou
+      l'utilisateur peut aussi coller un lien YouTube, deviner serait pire que
+      demander une adresse complete.
+    - une adresse de chaine, de VOD ou de direct. Twitch ne propose aucun
+      telechargement pour celles-la (voir l'en-tete de ce module) ; les
+      accepter ici ferait echouer yt-dlp trente secondes plus tard sur un
+      message technique, au lieu de le dire tout de suite.
+    """
+    value = (value or "").strip()
+    if not value:
+        return False
+
+    from urllib.parse import urlparse
+
+    candidate = value if "://" in value else f"https://{value}"
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    host = (parsed.hostname or "").lower()
+    if host not in _TWITCH_HOSTS:
+        return False
+
+    segments = [s for s in (parsed.path or "").split("/") if s]
+    if host.startswith("clips.") or host.startswith("www.clips."):
+        # clips.twitch.tv/<slug> -- un seul segment, et il porte le slug.
+        return len(segments) == 1 and bool(_SLUG_RE.match(segments[0]))
+    # twitch.tv/<chaine>/clip/<slug>, et la variante sans chaine.
+    return "clip" in segments[:-1] and bool(_SLUG_RE.match(segments[-1]))
+
+
 def _explain(raw_message: str) -> str:
     lowered = (raw_message or "").lower()
     if "does not exist" in lowered or "404" in lowered or "not found" in lowered:

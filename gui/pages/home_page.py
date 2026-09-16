@@ -28,6 +28,7 @@ from gui import settings_store
 from gui.branding import APP_TAGLINE
 from content_factory import planning
 from video import ffmpeg_utils
+from radar import clip_download
 from youtube import downloader
 from gui.controller import AppController
 from gui.widgets.drop_zone import DropZone
@@ -83,10 +84,15 @@ class HomePage(QWidget):
         self.controller = controller
         self.selected_video_path: str | None = None
         self.video_duration_s: float | None = None
-        # Une source YouTube et un fichier local s'excluent : la derniere
+        # Un lien et un fichier local s'excluent : la derniere source
         # designee gagne, et l'autre est effacee. Laisser les deux renseignees
         # obligerait a deviner laquelle l'utilisateur voulait.
-        self.youtube_source: str = ""
+        self.link_source: str = ""
+        # "" | "youtube" | "twitch". Le champ est unique -- l'utilisateur colle
+        # une adresse, il n'a pas a declarer d'abord de quelle plateforme elle
+        # vient -- mais ce qui suit differe assez (consentement, module de
+        # telechargement, nom de projet) pour que la page sache laquelle.
+        self.link_kind: str = ""
 
         # La page defile. Sans cela, des que la carte depassait la hauteur de la
         # fenetre, Qt comprimait les widgets les uns sur les autres : les champs
@@ -125,32 +131,37 @@ class HomePage(QWidget):
         self.drop_zone.file_selected.connect(self._on_file_selected)
         card_layout.addWidget(self.drop_zone)
 
-        # --- ou un lien YouTube ---
-        # Le telechargement passe par youtube/downloader.py, exactement comme
-        # la page Recherche : meme selecteur de qualite, meme verrou de
-        # consentement, meme gestion d'erreurs. Rien n'est reecrit ici.
-        link_label = QLabel("… ou colle un lien YouTube")
+        # --- ou un lien YouTube / un clip Twitch ---
+        # Le telechargement passe par youtube/downloader.py ou par
+        # radar/clip_download.py, exactement comme la page Recherche et le
+        # Radar : meme selecteur de qualite, meme verrou de consentement, meme
+        # gestion d'erreurs. Rien n'est reecrit ici.
+        link_label = QLabel("… ou colle un lien YouTube ou un clip Twitch")
         link_label.setProperty("role", "muted")
         card_layout.addWidget(link_label)
 
         link_row = QHBoxLayout()
-        self.youtube_edit = QLineEdit()
-        self.youtube_edit.setPlaceholderText(
-            "https://www.youtube.com/watch?v=…")
-        self.youtube_edit.setClearButtonEnabled(True)
-        self.youtube_edit.textChanged.connect(self._on_youtube_changed)
-        link_row.addWidget(self.youtube_edit, stretch=1)
+        self.link_edit = QLineEdit()
+        self.link_edit.setPlaceholderText(
+            "https://www.youtube.com/watch?v=…  ou  https://clips.twitch.tv/…")
+        self.link_edit.setClearButtonEnabled(True)
+        self.link_edit.textChanged.connect(self._on_link_changed)
+        link_row.addWidget(self.link_edit, stretch=1)
         card_layout.addLayout(link_row)
 
-        self.youtube_hint = QLabel("")
-        self.youtube_hint.setProperty("role", "muted")
-        self.youtube_hint.setWordWrap(True)
-        card_layout.addWidget(self.youtube_hint)
+        self.link_hint = QLabel("")
+        self.link_hint.setProperty("role", "muted")
+        self.link_hint.setWordWrap(True)
+        card_layout.addWidget(self.link_hint)
 
         # Le MEME verrou que la page Recherche, et pour la meme raison : rien
-        # n'est telecharge sans que l'utilisateur ait confirme ses droits. Il
-        # n'apparait qu'avec un lien, pour ne pas encombrer le cas d'un fichier
-        # deja present sur le disque.
+        # n'est telecharge de YouTube sans que l'utilisateur ait confirme ses
+        # droits. Il n'apparait qu'avec un lien YOUTUBE : Twitch propose
+        # lui-meme le telechargement d'un clip (menu Partager), donc exiger une
+        # confirmation avant de telecharger interdirait ce que la plateforme
+        # autorise. Le rappel sur les droits reste affiche pour un clip, mais
+        # comme un rappel avant publication, pas comme une condition --
+        # l'explication complete est dans radar/clip_download.py.
         self.consent_check = QCheckBox(
             "Je confirme disposer des droits nécessaires pour ce traitement.")
         self.consent_check.setVisible(False)
@@ -302,8 +313,8 @@ class HomePage(QWidget):
     def _on_file_selected(self, path: str) -> None:
         self.selected_video_path = path
         # Les deux sources s'excluent : choisir un fichier abandonne le lien.
-        if self.youtube_edit.text().strip():
-            self.youtube_edit.clear()
+        if self.link_edit.text().strip():
+            self.link_edit.clear()
         self._refresh_generate_enabled()
 
         # Duree lue tout de suite : c'est elle qui permet de proposer un nombre
@@ -317,13 +328,17 @@ class HomePage(QWidget):
             self.nb_clips_spin.setValue(planning.suggested_clip_count(self.video_duration_s))
         self._refresh_nb_clips_hint()
 
-    def _on_youtube_changed(self, value: str) -> None:
+    def _on_link_changed(self, value: str) -> None:
         """Le lien decide de l'etat du bouton, et le dit.
 
         On ne verifie PAS que la video existe : cela demanderait un appel
-        reseau a chaque frappe. On verifie que l'adresse designe bien YouTube,
-        ce qui evite d'envoyer un lien Vimeo a yt-dlp pour qu'il echoue trente
-        secondes plus tard sur un message technique.
+        reseau a chaque frappe. On verifie que l'adresse designe bien YouTube
+        ou un clip Twitch, ce qui evite d'envoyer un lien Vimeo a yt-dlp pour
+        qu'il echoue trente secondes plus tard sur un message technique.
+
+        L'ORDRE DES DEUX TESTS NE COMPTE PAS : les deux fonctions travaillent
+        sur des listes d'hotes disjointes, aucune adresse ne peut satisfaire
+        les deux.
         """
         value = (value or "").strip()
         if value:
@@ -332,29 +347,41 @@ class HomePage(QWidget):
             self.video_duration_s = None
 
         if not value:
-            self.youtube_source = ""
-            self.youtube_hint.setText("")
+            self.link_source, self.link_kind = "", ""
+            self.link_hint.setText("")
         elif downloader.looks_like_youtube(value):
-            self.youtube_source = value
-            self.youtube_hint.setText(
+            self.link_source, self.link_kind = value, "youtube"
+            self.link_hint.setText(
                 "La vidéo sera téléchargée dans la meilleure qualité disponible, "
                 "puis analysée comme un fichier local. Elle n'est pas conservée "
                 "après l'analyse.")
+        elif clip_download.looks_like_twitch_clip(value):
+            self.link_source, self.link_kind = value, "twitch"
+            self.link_hint.setText(
+                "Le clip sera téléchargé dans la meilleure qualité disponible, "
+                "puis analysé comme un fichier local. Il est gardé avec les clips "
+                "du Radar, pour ne pas être retéléchargé à chaque analyse.\n"
+                "Pouvoir télécharger un clip ne donne aucun droit de le republier : "
+                "Twitch fournit un fichier, pas une licence.")
         else:
-            self.youtube_source = ""
-            self.youtube_hint.setText(
-                "Ce lien n'est pas reconnu comme une adresse YouTube. Colle une "
-                "adresse youtube.com ou youtu.be, ou l'identifiant de la vidéo.")
+            self.link_source, self.link_kind = "", ""
+            self.link_hint.setText(
+                "Ce lien n'est reconnu ni comme une adresse YouTube, ni comme un "
+                "clip Twitch. Colle une adresse youtube.com ou youtu.be, ou un "
+                "clip clips.twitch.tv / twitch.tv/…/clip/… — une VOD ou un direct "
+                "Twitch ne peuvent pas être téléchargés.")
 
-        self.consent_check.setVisible(bool(self.youtube_source))
+        self.consent_check.setVisible(self.link_kind == "youtube")
         self._refresh_nb_clips_hint()
         self._refresh_generate_enabled()
 
     def _refresh_generate_enabled(self) -> None:
         """Une seule regle, un seul endroit : le bouton ne ment jamais sur ce
         qui manque."""
-        if self.youtube_source:
+        if self.link_kind == "youtube":
             self.generate_btn.setEnabled(self.consent_check.isChecked())
+        elif self.link_source:
+            self.generate_btn.setEnabled(True)
         else:
             self.generate_btn.setEnabled(bool(self.selected_video_path))
 
@@ -400,16 +427,16 @@ class HomePage(QWidget):
         return reply == QMessageBox.StandardButton.Yes
 
     def _on_generate_clicked(self) -> None:
-        if not (self.selected_video_path or self.youtube_source):
+        if not (self.selected_video_path or self.link_source):
             return
-        if self.youtube_source and not self.consent_check.isChecked():
+        if self.link_kind == "youtube" and not self.consent_check.isChecked():
             return
         if not self._confirm_heavy_model():
             return
 
         whole = self.whole_video_check.isChecked()
         cli_args = SimpleNamespace(
-            # Vide pour une source YouTube : le fil d'analyse le remplit apres
+            # Vide pour un lien : le fil d'analyse le remplit apres
             # telechargement, exactement comme le fait deja la page Recherche.
             input=self.selected_video_path or "",
             # Toute la video : une seule sortie, et une duree demandee qui
@@ -435,16 +462,29 @@ class HomePage(QWidget):
             fill_mode=self.production_options.fill_mode(),
             fit_mode=self.production_options.fit_mode(),
         )
-        if self.youtube_source:
+        if self.link_kind == "youtube":
             # Le nom du projet ne peut pas etre le titre de la video : il n'est
             # pas encore connu, et aller le chercher demanderait un appel
             # reseau et une cle API que l'accueil n'exige pas. L'identifiant
             # suffit, et le titre reste lisible dans le lien enregistre.
-            label = downloader.resolve_watch_url(self.youtube_source)
+            label = downloader.resolve_watch_url(self.link_source)
             self.controller.start_analysis(
-                cli_args, name=f"youtube-{_safe_name(self.youtube_source)}",
+                cli_args, name=f"youtube-{_safe_name(self.link_source)}",
                 source_label=label, source_kind="youtube", source_url=label,
-                youtube_source=self.youtube_source,
+                youtube_source=self.link_source,
+                editing_overrides=self._editing_overrides(),
+            )
+            return
+
+        if self.link_kind == "twitch":
+            # Meme raisonnement que pour YouTube : le titre du clip n'est connu
+            # qu'apres l'appel a Twitch. Le slug, lui, est dans l'adresse et
+            # suffit a distinguer deux projets.
+            label = clip_download.clip_url(self.link_source)
+            self.controller.start_analysis(
+                cli_args, name=f"twitch-{_safe_name(self.link_source)}",
+                source_label=label, source_kind="twitch", source_url=label,
+                twitch_source=self.link_source,
                 editing_overrides=self._editing_overrides(),
             )
             return
