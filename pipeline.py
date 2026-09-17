@@ -755,7 +755,14 @@ def _build_montage(
     cfg = settings.editing_module("montage")
     identity = MontagePlan(EditList.identity(candidate.start, candidate.end))
     if not cfg.get("enabled", False):
-        return identity, ZoomTrack()
+        # BUG CORRIGE : il manquait le troisieme element (DelirePlan). La
+        # signature promet un triplet (MontagePlan, ZoomTrack, DelirePlan) et
+        # l'appelant deballe les trois -- un couple ici faisait echouer
+        # `montage_plan, zoom_track, delire_plan = _build_montage(...)` avec
+        # « not enough values to unpack (expected 3, got 2) » des que le
+        # module montage etait desactive, quel que soit l'etat du module
+        # delire lui-meme.
+        return identity, ZoomTrack(), DelirePlan()
 
     emphasis_times = [candidate.words[i].start for i in emphasis_scores if i < len(candidate.words)]
 
