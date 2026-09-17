@@ -748,21 +748,46 @@ def _build_montage(
 ) -> tuple[MontagePlan, ZoomTrack, DelirePlan]:
     """Montage (silences, hesitations), zooms dynamiques et effets delire.
 
-    Les trois partent des MEMES instants marquants (`emphasis_times`) : ce sont
-    ceux que editing/captions.py a deja retenus. Aucun detecteur n'est ajoute
-    pour le delire, sinon deux modules pourraient designer des moments
-    differents sur le meme clip."""
+    LE DELIRE EST UN MODULE A PART, PAS UN SOUS-REGLAGE DU MONTAGE -- c'est ce
+    que dit deja sa propre case a l'accueil ("Montage auto" et "Delire" sont
+    deux cases distinctes, cote a cote, voir gui/widgets/production_options.py
+    et le commentaire de config/editing.json : « chacun sa propre case »).
+    Contrairement au zoom dynamique et a la suppression des silences/hesitations
+    -- qui SONT des sous-reglages de "montage" (voir leurs chemins
+    ("montage", "dynamic_zoom", "enabled") etc. dans settings_page.py) --, le
+    bloc "delire" d'editing.json est au meme niveau que "montage", pas dedans.
+
+    BUG CORRIGE : ce calcul vivait plus bas, a l'interieur du bloc qui ne
+    s'execute que si le montage est actif -- decocher seulement « Montage
+    auto » (en gardant « Delire » coche) desactivait donc le delire sans le
+    dire, silencieusement : aucune erreur, juste aucun effet sur le clip
+    produit. C'est pour ca qu'il est calcule ICI, avant tout test sur `cfg`
+    (le bloc montage), a partir des SEULS reglages qui lui appartiennent
+    (`settings.editing_module("delire")`) : rien de ce qui suit ne doit
+    pouvoir l'empecher de s'appliquer.
+
+    Le montage (silences, hesitations) et le zoom dynamique, eux, partagent
+    les MEMES instants marquants (`emphasis_times`) que editing/captions.py a
+    deja retenus -- et le delire lit les memes signaux (`emphasis_scores`) par
+    le meme principe : aucun detecteur n'est ajoute rien que pour lui, sinon
+    deux modules pourraient designer des moments differents sur le meme clip.
+    """
+    delire_cfg = settings.editing_module("delire")
+    delire_plan = DelirePlan()
+    if delire_cfg.get("enabled", False):
+        delire_plan = build_delire_plan(
+            _delire_moments(candidate, emphasis_scores, sentences,
+                            word_loudness, loud_threshold),
+            candidate.start, candidate.end,
+            level=str(delire_cfg.get("level") or "moyen"),
+            seed=int(delire_cfg.get("seed") or 0) or None,
+            cues=_delire_cues(delire_cfg),
+        )
+
     cfg = settings.editing_module("montage")
     identity = MontagePlan(EditList.identity(candidate.start, candidate.end))
     if not cfg.get("enabled", False):
-        # BUG CORRIGE : il manquait le troisieme element (DelirePlan). La
-        # signature promet un triplet (MontagePlan, ZoomTrack, DelirePlan) et
-        # l'appelant deballe les trois -- un couple ici faisait echouer
-        # `montage_plan, zoom_track, delire_plan = _build_montage(...)` avec
-        # « not enough values to unpack (expected 3, got 2) » des que le
-        # module montage etait desactive, quel que soit l'etat du module
-        # delire lui-meme.
-        return identity, ZoomTrack(), DelirePlan()
+        return identity, ZoomTrack(), delire_plan
 
     emphasis_times = [candidate.words[i].start for i in emphasis_scores if i < len(candidate.words)]
 
@@ -804,18 +829,6 @@ def _build_montage(
             release_s=float(zoom_cfg.get("release_s", 0.4)),
             min_gap_s=float(zoom_cfg.get("min_gap_s", 4.0)),
             max_events=int(zoom_cfg.get("max_events", 4)),
-        )
-
-    delire_cfg = settings.editing_module("delire")
-    delire_plan = DelirePlan()
-    if delire_cfg.get("enabled", False):
-        delire_plan = build_delire_plan(
-            _delire_moments(candidate, emphasis_scores, sentences,
-                            word_loudness, loud_threshold),
-            candidate.start, candidate.end,
-            level=str(delire_cfg.get("level") or "moyen"),
-            seed=int(delire_cfg.get("seed") or 0) or None,
-            cues=_delire_cues(delire_cfg),
         )
 
     return plan, zoom_track, delire_plan
