@@ -102,6 +102,7 @@ def build_clip(
             target_size=resolved_target,
             fps=fps,
             fill=fill,
+            watermark=watermark,
             export_settings=export_settings,
         )
         try:

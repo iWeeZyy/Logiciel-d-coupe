@@ -4,6 +4,7 @@ Pur -- video/intro_concat.py ne fait que construire une liste d'arguments,
 verifiable sans encoder quoi que ce soit.
 """
 from video.intro_concat import build_concat_args
+from video.watermark import Watermark
 
 
 def _args(**overrides):
@@ -77,3 +78,41 @@ def test_export_settings_reach_the_encoder_flags():
     assert "fast" in args
     assert "18" in args
     assert "128k" in args
+
+
+def _wm():
+    return Watermark(image="logo.png")
+
+
+def test_without_a_watermark_no_third_input_is_added():
+    args = _args(watermark=None)
+
+    assert args.count("-i") == 2
+
+
+def test_a_watermark_is_declared_as_a_third_input():
+    args = _args(watermark=_wm())
+
+    assert args[:6] == ["-i", "intro.mp4", "-i", "clip.mp4", "-i", "logo.png"]
+
+
+def test_the_watermark_is_posed_only_on_the_intro_branch_not_the_already_rendered_clip():
+    # Le clip (entree 1) porte deja son filigrane depuis le premier passage
+    # (build_ffmpeg_args) : le reposer ici le dedoublerait. Seule l'entree 2
+    # (le filigrane) doit se superposer, et seulement a l'intro (entree 0).
+    args = _args(watermark=_wm())
+    graph = args[args.index("-filter_complex") + 1]
+
+    assert "[2:v]" in graph
+    assert "[introbase][wmov]overlay=" in graph
+    # [1:v] (le clip) n'apparait qu'une fois : sa seule preparation
+    # fps/format, jamais comme entree d'un overlay.
+    assert graph.count("[1:v]") == 1
+    assert "[1:v]fps=" in graph
+
+
+def test_a_watermarked_intro_still_concatenates_correctly():
+    args = _args(watermark=_wm(), clip_has_audio=True)
+    graph = args[args.index("-filter_complex") + 1]
+
+    assert "[iv][ia][cv][ca]concat=n=2:v=1:a=1[outv][outa]" in graph

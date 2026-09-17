@@ -29,6 +29,7 @@ def build_concat_args(
     target_size: tuple[int, int],
     fps: float,
     fill: str = FILL_BLACK,
+    watermark=None,
     export_settings: dict | None = None,
 ) -> list[str]:
     """Args ffmpeg qui ecrivent intro_path + clip_path bout a bout dans
@@ -45,9 +46,19 @@ def build_concat_args(
     audio (source muette, cas rare) sort sans audio plutot que de garder
     seulement les quelques secondes de son de l'intro, qui s'arreteraient net
     et surprendraient plus qu'un clip silencieux de bout en bout.
+
+    `watermark`, s'il est fourni, n'est pose QUE sur l'intro -- jamais sur
+    `[1:v]` (le clip). Le clip est deja un fichier fini a ce stade : son
+    filigrane a ete incruste au premier passage (build_ffmpeg_args). Le poser
+    une seconde fois ici le dedoublerait (deux logos superposes, plus opaque
+    et legerement desaligne). Meme position que sur le clip (bas-centre par
+    defaut) : la video d'intro n'a rien en bas de cadre qui l'occupe deja --
+    son propre "+ Follow" est pose plus haut, au-dessus de l'anneau -- donc
+    rien ne s'y superpose.
     """
     export_settings = export_settings or {}
     src_w, src_h = intro_src_size
+    out_w, out_h = target_size
 
     intro_chain = build_video_chain(
         edit_list=EditList.identity(0.0, 1.0),  # non utilise : pas de suivi/zoom sur l'intro
@@ -57,10 +68,23 @@ def build_concat_args(
     )
 
     args = ["-i", intro_path, "-i", clip_path]
+    if watermark is not None:
+        args += ["-i", watermark.image]
+
+    if watermark is not None:
+        from video.watermark import overlay_position, prepare_filter
+
+        intro_video = (
+            f"[0:v]{intro_chain},fps={fps:.4f},format=yuv420p[introbase];"
+            f"[2:v]{prepare_filter(watermark, out_w, out_h)}[wmov];"
+            f"[introbase][wmov]overlay={overlay_position(watermark, out_w, out_h)}[iv];"
+        )
+    else:
+        intro_video = f"[0:v]{intro_chain},fps={fps:.4f},format=yuv420p[iv];"
 
     if clip_has_audio:
         graph = (
-            f"[0:v]{intro_chain},fps={fps:.4f},format=yuv420p[iv];"
+            intro_video +
             "[0:a]aformat=sample_rates=44100:channel_layouts=stereo,asetpts=PTS-STARTPTS[ia];"
             f"[1:v]fps={fps:.4f},format=yuv420p[cv];"
             "[1:a]aformat=sample_rates=44100:channel_layouts=stereo,asetpts=PTS-STARTPTS[ca];"
@@ -69,7 +93,7 @@ def build_concat_args(
         args += ["-filter_complex", graph, "-map", "[outv]", "-map", "[outa]"]
     else:
         graph = (
-            f"[0:v]{intro_chain},fps={fps:.4f},format=yuv420p[iv];"
+            intro_video +
             f"[1:v]fps={fps:.4f},format=yuv420p[cv];"
             "[iv][cv]concat=n=2:v=1:a=0[outv]"
         )
