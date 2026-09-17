@@ -48,6 +48,7 @@ from editing.timeline import EditList
 from editing.thumbnail import choose_text
 from editing.delire import Plan as DelirePlan
 from editing.delire import build_plan as build_delire_plan
+from editing.delire import build_theme_plan
 from editing.zoom import ZoomTrack, build_zoom_track
 from export.exporter import (
     clip_relative_path,
@@ -775,14 +776,20 @@ def _build_montage(
     delire_cfg = settings.editing_module("delire")
     delire_plan = DelirePlan()
     if delire_cfg.get("enabled", False):
-        delire_plan = build_delire_plan(
-            _delire_moments(candidate, emphasis_scores, sentences,
-                            word_loudness, loud_threshold),
-            candidate.start, candidate.end,
-            level=str(delire_cfg.get("level") or "moyen"),
-            seed=int(delire_cfg.get("seed") or 0) or None,
-            cues=_delire_cues(delire_cfg),
-        )
+        theme = str(delire_cfg.get("theme") or "")
+        if theme:
+            # Un theme REMPLACE les rafales, il ne s'y ajoute pas -- voir le
+            # commentaire sur THEMES en tete de editing/delire.py.
+            delire_plan = build_theme_plan(theme)
+        else:
+            delire_plan = build_delire_plan(
+                _delire_moments(candidate, emphasis_scores, sentences,
+                                word_loudness, loud_threshold),
+                candidate.start, candidate.end,
+                level=str(delire_cfg.get("level") or "moyen"),
+                seed=int(delire_cfg.get("seed") or 0) or None,
+                cues=_delire_cues(delire_cfg),
+            )
 
     cfg = settings.editing_module("montage")
     identity = MontagePlan(EditList.identity(candidate.start, candidate.end))

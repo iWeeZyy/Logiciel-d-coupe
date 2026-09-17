@@ -72,6 +72,13 @@ _DELIRE_LEVELS = [
     ("maximum", "Maximum — tout, y compris pixels et inversions"),
 ]
 
+# "" en tete : aucun theme, le comportement historique (rafales choisies par
+# le cran d'intensite ci-dessus). Les cles et libelles viennent de
+# editing/delire.py -- c'est lui qui decide de la liste, pas cette page.
+_DELIRE_THEMES = [("", "Aucun — rafales classiques")] + [
+    (cle, delire.THEME_LABELS[cle]) for cle in delire.THEMES
+]
+
 
 def _watermark_config() -> dict:
     """La section « watermark » de config/editing.json, ou {}.
@@ -224,10 +231,36 @@ class ProductionOptionsBox(QWidget):
         self.delire_hint.setWordWrap(True)
         layout.addWidget(self.delire_hint)
 
+        # --- theme du delire ---
+        # Une AMBIANCE continue sur tout le clip, plutot que des rafales sur
+        # des mots precis -- elle REMPLACE le cran d'intensite ci-dessus, elle
+        # ne s'y ajoute pas (voir editing/delire.py, build_theme_plan). Choisi
+        # a la main : le logiciel ne devine l'humeur de personne.
+        self.theme_row = QHBoxLayout()
+        theme_label = QLabel("Thème")
+        theme_label.setProperty("role", "fieldLabel")
+        self.theme_row.addWidget(theme_label)
+        self.theme_combo = QComboBox()
+        for cle, libelle in _DELIRE_THEMES:
+            self.theme_combo.addItem(libelle, cle)
+        self.theme_row.addWidget(self.theme_combo)
+        self.theme_row.addStretch(1)
+        layout.addLayout(self.theme_row)
+
+        self.theme_hint = QLabel(
+            "Une ambiance posée sur tout le clip (pluie, étoiles…) au lieu des "
+            "rafales ci-dessus, qui restent alors inactives. Toujours choisie "
+            "à la main : rien n'est deviné dans ce qui est dit.")
+        self.theme_hint.setProperty("role", "muted")
+        self.theme_hint.setWordWrap(True)
+        layout.addWidget(self.theme_hint)
+
         delire_box = self.boxes.get("delire")
         if delire_box is not None:
             delire_box.toggled.connect(self._on_delire_toggled)
         self._on_delire_toggled(delire_box.isChecked() if delire_box else False)
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        self._on_theme_changed()
 
         # Grise avec la case : un menu actif alors que le filigrane est coupe
         # laisserait croire qu'il sera pose.
@@ -245,6 +278,7 @@ class ProductionOptionsBox(QWidget):
         self.aspect_combo.currentIndexChanged.connect(self._on_manual_change)
         self.fit_combo.currentIndexChanged.connect(self._on_manual_change)
         self.delire_combo.currentIndexChanged.connect(self._on_manual_change)
+        self.theme_combo.currentIndexChanged.connect(self._on_manual_change)
         for key, box in self.boxes.items():
             # Le filigrane est hors sujet : la chaine qui signe la video n'est
             # pas un parti pris de montage, et changer de logo ne doit pas
@@ -314,10 +348,13 @@ class ProductionOptionsBox(QWidget):
             self.set_preset(presets.FREE_KEY)
 
     def _on_delire_toggled(self, enabled: bool) -> None:
-        """Le cran et son explication ne servent a rien si le delire est
-        coupe : on les grise plutot que de les laisser actifs sans effet."""
-        self.delire_combo.setEnabled(bool(enabled))
-        self.delire_hint.setEnabled(bool(enabled))
+        """Rien de tout cela ne sert a rien si le delire est coupe : on grise
+        plutot que de laisser actif sans effet -- le cran d'intensite ET le
+        theme, qui partagent la meme case."""
+        self.delire_combo.setEnabled(bool(enabled) and not self.theme())
+        self.theme_combo.setEnabled(bool(enabled))
+        self.delire_hint.setEnabled(bool(enabled) and not self.theme())
+        self.theme_hint.setEnabled(bool(enabled))
 
     def delire_level(self) -> str:
         return str(self.delire_combo.currentData() or delire.DEFAULT_LEVEL)
@@ -326,6 +363,23 @@ class ProductionOptionsBox(QWidget):
         index = self.delire_combo.findData(level)
         if index >= 0:
             self.delire_combo.setCurrentIndex(index)
+
+    def theme(self) -> str:
+        return str(self.theme_combo.currentData() or "")
+
+    def set_theme(self, theme: str) -> None:
+        index = self.theme_combo.findData(theme or "")
+        if index >= 0:
+            self.theme_combo.setCurrentIndex(index)
+
+    def _on_theme_changed(self, *_args) -> None:
+        """Un theme choisi REMPLACE les rafales (voir editing/delire.py) : le
+        cran d'intensite n'a plus d'effet, on le grise pour ne pas laisser
+        croire le contraire."""
+        box = self.boxes.get("delire")
+        enabled = bool(box.isChecked()) if box is not None else True
+        self.delire_combo.setEnabled(enabled and not self.theme())
+        self.delire_hint.setEnabled(enabled and not self.theme())
 
     def _on_watermark_toggled(self, enabled: bool) -> None:
         self.watermark_combo.setEnabled(bool(enabled)
@@ -368,9 +422,11 @@ class ProductionOptionsBox(QWidget):
         if choice:
             overrides["watermark"] = {"enabled": bool(overrides.get("watermark")),
                                       "choice": choice}
-        # Meme forme pour le delire : actif ou non, et a quel cran.
+        # Meme forme pour le delire : actif ou non, a quel cran, avec quel
+        # theme ("" = aucun -- le cran commande alors seul, comme avant).
         overrides["delire"] = {"enabled": bool(overrides.get("delire")),
-                               "level": self.delire_level()}
+                               "level": self.delire_level(),
+                               "theme": self.theme()}
         # Le style de montage ajoute ce que les cases ne savent pas exprimer :
         # l'ampleur et le nombre des zooms. Il vient APRES, mais ne peut pas
         # contredire les cases -- son bloc « delire » est reecrit juste en

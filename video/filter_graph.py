@@ -19,6 +19,7 @@ Deux points de vigilance qui expliquent la forme du code :
 """
 from __future__ import annotations
 
+from editing.delire import THEME_MYSTERE
 from editing.framing import FramingPlan
 from editing.timeline import EditList
 from editing.zoom import ZoomTrack
@@ -256,12 +257,22 @@ def _delire_filters(plan) -> list:
     n'est plus lisible, alors que l'interet des sous-titres est justement
     qu'on les lise. Le filigrane, lui, est applique plus loin encore (c'est
     une incrustation separee), donc il reste net aussi.
+
+    LE THEME "mystere" EST TRAITE ICI, PAS EN CALQUE : contrairement aux
+    autres themes (pluie, etoiles, confettis, braises -- voir
+    `_theme_overlay_specs` et `build_ffmpeg_args`), il ne pose aucune image,
+    seulement un assombrissement des bords et une desaturation -- deux
+    filtres qui se chainent exactement comme les rafales, au meme endroit.
     """
     if plan is None:
         return []
     from video.delire_filters import build_filters
+    from video.delire_theme_filters import mystere_chain_filters
 
-    return build_filters(plan)
+    filters = build_filters(plan)
+    if getattr(plan, "theme", "") == THEME_MYSTERE:
+        filters = filters + mystere_chain_filters()
+    return filters
 
 
 def build_video_chain(
@@ -439,61 +450,93 @@ def build_ffmpeg_args(
     # point d'entree.
     args = ["-ss", f"{offset:.3f}", "-i", video_path]
 
-    # Le filigrane est une SECONDE ENTREE : il impose donc filter_complex, meme
-    # quand le reste tiendrait dans un simple -vf. Une image fixe convient telle
-    # quelle -- overlay repete sa derniere image par defaut, il n'y a rien a
-    # boucler.
+    # Chaque calque superpose (theme, filigrane) est une ENTREE
+    # SUPPLEMENTAIRE : cela impose filter_complex des qu'il y en a au moins
+    # un, meme quand le reste tiendrait dans un simple -vf. Le theme est
+    # branche AVANT le filigrane -- le logo reste toujours au-dessus, jamais
+    # recouvert par une texture qui couvre tout le cadre.
     #
-    # Il est declare AVANT le -t, et non apres : une option placee juste devant
-    # une entree s'applique a cette entree. Un -t glisse entre les deux
-    # limiterait la lecture du logo au lieu de limiter la duree de sortie, et le
-    # clip s'etendrait jusqu'a la fin de la video source.
-    out_w = target_size[0]
-    logo_chain = position = ""
+    # Une image fixe (le filigrane, le calque statique de l'arc-en-ciel)
+    # convient telle quelle -- overlay repete sa derniere image par defaut,
+    # il n'y a rien a boucler. Un calque qui DEFILE (pluie, etoiles,
+    # confettis, braises) a besoin de plusieurs images DIFFERENTES a faire
+    # glisser : `-loop 1` transforme l'image fixe en flux continu pour cela.
+    #
+    # Chaque entree est declaree AVANT le -t, et non apres : une option
+    # placee juste devant une entree s'applique a cette entree. Un -t glisse
+    # entre les entrees limiterait leur lecture au lieu de limiter la duree
+    # de sortie, et le clip s'etendrait jusqu'a la fin de la video source.
+    out_w, out_h = target_size
+
+    overlays = []  # (arguments d'entree, filtre de preparation, position)
+    if delire_plan is not None:
+        from video.delire_theme_filters import overlay_layers as _theme_overlay_layers
+
+        for layer in _theme_overlay_layers(getattr(delire_plan, "theme", ""), out_w, out_h, fps):
+            input_args = (["-loop", "1", "-i", layer.asset_path] if layer.needs_loop
+                          else ["-i", layer.asset_path])
+            overlays.append((input_args, layer.prep_filter, layer.position))
     if watermark is not None:
         from video.watermark import overlay_position, prepare_filter
 
-        args += ["-i", watermark.image]
-        logo_chain = prepare_filter(watermark, out_w)
-        position = overlay_position(watermark, out_w, target_size[1])
+        overlays.append((
+            ["-i", watermark.image],
+            prepare_filter(watermark, out_w),
+            overlay_position(watermark, out_w, out_h),
+        ))
+
+    for input_args, _, _ in overlays:
+        args += input_args
 
     args += ["-t", f"{span:.3f}"]
 
-    if watermark is not None and edit_list.is_identity:
-        graph = (f"[0:v]{video_chain}[base];"
-                 f"[1:v]{logo_chain}[wm];"
-                 f"[base][wm]overlay={position}[vout]")
-        args += ["-filter_complex", graph, "-map", "[vout]", "-map", "0:a?"]
-        if audio_chain:
-            args += ["-af", audio_chain]
-    elif edit_list.is_identity:
+    if not overlays and edit_list.is_identity:
         args += ["-vf", video_chain]
         if audio_chain:
             args += ["-af", audio_chain]
     else:
-        segments_v, segments_a, labels = [], [], []
-        for i, cut in enumerate(edit_list.cuts):
-            start = max(0.0, cut.source_start - offset)
-            end = max(start + 0.02, cut.source_end - offset)
-            segments_v.append(
-                f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{i}]"
-            )
-            segments_a.append(
-                f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{i}]"
-            )
-            labels.append(f"[v{i}][a{i}]")
+        # Le dernier maillon de la chaine video PRINCIPALE (avant tout
+        # calque) sort directement en "vout" quand il n'y a aucun calque a
+        # composer par-dessus -- sinon en "base", pour laisser la boucle
+        # ci-dessous le reprendre et produire "vout" a son tour.
+        base_label = "vout" if not overlays else "base"
 
-        concat = f"{''.join(labels)}concat=n={len(edit_list.cuts)}:v=1:a=1[vc][ac]"
-        graph = ";".join(segments_v + segments_a + [concat])
-        if watermark is not None:
-            graph += f";[vc]{video_chain}[base]"
-            graph += f";[1:v]{logo_chain}[wm]"
-            graph += f";[base][wm]overlay={position}[vout]"
+        if edit_list.is_identity:
+            pieces = [f"[0:v]{video_chain}[{base_label}]"]
         else:
-            graph += f";[vc]{video_chain}[vout]"
-        graph += f";[ac]{audio_chain}[aout]" if audio_chain else ";[ac]anull[aout]"
+            segments_v, segments_a, labels = [], [], []
+            for i, cut in enumerate(edit_list.cuts):
+                start = max(0.0, cut.source_start - offset)
+                end = max(start + 0.02, cut.source_end - offset)
+                segments_v.append(
+                    f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{i}]"
+                )
+                segments_a.append(
+                    f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{i}]"
+                )
+                labels.append(f"[v{i}][a{i}]")
+            concat = f"{''.join(labels)}concat=n={len(edit_list.cuts)}:v=1:a=1[vc][ac]"
+            pieces = segments_v + segments_a + [concat, f"[vc]{video_chain}[{base_label}]"]
 
-        args += ["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]"]
+        # Les calques se composent EN SERIE : chacun se superpose sur le
+        # resultat du precedent, le dernier produisant "vout".
+        current = base_label
+        for i, (_, filt, position) in enumerate(overlays):
+            source_index = i + 1  # l'entree 0 est toujours la video principale
+            next_label = "vout" if i == len(overlays) - 1 else f"stage{i}"
+            pieces.append(f"[{source_index}:v]{filt}[ov{i}]")
+            pieces.append(f"[{current}][ov{i}]overlay={position}[{next_label}]")
+            current = next_label
+
+        graph = ";".join(pieces)
+
+        if edit_list.is_identity:
+            args += ["-filter_complex", graph, "-map", "[vout]", "-map", "0:a?"]
+            if audio_chain:
+                args += ["-af", audio_chain]
+        else:
+            graph += f";[ac]{audio_chain}[aout]" if audio_chain else ";[ac]anull[aout]"
+            args += ["-filter_complex", graph, "-map", "[vout]", "-map", "[aout]"]
 
     args += [
         "-c:v", "libx264",

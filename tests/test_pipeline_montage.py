@@ -220,3 +220,54 @@ class TestLeDelireEstIndependantDuMontage:
         assert not delire_plat.is_empty
         assert delire_imbrique.is_empty, (
             "le bloc delire ne doit etre lu qu'au premier niveau, jamais sous montage")
+
+
+class TestChoixDuThemeDansLePipeline:
+    """`_build_montage` doit choisir entre rafales et theme selon
+    `delire.theme` dans la configuration -- c'est le seul point de decision,
+    voir editing/delire.py pour pourquoi les deux sont exclusifs."""
+
+    def test_un_theme_renseigne_produit_un_plan_de_theme(self):
+        from editing.delire import THEME_PLUIE
+
+        settings = _settings({
+            "montage": {"enabled": False},
+            "delire": {"enabled": True, "theme": THEME_PLUIE},
+        })
+        _, _, delire_plan = _build_montage(
+            _candidat_court(), settings, AudioAnalyzerJamaisAppele(), sentences=[],
+            emphasis_scores={},
+        )
+        assert delire_plan.theme == THEME_PLUIE
+        assert delire_plan.events == ()
+
+    def test_theme_vide_garde_le_comportement_des_rafales(self):
+        """"" (ou absent) : comportement historique, inchange par cette
+        fonctionnalite."""
+        settings = _settings({
+            "montage": {"enabled": False},
+            "delire": {"enabled": True, "theme": "", "level": "moyen"},
+        })
+        candidat = _candidat_realiste()
+        _, _, delire_plan = _build_montage(
+            candidat, settings, AudioAnalyzerJamaisAppele(), sentences=[],
+            emphasis_scores={1: 0.9}, word_loudness=[-20.0, -20.0, -20.0],
+            loud_threshold=-15.0,
+        )
+        assert delire_plan.theme == ""
+
+    def test_un_theme_inconnu_retombe_sur_un_plan_vide(self):
+        """Une valeur de configuration corrompue ne doit pas planter : elle
+        est traitee comme "aucun theme", et comme aucun mot n'est marquant
+        ici, aucune rafale ne se substitue non plus -- mieux vaut un clip
+        sobre qu'un theme invente."""
+        settings = _settings({
+            "montage": {"enabled": False},
+            "delire": {"enabled": True, "theme": "hiver"},
+        })
+        _, _, delire_plan = _build_montage(
+            _candidat_court(), settings, AudioAnalyzerJamaisAppele(), sentences=[],
+            emphasis_scores={},
+        )
+        assert delire_plan.theme == ""
+        assert delire_plan.is_empty

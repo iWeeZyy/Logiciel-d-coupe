@@ -68,6 +68,37 @@ EFFECTS = (GLITCH, DEEPFRY, VHS, PIXEL, FLASH, BLIP)
 LEVELS = ("doux", "moyen", "maximum")
 DEFAULT_LEVEL = "moyen"
 
+# THEMES : une AMBIANCE continue sur tout le clip, plutot que des rafales sur
+# des mots precis. Choisie A LA MAIN, jamais devinee -- ce module ne sait pas
+# lire une humeur dans ce qui est dit, et personne ici n'a de detecteur de
+# sentiment a lui pretendre. C'est le meme principe que le cran d'intensite :
+# un reglage que l'utilisateur pose, pas un jugement que le logiciel porte.
+#
+# UN THEME REMPLACE LES RAFALES, IL NE S'Y AJOUTE PAS (voir build_theme_plan
+# plus bas) : un calque de pluie qui defile en continu et un glitch qui
+# tressaute sur un mot ne racontent pas la meme chose en meme temps, et les
+# deux ensemble liraient comme un bug plutot que comme un choix.
+#
+# "mystere" est a part : ce n'est PAS un calque pose sur l'image (aucun fichier
+# dans assets/delire/ ne le concerne), seulement un assombrissement des bords
+# et une desaturation legere -- voir video/delire_theme_filters.py pour la
+# raison (deux filtres ffmpeg natifs suffisent, aucune image a generer).
+THEME_PLUIE = "pluie"
+THEME_ETOILES = "etoiles"
+THEME_CONFETTIS = "confettis"
+THEME_BRAISES = "braises"
+THEME_MYSTERE = "mystere"
+
+THEMES = (THEME_PLUIE, THEME_ETOILES, THEME_CONFETTIS, THEME_BRAISES, THEME_MYSTERE)
+
+THEME_LABELS = {
+    THEME_PLUIE: "Triste — pluie",
+    THEME_ETOILES: "Joyeux — étoiles & arc-en-ciel",
+    THEME_CONFETTIS: "Fête — confettis",
+    THEME_BRAISES: "Colère — braises",
+    THEME_MYSTERE: "Mystère — sombre",
+}
+
 _LEVEL_RULES = {
     "doux": {
         "kinds": (GLITCH, VHS),
@@ -242,10 +273,15 @@ class Plan:
     events: tuple = ()
     level: str = DEFAULT_LEVEL
     reasons: tuple = ()
+    # "" = aucun theme (comportement historique : seules les rafales de
+    # `events` comptent). Rempli seulement par `build_theme_plan` ci-dessous,
+    # jamais par `build_plan` -- les deux mecanismes sont mutuellement
+    # exclusifs, voir le commentaire sur THEMES plus haut.
+    theme: str = ""
 
     @property
     def is_empty(self) -> bool:
-        return not self.events
+        return not self.events and not self.theme
 
     @property
     def covered_s(self) -> float:
@@ -260,6 +296,7 @@ class Plan:
     def to_dict(self) -> dict:
         return {
             "level": self.level,
+            "theme": self.theme,
             "events": [{"kind": e.kind, "start": round(e.start, 3),
                         "end": round(e.end, 3), "strength": round(e.strength, 3),
                         "cue": e.cue, "word": e.word}
@@ -402,3 +439,22 @@ def build_plan(
                f"{couvert:.2f} s sous effet sur {duration:.1f} s",
                "durée inchangée : sous-titres et audio restent synchrones")
     return Plan(events=tuple(events), level=level, reasons=reasons)
+
+
+def build_theme_plan(theme: str) -> Plan:
+    """Plan de type AMBIANCE : un theme visuel continu sur tout le clip.
+
+    Pas de calcul de moments, pas de graine, pas de force variable -- un
+    theme est allume ou eteint, jamais degrade en intensite (la variete vient
+    de la texture generee une fois pour toutes dans assets/delire/, pas d'un
+    tirage a chaque clip). C'est ce qui distingue ce plan de `build_plan()` :
+    celui-ci pose des rafales sur des INSTANTS mesures (mots-cles, rire, cri,
+    chiffre) ; celui-la habille le clip ENTIER, sans rien mesurer dessus.
+
+    Un theme inconnu ou vide renvoie un Plan() ordinaire, vide -- exactement
+    comme `build_plan()` le fait deja pour un clip sans moment marquant :
+    mieux vaut un clip sobre qu'un theme invente."""
+    theme = theme if theme in THEMES else ""
+    if not theme:
+        return Plan()
+    return Plan(theme=theme, reasons=(f"thème « {THEME_LABELS.get(theme, theme)} »",))

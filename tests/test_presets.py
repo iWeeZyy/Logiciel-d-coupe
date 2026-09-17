@@ -352,7 +352,7 @@ class TestLeMemeMenuDepuisLeRadar:
         assert recu["cli_args"].input == "/tmp/un-clip.mp4"
         surcharges = recu["kwargs"]["editing_overrides"]
         assert surcharges["montage"]["dynamic_zoom"]["max_events"] == 5
-        assert surcharges["delire"] == {"enabled": True, "level": "doux"}
+        assert surcharges["delire"] == {"enabled": True, "level": "doux", "theme": ""}
 
     def test_sans_style_le_reglage_des_parametres_reprend_la_main(self, fenetre,
                                                                   monkeypatch):

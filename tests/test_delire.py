@@ -311,7 +311,8 @@ class TestInterfaceDeLAccueil:
         box.set_module_enabled("delire", True)
         box.set_delire_level("maximum")
         assert box.editing_overrides()["delire"] == {"enabled": True,
-                                                     "level": "maximum"}
+                                                     "level": "maximum",
+                                                     "theme": ""}
 
     def test_les_autres_modules_restent_actifs_par_defaut(self, box):
         """Ajouter un module decoche ne devait pas decocher les autres."""

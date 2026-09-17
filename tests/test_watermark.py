@@ -2,6 +2,12 @@
 
 Tout est verifiable sans encoder : `video/watermark.py` est pur, et
 `build_ffmpeg_args` ne fait que construire une liste d'arguments.
+
+Le label interne du calque filigrane est "[ov0]", pas "[wm]" : le filigrane
+est devenu UN CAS PARTICULIER d'un compositeur a N calques (voir les themes
+du montage delire dans tests/test_delire_theme.py, qui posent le meme genre
+de calque) -- le nom generique reflete ca. Rien d'autre ne change : c'est
+toujours le premier (et jusqu'ici, le seul) calque superpose.
 """
 import pytest
 
@@ -183,7 +189,7 @@ def test_a_watermark_forces_filter_complex_even_on_an_untouched_clip(logo):
 
     assert "-vf" not in args and "-filter_complex" in args
     graph = args[args.index("-filter_complex") + 1]
-    assert "[base][wm]overlay=" in graph
+    assert "[base][ov0]overlay=" in graph
     assert "[1:v]scale=" in graph
     # L'audio de la source est repris tel quel : le logo ne touche pas au son.
     assert "0:a?" in args
@@ -196,7 +202,7 @@ def test_the_watermark_is_added_to_the_montage_graph_too(logo):
         _args(wm.Watermark(image=str(logo)), edit_list=edl).index("-filter_complex") + 1]
 
     assert "concat=n=2:v=1:a=1" in graph
-    assert "[base][wm]overlay=" in graph
+    assert "[base][ov0]overlay=" in graph
     assert graph.count("overlay=") == 1
 
 
