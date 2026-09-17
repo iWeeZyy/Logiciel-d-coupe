@@ -86,11 +86,24 @@ def test_an_unknown_position_falls_back_to_the_default_corner(logo):
 
 # --------------------------------------------------------------- filtres
 
-def test_the_size_is_a_percentage_of_the_output_width_not_a_pixel_count(logo):
+def test_the_size_is_a_percentage_of_the_width_when_the_height_is_unknown(logo):
+    # Repli historique : un appelant qui ne connait que la largeur (out_h
+    # absent) garde l'ancien calcul, largeur seule.
     mark = wm.Watermark(image=str(logo), size_percent=10.0)
 
     assert "scale=108:-1" in wm.prepare_filter(mark, 1080)      # 9:16
-    assert "scale=192:-1" in wm.prepare_filter(mark, 1920)      # 16:9
+    assert "scale=192:-1" in wm.prepare_filter(mark, 1920)      # 16:9, out_h absent
+
+
+def test_the_size_is_a_percentage_of_the_smaller_side_not_the_width_alone(logo):
+    # Le meme logo doit peser pareil a l'oeil en 1080x1920 et en 1920x1080 :
+    # calculee sur la largeur seule, 10 % de 1920 (le grand cote en paysage)
+    # donnait un logo deux fois trop gros par rapport au 9:16. Sur le petit
+    # cote (1080 dans les deux cas), le resultat est identique.
+    mark = wm.Watermark(image=str(logo), size_percent=10.0)
+
+    assert "scale=108:-1" in wm.prepare_filter(mark, 1080, 1920)   # 9:16
+    assert "scale=108:-1" in wm.prepare_filter(mark, 1920, 1080)   # 16:9
 
 
 def test_the_scaled_width_is_even(logo):
@@ -140,11 +153,19 @@ def test_the_centring_is_computed_by_ffmpeg_and_not_by_us(logo):
 # --------------------------------------------- place reservee aux sous-titres
 
 def test_a_logo_at_the_bottom_reserves_the_band_it_occupies(logo, monkeypatch):
-    monkeypatch.setattr(wm, "logo_height_px", lambda mark, out_w: 150)
+    monkeypatch.setattr(wm, "logo_height_px", lambda mark, out_w, out_h=None: 150)
     mark = wm.Watermark(image=str(logo), position="bas-centre", margin_percent=10.0)
 
     # marge (100) + hauteur du logo (150) + un ecart (24)
     assert wm.reserved_bottom_px(mark, 1000, gap_px=24) == 274
+
+
+def test_logo_height_is_computed_on_the_smaller_side_in_landscape(logo):
+    # Meme raisonnement que prepare_filter : le logo doit avoir la meme
+    # hauteur reelle (donc la meme reserve) en 1080x1920 et en 1920x1080.
+    mark = wm.Watermark(image=str(logo), size_percent=10.0)
+
+    assert wm.logo_height_px(mark, 1080, out_h=1920) == wm.logo_height_px(mark, 1920, out_h=1080)
 
 
 def test_a_logo_that_is_not_at_the_bottom_reserves_nothing(logo):

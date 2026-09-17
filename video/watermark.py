@@ -12,9 +12,14 @@ Deux choix de valeurs par defaut, expliques parce qu'ils ne sont pas evidents :
   et d'Instagram est a DROITE et la legende a GAUCHE : le centre bas est la
   seule zone basse que leur interface laisse libre. `reserved_bottom_px()`
   existe pour que les sous-titres ne puissent pas redescendre dessus.
-- LA TAILLE EST UN POURCENTAGE de la largeur de sortie, jamais un nombre de
-  pixels. Le meme logo doit peser pareil a l'oeil en 1080x1920 et en 1920x1080 ;
-  une taille fixe serait deux fois trop grosse sur l'un des deux.
+- LA TAILLE EST UN POURCENTAGE du PLUS PETIT cote de sortie, jamais un nombre
+  de pixels ni un pourcentage de la largeur seule. Calculee sur la largeur
+  seule -- ce qui etait le cas -- 14 % valent 151 px en 1080x1920 (14 % du
+  petit cote, correct) mais 269 px en 1920x1080, soit 25 % de la HAUTEUR de ce
+  cadre : le logo paraissait bien plus gros en paysage qu'en portrait alors
+  que le pourcentage affiche etait identique. Le plus petit cote donne le
+  meme poids a l'oeil dans les deux formats, exactement comme la marge
+  d'`overlay_position` ci-dessous.
 """
 from __future__ import annotations
 
@@ -161,14 +166,19 @@ def from_config(config: dict | None) -> Watermark | None:
     )
 
 
-def prepare_filter(watermark: Watermark, out_w: int) -> str:
+def prepare_filter(watermark: Watermark, out_w: int, out_h: int | None = None) -> str:
     """Filtre appliquer a l'image du logo avant de la poser.
 
     L'opacite est appliquee en MULTIPLIANT le canal alpha existant, ce qui
     preserve le bord adouci du disque : remplacer l'alpha rendrait le contour
     net et carrerait le logo.
+
+    La taille se calcule sur le PLUS PETIT des deux cotes -- voir la note en
+    tete de module. `out_h` est optionnel pour ne pas casser un appelant qui
+    ne connait que la largeur ; il retombe alors sur l'ancien calcul.
     """
-    width = max(2, int(round(out_w * watermark.size_percent / 100.0)))
+    reference = min(out_w, out_h or out_w)
+    width = max(2, int(round(reference * watermark.size_percent / 100.0)))
     width -= width % 2
     return (f"scale={width}:-1,format=rgba,"
             f"colorchannelmixer=aa={watermark.opacity:.3f}")
@@ -197,7 +207,7 @@ def overlay_position(watermark: Watermark, out_w: int, out_h: int | None = None)
     return f"{horizontal[side]}:{vertical[band]}"
 
 
-def logo_height_px(watermark: Watermark, out_w: int) -> int:
+def logo_height_px(watermark: Watermark, out_w: int, out_h: int | None = None) -> int:
     """Hauteur du logo une fois pose, en pixels.
 
     Le filtre le met a l'echelle sur sa largeur (`scale=w:-1`) : la hauteur
@@ -205,8 +215,13 @@ def logo_height_px(watermark: Watermark, out_w: int) -> int:
     supposer un carre -- une image large donnerait sinon une reserve trop
     grande, et une image haute une reserve trop petite, ce qui laisserait les
     sous-titres retomber dessus.
+
+    Meme calcul de largeur que `prepare_filter` -- sur le plus petit cote --
+    sinon la reserve calculee ici ne correspondrait plus au logo reellement
+    pose en paysage.
     """
-    width = max(2, int(round(out_w * watermark.size_percent / 100.0)))
+    reference = min(out_w, out_h or out_w)
+    width = max(2, int(round(reference * watermark.size_percent / 100.0)))
     ratio = 1.0
     try:
         from PIL import Image
@@ -232,4 +247,4 @@ def reserved_bottom_px(watermark: Watermark | None, out_w: int, gap_px: int = 24
         return 0
     reference = min(out_w, out_h or out_w)
     margin = max(0, int(round(reference * watermark.margin_percent / 100.0)))
-    return margin + logo_height_px(watermark, out_w) + max(0, gap_px)
+    return margin + logo_height_px(watermark, out_w, out_h=out_h) + max(0, gap_px)

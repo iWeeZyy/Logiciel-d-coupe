@@ -166,3 +166,21 @@ def test_a_face_in_the_middle_keeps_the_subtitles_below_it():
     margin = choose_margin_v(0.62, **MARGIN)
 
     assert 140 <= margin < 380
+
+
+def test_the_above_gap_pushes_the_text_further_above_the_face():
+    # avoid_half_frac n'est qu'une estimation fixe de la demi-hauteur du
+    # visage : sur un gros plan tres serre elle est trop courte, et sans
+    # coussin le texte retombe sur le haut du crane. Le coussin doit
+    # augmenter la marge d'exactement sa valeur, une fois le cas "au-dessus"
+    # declenche.
+    sans_coussin = choose_margin_v(0.85, **MARGIN, above_gap_px=0)
+    avec_coussin = choose_margin_v(0.85, **MARGIN, above_gap_px=40)
+
+    assert avec_coussin - sans_coussin == 40
+
+
+def test_the_above_gap_never_pushes_the_text_off_the_top_of_the_frame():
+    margin = choose_margin_v(0.95, **MARGIN, above_gap_px=500)
+
+    assert margin <= 1920 - 200 - 140

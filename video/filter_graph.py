@@ -481,7 +481,7 @@ def build_ffmpeg_args(
 
         overlays.append((
             ["-i", watermark.image],
-            prepare_filter(watermark, out_w),
+            prepare_filter(watermark, out_w, out_h),
             overlay_position(watermark, out_w, out_h),
         ))
 

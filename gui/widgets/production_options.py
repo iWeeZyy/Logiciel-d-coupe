@@ -39,6 +39,7 @@ QUICK_MODULES = [
     ("metadata", "Titres et descriptions"),
     ("thumbnails", "Miniatures"),
     ("watermark", "Filigrane"),
+    ("intro", "Intro ClipsOfStreams"),
     ("delire", "Délire"),
 ]
 

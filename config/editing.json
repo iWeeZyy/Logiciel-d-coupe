@@ -71,10 +71,12 @@
     },
     "smart_position": {
       "_comment": "Remonte les sous-titres quand un visage occupe le bas du cadre. Sans visage detecte de facon fiable, la marge du style est conservee telle quelle.",
+      "_above_gap_px_comment": "Coussin ajoute quand le texte passe AU-DESSUS du visage (avoid_half_frac ne connait pas la vraie taille du visage, un gros plan tres serre la depasse) : sans lui le texte se posait pile sur l'estimation et retombait sur le haut du crane/les cheveux.",
       "enabled": true,
       "avoid_half_frac": 0.16,
       "min_margin_v": 140,
-      "text_height_ratio": 2.2
+      "text_height_ratio": 2.2,
+      "above_gap_px": 40
     },
     "export_srt": true,
     "export_vtt": false
@@ -127,6 +129,11 @@
       }
     ],
     "choice": ""
+  },
+  "intro": {
+    "_comment": "Video posee au DEBUT de chaque clip produit, par concatenation (pas une incrustation transparente -- voir video/intro.py). La video par defaut est assets/branding/intro_follow.mp4, livree avec l'application ; 'video' permet d'en designer une autre. Elle passe par le meme traitement de cadre qu'une source qui n'a pas le format de sortie : image entiere conservee, fond flou ou noir selon 'fill_mode' si le format demande (16:9 en general, l'intro etant nativement en 9:16) ne correspond pas au sien.",
+    "enabled": true,
+    "video": ""
   },
   "montage": {
     "_comment": "Fonctionnalite 3 : montage automatique. Produit une EditList (segments conserves) sur laquelle sous-titres, cadrage et zooms se recalent automatiquement.",

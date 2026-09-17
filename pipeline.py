@@ -128,9 +128,12 @@ def run(
 
     from video.watermark import from_config as watermark_from_config
     from video.watermark import reserved_bottom_px as watermark_reserved_bottom
+    from video.intro import from_config as intro_from_config
 
     watermark = (watermark_from_config(settings.editing_module("watermark"))
                  if settings.editing_module_enabled("watermark") else None)
+    intro = (intro_from_config(settings.editing_module("intro"))
+             if settings.editing_module_enabled("intro") else None)
     # Le traitement du son fait partie du montage automatique : il est decrit
     # dans son bloc de configuration, et la case "Montage auto" doit donc le
     # couper aussi. Le lire directement, comme c'etait le cas, laissait le
@@ -385,6 +388,7 @@ def run(
                     watermark=watermark,
                     fill=settings.fill_mode,
                     fit=settings.fit_mode,
+                    intro=intro,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -900,6 +904,7 @@ def _build_captions_for_clip(
             # logo est pose la : la bande reservee par le filigrane devient donc
             # son plancher, sinon le texte retomberait dessus.
             min_margin_v=max(int(position_cfg.get("min_margin_v", 140)), reserved_bottom),
+            above_gap_px=int(position_cfg.get("above_gap_px", 40)),
         )
 
     return groups, margin_v

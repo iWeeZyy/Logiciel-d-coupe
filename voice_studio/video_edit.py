@@ -256,7 +256,7 @@ def build_render_args(*, video_path: str, narration_path: str | None,
         logo_index = len(args) // 2
         args += ["-i", watermark.image]
         graph_parts.append(f"[{logo_index}:v]"
-                           f"{prepare_filter(watermark, int(target_size[0]))}[wm]")
+                           f"{prepare_filter(watermark, int(target_size[0]), int(target_size[1]))}[wm]")
         graph_parts.append(f"[vbase][wm]overlay="
                            f"{overlay_position(watermark, int(target_size[0]), int(target_size[1]))}"
                            f"[vout]")

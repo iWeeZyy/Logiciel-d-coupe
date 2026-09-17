@@ -260,6 +260,7 @@ def choose_margin_v(
     frame_height: int = 1920,
     avoid_half_frac: float = 0.16,
     min_margin_v: int = 140,
+    above_gap_px: int = 40,
 ) -> int:
     """Marge verticale ASS (distance entre le bas du cadre et le bas du texte)
     qui evite le visage.
@@ -270,6 +271,17 @@ def choose_margin_v(
 
     Regle : on garde le placement bas tant que le texte reste sous le visage ;
     si le visage occupe le bas du cadre, le texte passe au-dessus de lui.
+
+    `above_gap_px` n'entre en jeu que dans ce second cas. La detection ne
+    fournit qu'un CENTRE de visage ; `avoid_half_frac` n'est qu'une estimation
+    fixe de sa demi-hauteur, et un gros plan tres serre (le visage remplit une
+    bonne partie du cadre 9:16) la depasse largement. Sans coussin, le texte
+    se pose pile a la limite estimee et retombe sur le haut du crane ou les
+    cheveux des que l'estimation est un peu courte -- constate sur un clip ou
+    le sous-titre finissait bien au-dessus du CENTRE du visage mais en plein
+    sur le front. Le coussin ne joue pas dans le cas "en dessous" : le texte
+    y est deja separe du visage par `text_height_px`, et ce cas n'a jamais
+    ete signale comme fautif.
     """
     if face_y_frac is None:
         return default_margin_v
@@ -281,6 +293,6 @@ def choose_margin_v(
     if max_margin_below >= min_margin_v:
         return max(min_margin_v, min(default_margin_v, max_margin_below))
 
-    above = int((1.0 - face_top) * frame_height)
+    above = int((1.0 - face_top) * frame_height) + max(0, above_gap_px)
     highest_allowed = frame_height - text_height_px - min_margin_v
     return max(min_margin_v, min(above, highest_allowed))
