@@ -433,6 +433,7 @@ def build_ffmpeg_args(
     fill: str = FILL_BLACK,
     fit: str = FIT_CROP,
     delire_plan=None,
+    intro=None,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -484,8 +485,17 @@ def build_ffmpeg_args(
             prepare_filter(watermark, out_w, out_h),
             overlay_position(watermark, out_w, out_h),
         ))
+    if intro is not None:
+        # Poser APRES le filigrane : l'incrustation "+ Follow" doit rester
+        # au-dessus de tout le reste pendant ses quelques secondes, jamais
+        # recouverte. C'est aussi le seul calque a porter une 4e valeur
+        # (condition d'activation) -- voir la boucle de composition plus bas.
+        from video.intro_overlay import overlay_spec
 
-    for input_args, _, _ in overlays:
+        intro_filt, intro_position, intro_enable = overlay_spec(intro, out_w, out_h)
+        overlays.append((["-i", intro.path], intro_filt, intro_position, intro_enable))
+
+    for input_args, *_ in overlays:
         args += input_args
 
     args += ["-t", f"{span:.3f}"]
@@ -519,13 +529,17 @@ def build_ffmpeg_args(
             pieces = segments_v + segments_a + [concat, f"[vc]{video_chain}[{base_label}]"]
 
         # Les calques se composent EN SERIE : chacun se superpose sur le
-        # resultat du precedent, le dernier produisant "vout".
+        # resultat du precedent, le dernier produisant "vout". Un calque
+        # PERMANENT (filigrane, themes) n'a que 3 elements ; un calque BORNE
+        # DANS LE TEMPS (l'intro) porte une 4e valeur, la condition ffmpeg
+        # `enable=` qui le rend invisible passe sa duree.
         current = base_label
-        for i, (_, filt, position) in enumerate(overlays):
+        for i, (_, filt, position, *rest) in enumerate(overlays):
             source_index = i + 1  # l'entree 0 est toujours la video principale
             next_label = "vout" if i == len(overlays) - 1 else f"stage{i}"
+            enable_part = f":enable='{rest[0]}'" if rest and rest[0] else ""
             pieces.append(f"[{source_index}:v]{filt}[ov{i}]")
-            pieces.append(f"[{current}][ov{i}]overlay={position}[{next_label}]")
+            pieces.append(f"[{current}][ov{i}]overlay={position}{enable_part}[{next_label}]")
             current = next_label
 
         graph = ";".join(pieces)

@@ -8,16 +8,13 @@ de qualite due a des passes successives.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Optional
 
 from core.cancellation import CancelToken
 from editing.timeline import EditList
-from video.cropper import TARGET_H, TARGET_W
-from video.ffmpeg_utils import has_audio_stream, run_ffmpeg, video_resolution
+from video.ffmpeg_utils import run_ffmpeg, video_duration, video_resolution
 from video.filter_graph import build_ffmpeg_args
-from video.intro_concat import build_concat_args
+from video.intro_overlay import IntroOverlay
 from video.subtitle_renderer import render_ass_file
 
 
@@ -64,6 +61,21 @@ def build_clip(
             caption_groups=caption_groups, margin_v=subtitle_margin_v,
         )
 
+    # L'intro se pose EN INCRUSTATION sur le debut du clip, dans le MEME
+    # passage ffmpeg que tout le reste (un calque de plus pour le
+    # compositeur a N calques de build_ffmpeg_args -- voir intro_overlay.py) :
+    # sa duree et ses dimensions reelles sont lues une fois ici, avant de
+    # construire le graphe. `intro is None` ou une video manquante sur le
+    # disque -> aucun calque ajoute, le clip sort exactement comme avant
+    # cette fonctionnalite.
+    intro_overlay = None
+    if intro is not None and intro.exists:
+        intro_w, intro_h = video_resolution(intro.video)
+        intro_overlay = IntroOverlay(
+            path=intro.video, src_w=intro_w, src_h=intro_h,
+            duration=video_duration(intro.video),
+        )
+
     args = build_ffmpeg_args(
         video_path=video_path,
         edit_list=edit_list,
@@ -81,39 +93,7 @@ def build_clip(
         delire_plan=delire_plan,
         fill=fill,
         fit=fit,
+        intro=intro_overlay,
         **({"target_size": tuple(target_size)} if target_size else {}),
     )
     run_ffmpeg(args, description=f"generation du clip {clip_label}", cancel_token=cancel_token)
-
-    # L'intro se pose APRES coup, par un second appel ffmpeg : le clip
-    # principal est deja un fichier fini a ce stade (voir intro_concat.py pour
-    # pourquoi ce n'est pas fondu dans le graphe ci-dessus). `intro is None`
-    # ou une video manquante sur le disque -> ce bloc ne fait rien, le clip
-    # sort exactement comme avant cette fonctionnalite.
-    if intro is not None and intro.exists:
-        resolved_target = tuple(target_size) if target_size else (TARGET_W, TARGET_H)
-        with_intro_path = out_mp4_path + ".intro.mp4"
-        concat_args = build_concat_args(
-            intro_path=intro.video,
-            intro_src_size=video_resolution(intro.video),
-            clip_path=out_mp4_path,
-            clip_has_audio=has_audio_stream(out_mp4_path),
-            out_mp4_path=with_intro_path,
-            target_size=resolved_target,
-            fps=fps,
-            fill=fill,
-            watermark=watermark,
-            export_settings=export_settings,
-        )
-        try:
-            run_ffmpeg(concat_args, description=f"ajout de l'intro au clip {clip_label}",
-                      cancel_token=cancel_token)
-        except Exception:
-            # Meme principe que le nettoyage plus haut dans pipeline.py : un
-            # fichier temporaire incomplet ne doit jamais rester sur le
-            # disque. out_mp4_path, lui, est intact -- c'est encore le clip
-            # SANS intro a ce point, pipeline.py le nettoiera comme d'habitude
-            # si l'appelant considere l'echec fatal.
-            Path(with_intro_path).unlink(missing_ok=True)
-            raise
-        os.replace(with_intro_path, out_mp4_path)

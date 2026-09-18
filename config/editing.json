@@ -131,7 +131,7 @@
     "choice": ""
   },
   "intro": {
-    "_comment": "Video posee au DEBUT de chaque clip produit, par concatenation (pas une incrustation transparente -- voir video/intro.py). La video par defaut est assets/branding/intro_follow.mp4, livree avec l'application ; 'video' permet d'en designer une autre. Elle passe par le meme traitement de cadre qu'une source qui n'a pas le format de sortie : image entiere conservee, fond flou ou noir selon 'fill_mode' si le format demande (16:9 en general, l'intro etant nativement en 9:16) ne correspond pas au sien.",
+    "_comment": "Video posee EN INCRUSTATION (medaillon en haut a droite) sur les premieres secondes de chaque clip produit -- pas une scene concatenee avant lui, voir video/intro_overlay.py. La video par defaut est assets/branding/intro_follow.mp4, livree avec l'application ; 'video' permet d'en designer une autre. Son fond noir devient transparent au rendu, et l'incrustation disparait d'elle-meme une fois sa propre duree ecoulee -- le clip reste visible en dessous et autour tout du long.",
     "enabled": true,
     "video": ""
   },

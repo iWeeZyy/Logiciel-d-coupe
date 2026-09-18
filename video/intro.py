@@ -1,11 +1,11 @@
-"""Video d'introduction posee au DEBUT de chaque clip produit.
+"""Video d'introduction posee EN INCRUSTATION sur le debut de chaque clip.
 
-Ce n'est PAS une incrustation flottante par-dessus le clip : la video fournie
-("Follow" anime, plein cadre, fond noir) n'a aucun sens posee en transparence
-sur le contenu du streamer, elle doit etre VUE en entier avant que le clip ne
-commence. C'est donc un second clip, concatene devant le premier -- voir
-video/intro_concat.py pour la construction du graphe ffmpeg qui fait ce
-raccord.
+Une petite incrustation (medaillon, coin de l'ecran), superposee PENDANT que
+le clip joue, seulement le temps de sa propre duree -- le clip principal reste
+visible en dessous et autour tout du long, jamais cache par une scene
+separee. Voir video/intro_overlay.py pour la construction du calque ffmpeg
+(recadrage sur le contenu utile, fond noir rendu transparent, fenetre de
+temps limitee a la duree reelle de la video).
 
 Module PUR comme watermark.py : resout le chemin de la video et rien
 d'autre. Aucun appel a ffmpeg ici.
@@ -20,7 +20,7 @@ DEFAULT_VIDEO = "branding/intro_follow.mp4"
 
 @dataclass(frozen=True)
 class Intro:
-    """Une video d'intro prete a etre concatenee."""
+    """Une video d'intro prete a etre posee en incrustation."""
 
     video: str
 
