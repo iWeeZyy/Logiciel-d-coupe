@@ -488,12 +488,23 @@ def build_ffmpeg_args(
     if intro is not None:
         # Poser APRES le filigrane : l'incrustation "+ Follow" doit rester
         # au-dessus de tout le reste pendant ses quelques secondes, jamais
-        # recouverte. C'est aussi le seul calque a porter une 4e valeur
-        # (condition d'activation) -- voir la boucle de composition plus bas.
-        from video.intro_overlay import overlay_spec
+        # recouverte. C'est aussi le seul calque a consommer DEUX entrees
+        # (la video ET son masque de transparence precalcule, voir
+        # intro_overlay.py) -- les indices sont calcules ici, a partir du
+        # nombre d'entrees deja utilisees par les calques precedents (1 pour
+        # la video principale, +1 par calque anterieur). "prepared=True"
+        # dit au compositeur plus bas que le sous-graphe reference deja ses
+        # propres entrees, contrairement a un calque a une seule entree.
+        from video.intro_overlay import mask_asset_path, overlay_spec
 
-        intro_filt, intro_position, intro_enable = overlay_spec(intro, out_w, out_h)
-        overlays.append((["-i", intro.path], intro_filt, intro_position, intro_enable))
+        video_index = 1 + len(overlays)
+        mask_index = video_index + 1
+        intro_filt, intro_position, intro_enable = overlay_spec(
+            intro, out_w, out_h, video_index=video_index, mask_index=mask_index)
+        overlays.append((
+            ["-i", intro.path, "-i", mask_asset_path()],
+            intro_filt, intro_position, intro_enable, True,
+        ))
 
     for input_args, *_ in overlays:
         args += input_args
@@ -531,16 +542,26 @@ def build_ffmpeg_args(
         # Les calques se composent EN SERIE : chacun se superpose sur le
         # resultat du precedent, le dernier produisant "vout". Un calque
         # PERMANENT (filigrane, themes) n'a que 3 elements ; un calque BORNE
-        # DANS LE TEMPS (l'intro) porte une 4e valeur, la condition ffmpeg
-        # `enable=` qui le rend invisible passe sa duree.
+        # DANS LE TEMPS (l'intro) porte une 4e valeur (la condition ffmpeg
+        # `enable=`) et une 5e (`prepared=True`) quand son filtre reference
+        # DEJA ses propres entrees (l'intro en consomme deux -- video et
+        # masque -- voir intro_overlay.py) : le compositeur ne doit alors pas
+        # lui prefixer un "[N:v]" comme pour un calque a une seule entree.
+        # `next_index` avance du nombre REEL d'entrees consommees par
+        # chaque calque, pas de 1 systematiquement.
         current = base_label
-        for i, (_, filt, position, *rest) in enumerate(overlays):
-            source_index = i + 1  # l'entree 0 est toujours la video principale
+        next_index = 1  # l'entree 0 est toujours la video principale
+        for i, (input_args, filt, position, *rest) in enumerate(overlays):
+            n_inputs = len(input_args) // 2  # chaque entree est un couple "-i", chemin
+            enable = rest[0] if len(rest) > 0 else None
+            prepared = rest[1] if len(rest) > 1 else False
             next_label = "vout" if i == len(overlays) - 1 else f"stage{i}"
-            enable_part = f":enable='{rest[0]}'" if rest and rest[0] else ""
-            pieces.append(f"[{source_index}:v]{filt}[ov{i}]")
+            enable_part = f":enable='{enable}'" if enable else ""
+            layer_filt = filt if prepared else f"[{next_index}:v]{filt}"
+            pieces.append(f"{layer_filt}[ov{i}]")
             pieces.append(f"[{current}][ov{i}]overlay={position}{enable_part}[{next_label}]")
             current = next_label
+            next_index += n_inputs
 
         graph = ";".join(pieces)
 

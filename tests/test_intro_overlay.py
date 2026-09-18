@@ -5,7 +5,14 @@ sans encoder quoi que ce soit (comme video/watermark.py).
 """
 from editing.timeline import EditList
 from video.filter_graph import build_ffmpeg_args
-from video.intro_overlay import IntroOverlay, crop_rect, overlay_position, overlay_spec, prepare_filter
+from video.intro_overlay import (
+    IntroOverlay,
+    crop_rect,
+    overlay_position,
+    overlay_spec,
+    prepare_filter,
+    scaled_size,
+)
 from video.watermark import Watermark
 
 
@@ -31,23 +38,58 @@ def test_the_size_is_a_percentage_of_the_smaller_output_side():
     intro = _intro()
 
     # 35% de 1080 (le petit cote, meme en paysage) = 378, arrondi pair.
-    assert "scale=378:-1" in prepare_filter(intro, 1080, 1920)
-    assert "scale=378:-1" in prepare_filter(intro, 1920, 1080)
+    assert scaled_size(intro, 1080, 1920)[0] == 378
+    assert scaled_size(intro, 1920, 1080)[0] == 378
+
+
+def test_the_height_is_computed_explicitly_from_the_crop_aspect_ratio():
+    intro = _intro()
+
+    # Cadre 1000x1140 (ratio 1.14) mis a l'echelle sur une largeur de 378 :
+    # meme ratio applique explicitement (arrondi pair), jamais un "-1" ffmpeg.
+    width, height = scaled_size(intro, 1080, 1920)
+    expected = round(width * 1140 / 1000)
+    expected -= expected % 2
+    assert height == expected
+
+
+def test_video_and_mask_are_scaled_to_the_exact_same_size():
+    # alphamerge exige des tailles identiques image par image : les deux
+    # branches du sous-graphe doivent porter le meme scale=W:H explicite.
+    intro = _intro()
+
+    filt = prepare_filter(intro, 1080, 1920, video_index=2, mask_index=3)
+    width, height = scaled_size(intro, 1080, 1920)
+    assert filt.count(f"scale={width}:{height}") == 2
 
 
 def test_the_crop_dimensions_reach_the_filter():
     intro = _intro()
 
-    filt = prepare_filter(intro, 1080, 1920)
+    filt = prepare_filter(intro, 1080, 1920, video_index=2, mask_index=3)
     assert "crop=1000:1140:40:330" in filt
 
 
-def test_the_black_background_is_keyed_out():
+def test_the_filter_references_the_given_input_indices():
     intro = _intro()
 
-    filt = prepare_filter(intro, 1080, 1920)
-    assert "colorkey=0x000000" in filt
-    assert "format=yuva420p" in filt
+    filt = prepare_filter(intro, 1080, 1920, video_index=5, mask_index=6)
+    assert "[5:v]" in filt
+    assert "[6:v]" in filt
+
+
+def test_transparency_comes_from_alphamerge_with_the_precomputed_mask():
+    # Plus de colorkey : un colorkey supprimerait aussi le noir VOULU a
+    # l'interieur de l'anneau (le disque du logo). alphamerge avec le
+    # masque precalcule est ce qui le preserve -- voir tools/
+    # generate_intro_mask.py pour le flood-fill qui construit ce masque.
+    intro = _intro()
+
+    filt = prepare_filter(intro, 1080, 1920, video_index=2, mask_index=3)
+    assert "colorkey" not in filt
+    assert "alphamerge" in filt
+    assert "format=rgba" in filt
+    assert "format=gray" in filt
 
 
 def test_the_default_position_is_top_right_so_it_never_meets_the_watermark():
@@ -77,7 +119,7 @@ def test_an_unknown_position_falls_back_to_the_default():
 def test_overlay_spec_enables_only_for_the_intro_duration():
     intro = _intro(duration=6.5)
 
-    _, _, enable = overlay_spec(intro, 1080, 1920)
+    _, _, enable = overlay_spec(intro, 1080, 1920, video_index=2, mask_index=3)
 
     assert enable == "between(t,0,6.500)"
 
@@ -85,7 +127,7 @@ def test_overlay_spec_enables_only_for_the_intro_duration():
 def test_overlay_spec_clamps_a_negative_duration_to_zero():
     intro = _intro(duration=-1.0)
 
-    _, _, enable = overlay_spec(intro, 1080, 1920)
+    _, _, enable = overlay_spec(intro, 1080, 1920, video_index=2, mask_index=3)
 
     assert enable == "between(t,0,0.000)"
 
@@ -111,11 +153,14 @@ def test_no_intro_means_a_single_input_and_no_overlay_at_all():
     assert "-filter_complex" not in args  # rien a composer : chemin -vf simple
 
 
-def test_the_intro_is_an_extra_input_after_the_main_video():
+def test_the_intro_adds_two_extra_inputs_after_the_main_video():
+    # La video ET son masque de transparence, dans cet ordre.
     args = _args(intro=_intro())
 
     assert args[:4] == ["-ss", "10.000", "-i", "in.mp4"]
-    assert "-i" in args and "intro.mp4" in args
+    assert args.count("-i") == 3
+    assert "intro.mp4" in args
+    assert any(a.endswith("intro_follow_mask.png") for a in args)
 
 
 def test_the_intro_overlay_carries_a_time_bounded_enable_expression():
@@ -130,13 +175,15 @@ def test_the_intro_is_composited_after_the_watermark_so_it_stays_on_top():
     args = _args(watermark=watermark, intro=_intro())
     graph = args[args.index("-filter_complex") + 1]
 
-    # Le filigrane (entree 1) se compose avant l'intro (entree 2) : "ov0" (le
-    # filigrane) apparait avant "ov1" (l'intro) dans le graphe.
+    # Le filigrane (entree 1) se compose avant l'intro ("ov0" avant "ov1").
     assert graph.index("[ov0]") < graph.index("[ov1]")
-    assert "-i" in args and "logo.png" in args and "intro.mp4" in args
-    # Chacun garde sa propre position -- aucun des deux calques ne porte la
-    # marge de l'autre.
-    assert "enable=" not in graph.split("[ov1]")[0]  # le filigrane, permanent
+    assert "logo.png" in args and "intro.mp4" in args
+    # Le filigrane (calque permanent) ne porte pas de condition enable=.
+    assert "enable=" not in graph.split("[ov1]")[0]
+    # L'incrustation reference bien ses DEUX entrees propres (video+masque),
+    # decalees par l'entree du filigrane qui les precede (0: video
+    # principale, 1: filigrane, 2: intro, 3: masque).
+    assert "[2:v]" in graph and "[3:v]" in graph
 
 
 def test_a_permanent_layer_like_the_watermark_keeps_no_enable_expression():
