@@ -106,6 +106,69 @@ class FaceCropHint:
         self.samples_used = samples_used
 
 
+def detect_faces_in_frame(net, frame, confidence_threshold: float = 0.6,
+                          max_faces: int = 4) -> list[FaceBox]:
+    """Detection de visages sur UNE image deja chargee (BGR, comme OpenCV les
+    lit), triee du plus grand au plus petit. Extrait de detect_face_track pour
+    que le meme calcul serve aussi a une image seule (thumbnailer.py, et le
+    cadrage d'une image d'article dans news_story) -- il n'y avait avant cette
+    extraction QUE la copie video ici et une copie quasi identique dans
+    thumbnailer.py, aucune des deux appelable sur une image independante."""
+    import cv2
+
+    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300),
+                                 (104.0, 177.0, 123.0))
+    net.setInput(blob)
+    detections = net.forward()
+
+    boxes: list[FaceBox] = []
+    for i in range(detections.shape[2]):
+        confidence = float(detections[0, 0, i, 2])
+        if confidence < confidence_threshold:
+            continue
+        x1, y1, x2, y2 = (float(v) for v in detections[0, 0, i, 3:7])
+        x1, y1, x2, y2 = max(0.0, x1), max(0.0, y1), min(1.0, x2), min(1.0, y2)
+        if x2 - x1 <= 0.01 or y2 - y1 <= 0.01:
+            continue
+        boxes.append(FaceBox(x=x1, y=y1, w=x2 - x1, h=y2 - y1, confidence=confidence))
+
+    boxes.sort(key=lambda b: b.area, reverse=True)
+    return boxes[:max_faces]
+
+
+def detect_largest_face(net, frame, confidence_threshold: float = 0.6) -> FaceBox | None:
+    """Le visage le plus grand d'une image, ou None. Ce que thumbnailer.py
+    utilisait deja (une seule vignette n'a qu'un seul cadrage a decider)."""
+    boxes = detect_faces_in_frame(net, frame, confidence_threshold, max_faces=1)
+    return boxes[0] if boxes else None
+
+
+def detect_faces_in_image(image_bgr, confidence_threshold: float = 0.6,
+                          max_faces: int = 4) -> list[FaceBox]:
+    """Detection de visages sur une image INDEPENDANTE (pas une frame issue
+    d'une capture video) : charge le modele une fois puis applique
+    detect_faces_in_frame. C'est le point d'entree que news_story utilise pour
+    cadrer l'image d'un article -- le meme modele que le cadrage video, jamais
+    un second detecteur pour la meme tache.
+
+    Liste vide si le modele ou OpenCV sont indisponibles : l'appelant retombe
+    alors sur un cadrage centre, jamais sur une erreur (meme principe que
+    detect_face_track)."""
+    model = ensure_face_model()
+    if model is None:
+        logger.info("Detecteur de visage indisponible -- cadrage centre utilise.")
+        return []
+
+    try:
+        import cv2
+    except ImportError:
+        logger.warning("opencv-python non installe -- cadrage centre utilise.")
+        return []
+
+    net = cv2.dnn.readNetFromCaffe(*model)
+    return detect_faces_in_frame(net, image_bgr, confidence_threshold, max_faces)
+
+
 def _sample_times(start: float, end: float, interval: float, max_samples: int) -> list[float]:
     times: list[float] = []
     t = start
@@ -186,25 +249,7 @@ def detect_face_track(
             if not ret or frame is None:
                 continue
 
-            blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300),
-                                         (104.0, 177.0, 123.0))
-            net.setInput(blob)
-            detections = net.forward()
-
-            boxes: list[FaceBox] = []
-            for i in range(detections.shape[2]):
-                confidence = float(detections[0, 0, i, 2])
-                if confidence < confidence_threshold:
-                    continue
-                x1, y1, x2, y2 = (float(v) for v in detections[0, 0, i, 3:7])
-                x1, y1 = max(0.0, x1), max(0.0, y1)
-                x2, y2 = min(1.0, x2), min(1.0, y2)
-                if x2 - x1 <= 0.01 or y2 - y1 <= 0.01:
-                    continue
-                boxes.append(FaceBox(x=x1, y=y1, w=x2 - x1, h=y2 - y1, confidence=confidence))
-
-            boxes.sort(key=lambda b: b.area, reverse=True)
-            boxes = boxes[:max_faces]
+            boxes = detect_faces_in_frame(net, frame, confidence_threshold, max_faces)
 
             activity: list[float] = []
             current: list[tuple[FaceBox, object]] = []

@@ -12,7 +12,15 @@ soundfile>=0.12
 
 # opencv-python-headless : pas de fenetre GUI necessaire (aucun cv2.imshow ici),
 # installation plus legere et evite des soucis de libs GUI/Qt manquantes.
-opencv-python-headless>=4.9
+# Plafonne a <5.0 : OpenCV 5.0.0 a supprime l'importateur Caffe
+# (cv2.dnn.readNetFromCaffe n'existe plus) dont depend tout le detecteur de
+# visage de l'appli (video/face_detector.py -- recadrage 9:16, evitement du
+# visage pour les sous-titres, miniatures, et maintenant le cadrage des
+# Stories d'actualites). Sans ce plafond, une installation neuve de
+# requirements.txt casse silencieusement cette detection partout ou elle est
+# utilisee -- constate en pratique en installant la derniere version
+# disponible pendant le developpement de cette fonctionnalite.
+opencv-python-headless>=4.9,<5.0
 
 # Composition des miniatures (texte accentue mesure et replie). OpenCV ne sait
 # rendre que les polices Hershey, sans accents ; ffmpeg drawtext ne sait pas

@@ -1,0 +1,14 @@
+{
+  "_comment": "Sources et reglages du Radar Gaming News. Chaque source est un flux RSS/Atom independant : une source injoignable ou dont l'URL a change n'empeche pas les autres de s'afficher (gaming_news/feed_fetcher.py). IMPORTANT : ces URLs de flux n'ont PAS pu etre verifiees par un acces reseau reel depuis l'environnement de developpement (reseau restreint au moment de l'ecriture) -- verifie-les une fois l'application lancee, et corrige ici (simple edition de texte, aucun code a toucher) si un site ne renvoie plus rien.",
+  "sources": [
+    {"key": "vgc", "label": "VGC", "feed_url": "https://www.videogameschronicle.com/feed/"},
+    {"key": "ign_fr", "label": "IGN France", "feed_url": "https://fr.ign.com/feed.xml"},
+    {"key": "jeuxvideo", "label": "Jeuxvideo.com", "feed_url": "https://www.jeuxvideo.com/rss/rss.xml"},
+    {"key": "gamekult", "label": "Gamekult", "feed_url": "https://www.gamekult.com/feed.xml"}
+  ],
+  "scan": {
+    "_comment": "Nombre maximal d'articles recuperes par source a chaque scan, et delai d'attente reseau par flux.",
+    "max_articles_per_source": 20,
+    "timeout_s": 10
+  }
+}

@@ -18,7 +18,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.logging_setup import get_logger
-from core.paths import app_base_dir
 from editing.thumbnail import (
     FrameMetrics,
     choose_text_layout,
@@ -26,50 +25,14 @@ from editing.thumbnail import (
     score_frames,
 )
 from video.cropper import TARGET_H, TARGET_W, CenterHint, compute_crop_rect
-from video.face_detector import FaceBox, ensure_face_model
+from video.face_detector import FaceBox, detect_largest_face, ensure_face_model
+from video.text_render import draw_outlined_text, fit_font_for_lines
 
 logger = get_logger()
 
-_FONT_CANDIDATES = (
-    app_base_dir() / "assets" / "fonts" / "JetBrainsMono-Bold.ttf",
-    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
-    Path("C:/Windows/Fonts/arialbd.ttf"),
-)
-
-
-def _load_font(size: int):
-    from PIL import ImageFont
-
-    for path in _FONT_CANDIDATES:
-        try:
-            if path.exists():
-                return ImageFont.truetype(str(path), size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
-
 
 def _detect_face(net, frame, confidence_threshold: float) -> FaceBox | None:
-    import cv2
-
-    blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300),
-                                 (104.0, 177.0, 123.0))
-    net.setInput(blob)
-    detections = net.forward()
-
-    best = None
-    for i in range(detections.shape[2]):
-        confidence = float(detections[0, 0, i, 2])
-        if confidence < confidence_threshold:
-            continue
-        x1, y1, x2, y2 = (float(v) for v in detections[0, 0, i, 3:7])
-        x1, y1, x2, y2 = max(0.0, x1), max(0.0, y1), min(1.0, x2), min(1.0, y2)
-        if x2 - x1 <= 0.01 or y2 - y1 <= 0.01:
-            continue
-        box = FaceBox(x=x1, y=y1, w=x2 - x1, h=y2 - y1, confidence=confidence)
-        if best is None or box.area > best.area:
-            best = box
-    return best
+    return detect_largest_face(net, frame, confidence_threshold)
 
 
 def _eyes_open(cascade, gray, face: FaceBox) -> bool | None:
@@ -141,49 +104,18 @@ def _draw_text(image, text: str, layout, cfg: dict) -> None:
 
     draw = ImageDraw.Draw(image)
     max_width = int(TARGET_W * layout.max_width_frac)
-    size = int(cfg.get("max_font_size", 96))
+    max_size = int(cfg.get("max_font_size", 96))
     min_size = int(cfg.get("min_font_size", 44))
 
     # On reduit la taille jusqu'a ce que le texte tienne en deux lignes dans les
     # marges de securite : un texte qui deborde du cadre est illisible sur
     # mobile, ou pire, rogne par l'interface du reseau social.
-    while size >= min_size:
-        font = _load_font(size)
-        lines = _wrap(draw, text, font, max_width)
-        if len(lines) <= 2 and all(draw.textlength(line, font=font) <= max_width for line in lines):
-            break
-        size -= 6
-    else:
-        font = _load_font(min_size)
-        lines = _wrap(draw, text, font, max_width)[:2]
+    font, lines, size = fit_font_for_lines(draw, text, max_width, max_size, min_size, max_lines=2)
 
     fill = (255, 255, 255) if layout.light_text else (15, 15, 15)
     stroke = (0, 0, 0) if layout.light_text else (255, 255, 255)
-    stroke_width = max(3, size // 12)
-
-    line_height = int(size * 1.18)
-    total_height = line_height * len(lines)
-    y = int(TARGET_H * layout.y_center_frac - total_height / 2)
-
-    for line in lines:
-        width = draw.textlength(line, font=font)
-        draw.text(((TARGET_W - width) / 2, y), line, font=font, fill=fill,
-                  stroke_width=stroke_width, stroke_fill=stroke)
-        y += line_height
-
-
-def _wrap(draw, text: str, font, max_width: int) -> list[str]:
-    words, lines, current = text.split(), [], ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if current and draw.textlength(candidate, font=font) > max_width:
-            lines.append(current)
-            current = word
-        else:
-            current = candidate
-    if current:
-        lines.append(current)
-    return lines
+    draw_outlined_text(draw, TARGET_W / 2, TARGET_H * layout.y_center_frac, lines, font,
+                       size, fill, stroke)
 
 
 def generate_thumbnails(

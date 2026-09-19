@@ -46,6 +46,7 @@ from radar.models import PLATFORM_TWITCH, PLATFORM_YOUTUBE, PRIORITIES, PRIORITY
 from radar.platforms.twitch import TwitchAdapter
 from radar.platforms.youtube import YouTubeAdapter
 from radar.store import RadarStore
+from gui.radar.news_page_tab import GamingNewsTab
 from utils.errors import CancelledError, ClipFarmingError
 
 _PLATFORM_LABELS = {PLATFORM_YOUTUBE: "YouTube", PLATFORM_TWITCH: "Twitch"}
@@ -210,6 +211,11 @@ class RadarPage(QWidget):
         for key, label in (("all", "Tous"), (PLATFORM_YOUTUBE, "YouTube"),
                            (PLATFORM_TWITCH, "Twitch")):
             self.tabs.addTab(self._build_tab(key), label)
+        # Onglet a part, pas une quatrieme plateforme du meme moteur : une
+        # actualite de presse n'est ni un Creator ni une Opportunity
+        # (radar/models.py), rien du scoring/scan existant ne s'y applique.
+        self.news_tab = GamingNewsTab()
+        self.tabs.addTab(self.news_tab, "📰 Gaming News")
         outer.addWidget(self.tabs, stretch=1)
 
     def _build_tab(self, key: str) -> QWidget:
@@ -232,6 +238,7 @@ class RadarPage(QWidget):
         for key in self.tab_contents:
             self._refresh_tab(key)
         self._refresh_batch_button()
+        self.news_tab.on_shown()
 
     def _refresh_period(self) -> None:
         """Changer la periode : bandeau et listes, jamais de scan."""
@@ -688,3 +695,4 @@ class RadarPage(QWidget):
             if self._cancel_token is not None:
                 self._cancel_token.cancel()
             self._thread.wait(3000)
+        self.news_tab.cleanup()

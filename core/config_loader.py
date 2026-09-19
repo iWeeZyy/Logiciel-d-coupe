@@ -257,6 +257,24 @@ def load_radar_config() -> dict:
         return {}
 
 
+def load_gaming_news_config() -> dict:
+    """Sources et reglages du Radar Gaming News (config/gaming_news.json).
+
+    Meme regle que load_radar_config : absent ou illisible -> dict vide, et
+    gaming_news/sources.py retombe alors sur son catalogue de sources par
+    defaut (voir gaming_news/sources.py).
+    """
+    path = CONFIG_DIR / "gaming_news.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def load_clip_analysis_config() -> dict:
     """Marqueurs de l'analyse de contenu (config/clip_analysis.json).
 
