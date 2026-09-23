@@ -457,11 +457,14 @@ def build_ffmpeg_args(
     # branche AVANT le filigrane -- le logo reste toujours au-dessus, jamais
     # recouvert par une texture qui couvre tout le cadre.
     #
-    # Une image fixe (le filigrane, le calque statique de l'arc-en-ciel)
-    # convient telle quelle -- overlay repete sa derniere image par defaut,
-    # il n'y a rien a boucler. Un calque qui DEFILE (pluie, etoiles,
-    # confettis, braises) a besoin de plusieurs images DIFFERENTES a faire
-    # glisser : `-loop 1` transforme l'image fixe en flux continu pour cela.
+    # Une image fixe (le filigrane) convient telle quelle -- overlay repete
+    # sa derniere image par defaut, il n'y a rien a boucler. Un calque de
+    # theme est desormais une VRAIE VIDEO fond vert (voir
+    # video/delire_theme_filters.py) dont la duree est rarement celle du
+    # clip : `-stream_loop -1` la boucle indefiniment en ENTREE, le `-t`
+    # global juste en dessous bornant deja la SORTIE -- meme principe que
+    # `-loop 1` pour une image fixe, adapte a une source qui a deja plusieurs
+    # images bien a elle.
     #
     # Chaque entree est declaree AVANT le -t, et non apres : une option
     # placee juste devant une entree s'applique a cette entree. Un -t glisse
@@ -474,7 +477,7 @@ def build_ffmpeg_args(
         from video.delire_theme_filters import overlay_layers as _theme_overlay_layers
 
         for layer in _theme_overlay_layers(getattr(delire_plan, "theme", ""), out_w, out_h, fps):
-            input_args = (["-loop", "1", "-i", layer.asset_path] if layer.needs_loop
+            input_args = (["-stream_loop", "-1", "-i", layer.asset_path] if layer.is_video
                           else ["-i", layer.asset_path])
             overlays.append((input_args, layer.prep_filter, layer.position))
     if watermark is not None:

@@ -281,7 +281,7 @@
     "enabled": false,
     "_level_comment": "doux | moyen | maximum. Chaque cran ouvre aussi de nouveaux effets. IGNORE quand 'theme' est renseigne (voir ci-dessous) : un theme remplace les rafales, il ne s'y ajoute pas.",
     "level": "moyen",
-    "_theme_comment": "\"\" | pluie | etoiles | confettis | braises | mystere. Une AMBIANCE continue sur tout le clip (pluie qui tombe, ciel etoile + arc-en-ciel, confettis, braises, assombrissement des bords) au lieu des rafales du cran d'intensite -- choisie a la main dans l'accueil, jamais devinee : ce logiciel ne lit aucune humeur dans ce qui est dit. Catalogue et libelles dans editing/delire.py (THEMES/THEME_LABELS) ; les textures (sauf 'mystere', qui n'en a pas) vivent dans assets/delire/, generees par tools/generate_delire_assets.py.",
+    "_theme_comment": "\"\" | chimpanzee | confettis | euros | flammes | fleurs | pluie | infos | intelligence | manga | mystere. Une AMBIANCE continue sur tout le clip (une video fond vert incrustee par chromakey, ou -- pour 'mystere' seul -- un assombrissement des bords) au lieu des rafales du cran d'intensite -- choisie a la main dans l'accueil. Catalogue et libelles dans editing/delire.py (THEMES/THEME_LABELS) ; les videos (sauf 'mystere', qui n'en a pas) vivent dans assets/delire/<nom>.mp4, fournies telles quelles (pas generees).",
     "theme": "",
     "_seed_comment": "0 = derive du debut du clip, donc reproductible sans etre identique d'un clip a l'autre. Une valeur fixe rend DEUX rendus du meme clip rigoureusement identiques : utile pour comparer deux reglages. Sans effet sur un theme, qui n'a rien d'aleatoire.",
     "seed": 0,

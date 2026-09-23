@@ -11,27 +11,56 @@ DEUX FAMILLES DE THEMES, DEUX MECANISMES :
   d'insertion que les rafales de video/delire_filters.py, voir
   `_delire_filters` dans video/filter_graph.py) -- assombrissement des bords
   (`vignette`) et legere desaturation (`eq`), tous deux natifs a ffmpeg et
-  acceptant l'option `enable`. Aucune image a charger, aucune entree
+  acceptant l'option `enable`. Aucune video a charger, aucune entree
   supplementaire.
 
-- Les quatre autres (pluie, etoiles, confettis, braises) posent un ou
-  plusieurs CALQUES -- une texture chargee comme une ENTREE SUPPLEMENTAIRE et
-  superposee via `overlay`, exactement comme le filigrane (video/watermark.py)
-  l'est deja. `overlay_layers()` renvoie, pour un theme donne, la liste des
-  calques PRETS A ETRE BRANCHES : chacun porte son chemin de fichier, s'il a
-  besoin d'etre boucle (`-loop 1`, pour que `scroll` ait plusieurs images
-  differentes a faire defiler -- une image fixe n'en donnerait qu'une seule,
-  qu'`overlay` repeterait alors telle quelle) et la chaine de filtres qui le
-  prepare (mise a l'echelle, opacite, defilement). C'est
+- Les neuf autres posent chacun une VRAIE VIDEO fond vert comme ENTREE
+  SUPPLEMENTAIRE, bouclee via `-stream_loop -1` (la video source dure
+  rarement aussi longtemps que le clip -- la boucler la fait couvrir toute sa
+  duree, exactement comme `-t` en aval borne deja la sortie) et superposee
+  via `overlay`, meme mecanisme que le filigrane (video/watermark.py).
+  `overlay_layers()` renvoie, pour un theme donne, la liste des calques PRETS
+  A ETRE BRANCHES -- chacun porte son chemin de fichier et la chaine de
+  filtres qui le prepare (fond vert retire, mis a l'echelle, opacite). C'est
   video/filter_graph.py qui sait ENSUITE brancher ces calques sur la chaine
   ffmpeg -- ce module ne le fait jamais lui-meme.
+
+LE CHROMAKEY : les neuf videos sont des rushes fond vert REELS (pas des
+captures de studio calibrees), donc leur vert differe legerement d'un
+tournage a l'autre -- mesure PAR CLIP (PIL sur une frame extraite en PNG sans
+perte, mode statistique sur l'image entiere), de #00CA00 (fleurs, tres
+sature) a #12850F (flammes, plus sombre) ; chaque `ThemeLayer` porte donc ses
+propres `chroma_color`/`chroma_similarity`/`chroma_blend` (video/delire_theme.py),
+il n'existe plus de reglage partage entre les neuf.
+
+Une PREMIERE version utilisait une couleur/tolerance MOYENNE partagee entre
+les neuf themes (avec un `blend` genereux, 0.08). Un rendu de "chimpanzee"
+compose sur un fond de test bariole a revele un bug : le pelage sombre du
+chimpanze devenait PARTIELLEMENT TRANSPARENT sur toute sa surface (pas
+seulement ses bords), laissant les couleurs du fond y transparaitre. Isole en
+comparant un rendu sans chromakey (opaque, prouvant que le probleme venait
+bien de ce filtre) puis un rendu avec chromakey a `blend=0` (a nouveau
+parfaitement opaque) : le parametre `blend` de `chromakey` applique un
+degrade de transparence a TOUT pixel dont la distance chromatique a la
+couleur cle est dans la plage [similarity, similarity+blend] -- pas
+uniquement aux bords du sujet decoupe. Le pelage, bien que visuellement
+sombre, a une composante chromatique legerement verdatre qui tombait dans
+cette bande de transition. Sur un fond de test UNI (noir, rouge), cette
+transparence partielle se fondait avec le fond et passait inapercue ; sur un
+fond BARIOLE, elle devenait un bleed-through flagrant. D'ou : `chroma_blend`
+reste desormais proche de 0 pour tous les themes (une coupure dure, sans
+degrade etendu), et chaque theme garde sa couleur EXACTEMENT mesuree plutot
+qu'une moyenne. Le cas "pluie" reste le plus delicat : les gouttes y sont
+presque de la meme teinte que le fond (de l'eau translucide sur un fond vert
+reste verdatre), donc meme bien reglee cette video ne donne qu'un effet TENU
+-- limite physique du rush, pas un reglage a corriger indefiniment.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from editing.delire import THEME_MYSTERE
-from video.delire_theme import asset_path, layers_for, scroll_vertical_for_fps
+from video.delire_theme import ANCHOR_BOTTOM, ANCHOR_TOP, FIT_COVER, asset_path, layers_for
 
 
 def mystere_chain_filters() -> list:
@@ -52,47 +81,73 @@ def mystere_chain_filters() -> list:
 class PreparedOverlay:
     """Un calque pret a etre branche par video/filter_graph.py.
 
-    `needs_loop` distingue les deux mecanismes possibles pour une image fixe
-    en entree ffmpeg : sans boucle, une seule image, tenue telle quelle
-    pendant tout le clip (le filigrane) ; avec boucle, un flux continu
-    d'images identiques que `scroll` peut alors faire glisser."""
+    `is_video` dit au compositeur d'utiliser `-stream_loop -1` (une video de
+    duree finie, bouclee pour couvrir tout le clip) plutot que `-loop 1`
+    (une image fixe transformee en flux continu) -- seul le second cas
+    existait avant que les themes ne deviennent des videos fond vert."""
 
     asset_path: str
-    needs_loop: bool
+    is_video: bool
     prep_filter: str
-    # Toujours "0:0" pour un theme (la texture couvre deja tout le cadre,
-    # voir tools/generate_delire_assets.py) -- distinct du filigrane, dont la
+    # Toujours "0:0" pour un theme (le calque prepare occupe deja tout le
+    # cadre de sortie, cover comme contain) -- distinct du filigrane, dont la
     # position se choisit dans les Parametres.
     position: str = "0:0"
+
+
+def _prep_filter(layer, out_w: int, out_h: int) -> str:
+    """La chaine de preparation d'UN calque : fond vert retire, mis a
+    l'echelle dans le cadre de sortie sans jamais deformer l'image (voir
+    video/delire_theme.py pour le choix cover/contain par theme), opacite
+    appliquee en dernier."""
+    chroma = (
+        f"chromakey=color={layer.chroma_color}"
+        f":similarity={layer.chroma_similarity}:blend={layer.chroma_blend}"
+    )
+
+    if layer.fit == FIT_COVER:
+        # Echelle sur la HAUTEUR (toujours paire via scale=-2:H) puis rognage
+        # horizontal centre : remplit tout le cadre, au prix des bords
+        # lateraux -- convient a un sujet deja centre dans son rush.
+        chain = [f"scale=-2:{out_h}", f"crop={out_w}:{out_h}", chroma, "format=rgba"]
+    else:
+        # Echelle sur la LARGEUR (toujours paire via scale=W:-2), aucun
+        # rognage : `pad` complete la hauteur manquante par un bandeau
+        # TRANSPARENT (color=black@0.0, pas noir opaque) plutot que de
+        # perdre le moindre bord -- necessaire des qu'un element fixe
+        # proche d'un bord du rush importe (le bandeau "LIVE" du theme
+        # "infos", constate en testant "cover" dessus avant de corriger).
+        if layer.anchor == ANCHOR_TOP:
+            y_expr = "0"
+        elif layer.anchor == ANCHOR_BOTTOM:
+            y_expr = f"{out_h}-ih"
+        else:
+            y_expr = f"({out_h}-ih)/2"
+        chain = [f"scale={out_w}:-2", chroma, f"pad={out_w}:{out_h}:0:{y_expr}:color=black@0.0", "format=rgba"]
+
+    if layer.opacity < 1.0:
+        chain.append(f"colorchannelmixer=aa={layer.opacity:.3f}")
+    return ",".join(chain)
 
 
 def overlay_layers(theme: str, out_w: int, out_h: int, fps: float) -> list:
     """Les calques d'un theme, DANS L'ORDRE DE SUPERPOSITION, ou une liste
     vide si le theme n'en porte aucun ("mystere", ou un theme inconnu/vide).
 
-    Chaque calque est mis a l'echelle de sortie AVANT d'etre boucle-defile :
-    `scroll` deplace le calque d'une fraction de SA PROPRE hauteur, donc la
-    mise a l'echelle doit avoir deja eu lieu pour que cette fraction
-    corresponde au cadre final, pas a la taille source de la texture.
+    `fps` n'est plus utilise ici (l'ancien mecanisme scroll+PNG en avait
+    besoin pour compenser sa vitesse de defilement selon la cadence source ;
+    une video fond vert n'a pas ce probleme, `overlay` gere deja des cadences
+    d'entree differentes) -- garde dans la signature pour que
+    video/filter_graph.py n'ait pas a distinguer ses appelants.
     """
     if theme == THEME_MYSTERE:
         return []
 
-    out = []
-    for layer in layers_for(theme):
-        vertical = scroll_vertical_for_fps(layer.scroll_vertical, fps)
-        needs_loop = vertical != 0.0
-        chain = [f"scale={out_w}:{out_h}", "format=rgba",
-                 f"colorchannelmixer=aa={layer.opacity:.3f}"]
-        if needs_loop:
-            # scroll= sans enable : le defilement court sur toute la duree du
-            # calque, qui EST celle du clip (voir needs_loop plus haut -- un
-            # calque statique, comme l'arc-en-ciel, n'a justement pas besoin
-            # d'etre boucle pour etre tenu tout du long).
-            chain.append(f"scroll=vertical={vertical:.6f}")
-        out.append(PreparedOverlay(
+    return [
+        PreparedOverlay(
             asset_path=str(asset_path(layer.filename)),
-            needs_loop=needs_loop,
-            prep_filter=",".join(chain),
-        ))
-    return out
+            is_video=True,
+            prep_filter=_prep_filter(layer, out_w, out_h),
+        )
+        for layer in layers_for(theme)
+    ]

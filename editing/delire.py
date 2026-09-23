@@ -70,32 +70,48 @@ DEFAULT_LEVEL = "moyen"
 
 # THEMES : une AMBIANCE continue sur tout le clip, plutot que des rafales sur
 # des mots precis. Choisie A LA MAIN, jamais devinee -- ce module ne sait pas
-# lire une humeur dans ce qui est dit, et personne ici n'a de detecteur de
-# sentiment a lui pretendre. C'est le meme principe que le cran d'intensite :
-# un reglage que l'utilisateur pose, pas un jugement que le logiciel porte.
+# lire une humeur dans ce qui est dit. C'est le meme principe que le cran
+# d'intensite : un reglage que l'utilisateur pose, pas un jugement que le
+# logiciel porte.
 #
 # UN THEME REMPLACE LES RAFALES, IL NE S'Y AJOUTE PAS (voir build_theme_plan
-# plus bas) : un calque de pluie qui defile en continu et un glitch qui
-# tressaute sur un mot ne racontent pas la meme chose en meme temps, et les
-# deux ensemble liraient comme un bug plutot que comme un choix.
+# plus bas) : un calque video en continu et un glitch qui tressaute sur un mot
+# ne racontent pas la meme chose en meme temps, et les deux ensemble liraient
+# comme un bug plutot que comme un choix.
 #
-# "mystere" est a part : ce n'est PAS un calque pose sur l'image (aucun fichier
-# dans assets/delire/ ne le concerne), seulement un assombrissement des bords
-# et une desaturation legere -- voir video/delire_theme_filters.py pour la
-# raison (deux filtres ffmpeg natifs suffisent, aucune image a generer).
-THEME_PLUIE = "pluie"
-THEME_ETOILES = "etoiles"
+# CHAQUE THEME (sauf "mystere") EST UNE VRAIE VIDEO fond vert filmee, livree
+# dans assets/delire/<nom>.mp4 et incrustee par chromakey (voir
+# video/delire_theme_filters.py) -- pas une texture generee. Le nom du fichier
+# EST la cle du theme : pas de mapping indirect, garder les deux synchronises.
+#
+# "mystere" reste a part : ce n'est PAS un calque pose sur l'image (aucun
+# fichier dans assets/delire/ ne le concerne), seulement un assombrissement
+# des bords et une desaturation legere -- voir video/delire_theme_filters.py
+# pour la raison (deux filtres ffmpeg natifs suffisent, aucune video a poser).
+THEME_CHIMPANZEE = "chimpanzee"
 THEME_CONFETTIS = "confettis"
-THEME_BRAISES = "braises"
+THEME_EUROS = "euros"
+THEME_FLAMMES = "flammes"
+THEME_FLEURS = "fleurs"
+THEME_PLUIE = "pluie"
+THEME_INFOS = "infos"
+THEME_INTELLIGENCE = "intelligence"
+THEME_MANGA = "manga"
 THEME_MYSTERE = "mystere"
 
-THEMES = (THEME_PLUIE, THEME_ETOILES, THEME_CONFETTIS, THEME_BRAISES, THEME_MYSTERE)
+THEMES = (THEME_CHIMPANZEE, THEME_CONFETTIS, THEME_EUROS, THEME_FLAMMES, THEME_FLEURS,
+         THEME_PLUIE, THEME_INFOS, THEME_INTELLIGENCE, THEME_MANGA, THEME_MYSTERE)
 
 THEME_LABELS = {
-    THEME_PLUIE: "Triste — pluie",
-    THEME_ETOILES: "Joyeux — étoiles & arc-en-ciel",
-    THEME_CONFETTIS: "Fête — confettis",
-    THEME_BRAISES: "Colère — braises",
+    THEME_CHIMPANZEE: "Chimpanzé",
+    THEME_CONFETTIS: "Confettis",
+    THEME_EUROS: "Euros",
+    THEME_FLAMMES: "Flammes",
+    THEME_FLEURS: "Fleurs",
+    THEME_PLUIE: "Pluie",
+    THEME_INFOS: "Infos — BREAKING NEWS",
+    THEME_INTELLIGENCE: "Intelligence",
+    THEME_MANGA: "Manga",
     THEME_MYSTERE: "Mystère — sombre",
 }
 
