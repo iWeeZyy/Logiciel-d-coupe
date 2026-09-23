@@ -160,7 +160,7 @@ def test_the_intro_adds_two_extra_inputs_after_the_main_video():
     assert args[:4] == ["-ss", "10.000", "-i", "in.mp4"]
     assert args.count("-i") == 3
     assert "intro.mp4" in args
-    assert any(a.endswith("intro_follow_mask.png") for a in args)
+    assert any(a.endswith("intro_follow_mask.mp4") for a in args)
 
 
 def test_the_intro_overlay_carries_a_time_bounded_enable_expression():

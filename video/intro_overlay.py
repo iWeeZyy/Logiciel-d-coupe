@@ -14,7 +14,7 @@ large pour contenir le mouvement entier sans jamais le rogner. A retuner si
 l'asset change de composition.
 
 LA TRANSPARENCE PASSE PAR UN MASQUE PRECALCULE (assets/branding/
-intro_follow_mask.png, genere par tools/generate_intro_mask.py), pas par un
+intro_follow_mask.mp4, genere par tools/generate_intro_mask.py), pas par un
 colorkey au rendu. Un colorkey supprimerait TOUT le noir sans distinction --
 or le logo contient lui-meme du noir voulu (le disque a l'interieur de
 l'anneau, sous "ClipsOfStreams") : un colorkey le rendait transparent en
@@ -22,6 +22,19 @@ meme temps que le fond, laissant voir le clip a travers le logo. Le masque,
 lui, ne retire que le noir ATTEIGNABLE DEPUIS LE BORD par remplissage
 (flood-fill, voir le script de generation) -- le disque interieur, entoure
 par l'anneau neon, n'est jamais atteint et reste opaque.
+
+LE MASQUE EST UNE VIDEO, PAS UNE IMAGE FIXE -- une image unique suffisait
+tant que l'anneau ne bougeait pas, mais il GROSSIT depuis rien pendant la
+premiere seconde environ de l'animation ; un masque fixe, construit sur une
+image tardive (anneau pleinement etabli), continuait a marquer cette zone
+comme opaque avant meme que l'anneau y soit dessine, produisant un aplat
+noir plein cadre au debut de chaque clip (signale sur les sorties 9:16, ou
+l'incrustation occupe une plus grande part du cadre -- le defaut existe en
+realite dans tous les formats). tools/generate_intro_mask.py flood-fill
+desormais CHAQUE image de intro_follow.mp4 individuellement et encode le
+resultat en video, alignee image pour image avec elle -- alphamerge n'a pas
+eu a changer, il prenait deja son second flux comme une source video
+ordinaire.
 
 Module PUR comme watermark.py et filter_graph.py : construit des morceaux de
 filtre ffmpeg, ne lit ni ne decode aucune image. Les dimensions/duree reelles
@@ -39,7 +52,7 @@ from dataclasses import dataclass
 _REF_W, _REF_H = 1080, 1920
 _CROP_X, _CROP_Y, _CROP_W, _CROP_H = 40, 330, 1000, 1140
 
-_MASK_ASSET = "branding/intro_follow_mask.png"
+_MASK_ASSET = "branding/intro_follow_mask.mp4"
 
 DEFAULT_SIZE_PERCENT = 35.0
 DEFAULT_MARGIN_PERCENT = 4.0
