@@ -51,6 +51,33 @@ class TestFitFontForLines:
         assert size == 44  # taille plancher atteinte
         assert len(lines) <= 2  # jamais plus que le nombre de lignes demande, meme si ca deborde
 
+    def test_lines_dropped_at_the_floor_size_are_marked_with_an_ellipsis(self):
+        # REGRESSION A EVITER : avant ce correctif, les lignes en trop
+        # etaient silencieusement supprimees -- un lecteur voyant la
+        # derniere ligne se terminer proprement croyait avoir lu le titre en
+        # entier.
+        draw = _draw()
+        long_text = "Un titre extremement long qui ne rentrera jamais en deux lignes courtes du tout"
+        font, lines, size = text_render.fit_font_for_lines(
+            draw, long_text, max_width=300, max_size=96, min_size=44, max_lines=2,
+        )
+        assert lines[-1].endswith("…")
+
+    def test_the_ellipsis_marked_line_never_overflows_the_width(self):
+        draw = _draw()
+        long_text = "Un titre extremement long qui ne rentrera jamais en deux lignes courtes du tout"
+        font, lines, size = text_render.fit_font_for_lines(
+            draw, long_text, max_width=300, max_size=96, min_size=44, max_lines=2,
+        )
+        assert draw.textlength(lines[-1], font=font) <= 300
+
+    def test_text_that_fits_within_max_lines_gets_no_ellipsis(self):
+        draw = _draw()
+        font, lines, size = text_render.fit_font_for_lines(
+            draw, "Un titre qui tient", max_width=1000, max_size=96, min_size=44, max_lines=2,
+        )
+        assert not any(line.endswith("…") for line in lines)
+
     def test_returned_size_matches_the_font_actually_used(self):
         draw = _draw()
         font, lines, size = text_render.fit_font_for_lines(

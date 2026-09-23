@@ -47,6 +47,21 @@ def wrap_text(draw, text: str, font, max_width: int) -> list[str]:
     return lines
 
 
+def _mark_line_as_cut(draw, line: str, font, max_width: int) -> str:
+    """Ajoute "…" a `line` pour signaler qu'il manque du texte apres elle --
+    jamais une ligne entiere disparue sans aucune trace visible. Retire des
+    mots un a un si necessaire pour que la ligne+ellipse tienne toujours dans
+    `max_width` (le mot le plus long a lui seul est garde tel quel, jamais
+    coupe en son milieu)."""
+    words = line.split()
+    while words:
+        candidate = " ".join(words) + "…"
+        if draw.textlength(candidate, font=font) <= max_width:
+            return candidate
+        words = words[:-1]
+    return "…"
+
+
 def fit_font_for_lines(draw, text: str, max_width: int, max_size: int, min_size: int,
                        max_lines: int, step: int = 6):
     """Reduit la taille de police jusqu'a ce que le texte tienne dans
@@ -54,8 +69,10 @@ def fit_font_for_lines(draw, text: str, max_width: int, max_size: int, min_size:
     size est renvoye separement plutot que lu sur `font.size`, car
     ImageFont.load_default() (repli sans aucune police TrueType disponible)
     n'expose pas toujours cet attribut selon la version de Pillow. Si meme la
-    taille minimale ne suffit pas, les lignes en trop sont coupees plutot que
-    de deborder du cadre."""
+    taille minimale ne suffit pas, les lignes en trop sont coupees -- mais la
+    derniere ligne gardee recoit alors un "…" (voir _mark_line_as_cut) pour
+    que la perte reste visible plutot que silencieuse : un lecteur qui voit
+    une phrase se terminer proprement croit avoir lu le titre en entier."""
     size = max_size
     while size >= min_size:
         font = load_font(size)
@@ -64,7 +81,11 @@ def fit_font_for_lines(draw, text: str, max_width: int, max_size: int, min_size:
             return font, lines, size
         size -= step
     font = load_font(min_size)
-    return font, wrap_text(draw, text, font, max_width)[:max_lines], min_size
+    lines = wrap_text(draw, text, font, max_width)
+    kept = lines[:max_lines]
+    if len(lines) > max_lines and kept:
+        kept[-1] = _mark_line_as_cut(draw, kept[-1], font, max_width)
+    return font, kept, min_size
 
 
 def draw_outlined_text(draw, x_center: float, y_center: float, lines: list[str], font, size: int,

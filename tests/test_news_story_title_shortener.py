@@ -70,3 +70,30 @@ class TestBuildDisplayTitle:
     def test_a_non_rumor_title_is_never_prefixed(self):
         result = build_display_title("Le jeu sort officiellement demain", max_chars=90)
         assert not result.text.startswith("RUMEUR")
+
+    def test_a_title_with_a_nearby_sentence_boundary_is_cut_there_instead_of_mid_clause(self):
+        # La premiere phrase (58 caracteres) tient dans le budget de 70 avec
+        # de la marge -- preferee a une coupure de mot qui laisserait la
+        # deuxieme phrase commencee et coupee en plein milieu.
+        title = ("Le studio confirme la date de sortie du jeu. Le prix "
+                 "n'a en revanche toujours pas ete communique par l'editeur")
+        result = build_display_title(title, max_chars=70)
+        assert result.text == "Le studio confirme la date de sortie du jeu."
+        assert not result.text.endswith("…")  # une phrase complete n'a pas besoin d'ellipse
+        assert result.truncated is True
+
+    def test_a_too_short_first_sentence_falls_back_to_word_boundary(self):
+        # La premiere phrase (9 caracteres) recupererait trop peu du budget
+        # (ratio sous _SENTENCE_BOUNDARY_MIN_RATIO) -- mieux vaut couper sur
+        # un mot plus loin que produire un titre inutilement court.
+        title = "Confirme. Un nouveau jeu de course arrive sur toutes les plateformes cette annee"
+        result = build_display_title(title, max_chars=40)
+        assert result.text != "Confirme."
+        assert result.text.endswith("…")
+
+    def test_a_sentence_boundary_result_stays_a_verbatim_prefix(self):
+        title = ("Le studio confirme officiellement la date de sortie du jeu tres attendu. "
+                 "Deuxieme phrase qui ne doit jamais apparaitre ici")
+        result = build_display_title(title, max_chars=90)
+        body = result.text.rstrip("…").strip()
+        assert title.startswith(body)

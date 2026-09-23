@@ -1,6 +1,8 @@
 """Raccourcissement du titre d'une Story : factuel, ne raccourcit que ce qui
 existe deja -- n'invente jamais un mot, ne resume pas, ne reformule pas.
-Coupe uniquement sur une frontiere de mot, jamais au milieu d'un mot.
+Coupe sur une frontiere de PHRASE quand le texte source en offre une assez
+proche de la limite (une phrase complete plutot qu'une clause tronquee),
+sinon sur la derniere frontiere de mot -- jamais au milieu d'un mot.
 
 La detection de rumeur est deliberement conservatrice : elle ne se declenche
 QUE si le texte source (titre ou resume du flux) le dit deja lui-meme
@@ -41,13 +43,38 @@ def is_rumor(title: str, summary: str = "") -> bool:
     return any(marker in haystack for marker in _RUMOR_MARKERS)
 
 
+_SENTENCE_ENDERS = (".", "!", "?")
+
+# Une info coupee en pleine clause principale ("Liberty City aurait dû…") se
+# lit moins bien qu'une phrase entiere legerement plus courte. On ne prefere
+# une frontiere de phrase a la coupure de mot que si elle ne sacrifie pas
+# trop de budget -- sinon un titre dont la premiere phrase fait 15
+# caracteres se retrouverait tronque bien plus court que necessaire.
+_SENTENCE_BOUNDARY_MIN_RATIO = 0.55
+
+
 def _truncate(text: str, max_chars: int) -> tuple[str, bool]:
-    """Coupe `text` a `max_chars` sur la derniere frontiere de mot avant la
-    limite -- jamais au milieu d'un mot. Renvoie (texte, a_ete_coupe)."""
+    """Coupe `text` a `max_chars`, sans jamais couper un mot ni inventer de
+    texte. Prefere la derniere frontiere de PHRASE avant la limite (un point,
+    un point d'exclamation ou d'interrogation deja present dans le texte
+    source) quand elle recupere au moins `_SENTENCE_BOUNDARY_MIN_RATIO` du
+    budget -- une phrase complete raconte mieux l'info qu'une clause coupee
+    en plein milieu. Sinon retombe sur la derniere frontiere de mot, comme
+    avant. Renvoie (texte, a_ete_coupe)."""
     text = text.strip()
     if len(text) <= max_chars:
         return text, False
+
     cut = text[:max_chars]
+
+    best_sentence_end = -1
+    for ender in _SENTENCE_ENDERS:
+        pos = cut.rfind(ender)
+        if pos > best_sentence_end:
+            best_sentence_end = pos
+    if best_sentence_end >= max_chars * _SENTENCE_BOUNDARY_MIN_RATIO:
+        return cut[:best_sentence_end + 1].strip(), True
+
     last_space = cut.rfind(" ")
     if last_space > 0:
         cut = cut[:last_space]
