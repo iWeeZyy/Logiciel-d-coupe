@@ -85,11 +85,15 @@ class ThemeLayer:
 
 
 # Le calque video de chaque theme, avec son ajustement de cadre choisi a
-# l'oeil (voir les raisons dans le docstring du module) -- toutes les
-# opacites restent hautes (0.85-1.0) : ce sont des incrustations REELLES
-# (un chimpanze, des flammes...), pas des textures decoratives discretes
-# comme l'etaient les anciens PNG -- les rendre trop transparentes leur
-# ferait perdre leur lisibilite.
+# l'oeil (voir les raisons dans le docstring du module). Les opacites ont ete
+# ABAISSEES d'un cran (~0.15-0.20) par rapport a leur reglage d'origine
+# (0.85-1.0) : signale par l'utilisateur, le clip sous-jacent restait trop
+# masque, en particulier sous les themes en FIT_COVER (chimpanzee, pluie,
+# intelligence, manga) qui remplissent tout le cadre et ne laissent donc
+# passer le clip que par la transparence de la couche elle-meme, sans bande
+# de cadre transparente pour compenser. Le plancher reste 0.65 : en dessous,
+# l'effet perd sa lisibilite (constat d'origine toujours valable, seul le
+# point d'equilibre a bouge).
 #
 # chroma_color mesure PAR CLIP (echantillonnage PIL sur une frame extraite en
 # PNG sans perte, moyenne/mode sur l'image entiere -- pas un JPEG compresse,
@@ -101,23 +105,23 @@ class ThemeLayer:
 # isolant le bug sur "chimpanzee").
 _LAYERS = {
     THEME_CHIMPANZEE: (
-        ThemeLayer("chimpanzee.mp4", fit=FIT_COVER, opacity=1.0,
+        ThemeLayer("chimpanzee.mp4", fit=FIT_COVER, opacity=0.80,
                    chroma_color="0x0ECA42", chroma_similarity=0.14, chroma_blend=0.02),
     ),
     THEME_CONFETTIS: (
-        ThemeLayer("confettis.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.90,
+        ThemeLayer("confettis.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
                    chroma_color="0x00FF01", chroma_similarity=0.14, chroma_blend=0.02),
     ),
     THEME_EUROS: (
-        ThemeLayer("euros.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.90,
+        ThemeLayer("euros.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
                    chroma_color="0x0FFA05", chroma_similarity=0.14, chroma_blend=0.02),
     ),
     THEME_FLAMMES: (
-        ThemeLayer("flammes.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_BOTTOM, opacity=0.90,
+        ThemeLayer("flammes.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_BOTTOM, opacity=0.75,
                    chroma_color="0x12850F", chroma_similarity=0.17, chroma_blend=0.02),
     ),
     THEME_FLEURS: (
-        ThemeLayer("fleurs.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.90,
+        ThemeLayer("fleurs.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
                    chroma_color="0x00CA00", chroma_similarity=0.14, chroma_blend=0.02),
     ),
     THEME_PLUIE: (
@@ -126,19 +130,19 @@ _LAYERS = {
         # similarity plus genereuse pour capter les variations du fond, mais
         # blend reste bas pour ne pas rendre les gouttes elles-memes
         # translucides jusqu'a disparaitre.
-        ThemeLayer("pluie.mp4", fit=FIT_COVER, opacity=0.85,
+        ThemeLayer("pluie.mp4", fit=FIT_COVER, opacity=0.68,
                    chroma_color="0x00FD16", chroma_similarity=0.26, chroma_blend=0.04),
     ),
     THEME_INFOS: (
-        ThemeLayer("infos.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=1.0,
+        ThemeLayer("infos.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.80,
                    chroma_color="0x1DCC0A", chroma_similarity=0.14, chroma_blend=0.02),
     ),
     THEME_INTELLIGENCE: (
-        ThemeLayer("intelligence.mp4", fit=FIT_COVER, opacity=0.85,
+        ThemeLayer("intelligence.mp4", fit=FIT_COVER, opacity=0.68,
                    chroma_color="0x0ECA42", chroma_similarity=0.18, chroma_blend=0.02),
     ),
     THEME_MANGA: (
-        ThemeLayer("manga.mp4", fit=FIT_COVER, opacity=0.90,
+        ThemeLayer("manga.mp4", fit=FIT_COVER, opacity=0.75,
                    chroma_color="0x12E10C", chroma_similarity=0.14, chroma_blend=0.02),
     ),
     # THEME_MYSTERE est absent DELIBEREMENT : voir video/delire_theme_filters.py,
