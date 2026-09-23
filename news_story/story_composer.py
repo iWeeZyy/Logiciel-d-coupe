@@ -46,11 +46,17 @@ _SCRIM_ALPHA = 150
 _SCRIM_PADDING = 28
 
 _TITLE_MAX_WIDTH_FRAC = 0.86
-# (taille max, taille min, lignes max) par gabarit -- BREAKING demande un
-# titre "tres court", NEWS un titre "court" (voir story_templates.py).
+# (taille max, taille min, lignes max) par gabarit -- BREAKING garde un
+# style plus imposant que NEWS (taille max plus grande), mais les deux
+# tolerent desormais BEAUCOUP plus de lignes a une taille bien plus petite :
+# ne jamais omettre un mot du titre prime sur "titre court" (demande
+# explicite -- mesure reelle : meme un titre de ~290 caracteres tient en
+# 5-6 lignes a 24px, voir story_templates.TemplateSpec). Un titre court
+# garde son rendu actuel : fit_font_for_lines() part de la taille MAX et ne
+# descend que si necessaire.
 _TITLE_SIZES = {
-    TEMPLATE_NEWS: (72, 40, 3),
-    TEMPLATE_BREAKING: (88, 48, 2),
+    TEMPLATE_NEWS: (72, 24, 6),
+    TEMPLATE_BREAKING: (88, 28, 4),
 }
 _TITLE_Y_FRAC = {"top": 0.16, "center": 0.50, "bottom": 0.82}
 _TITLE_Y_FRAC_AUTO = {TEMPLATE_NEWS: 0.80, TEMPLATE_BREAKING: 0.82}

@@ -16,16 +16,18 @@ TEMPLATE_BREAKING = "breaking"
 @dataclass(frozen=True)
 class TemplateSpec:
     """Ce qu'un gabarit affiche. `title_max_chars` borne le titre raccourci
-    (title_shortener.build_display_title) -- BREAKING est volontairement le
-    plus court : la spec demande un titre "tres court" pour ce gabarit, les
-    deux autres un titre "court".
+    (title_shortener.build_display_title) -- BREAKING reste le plus court
+    des deux, mais les deux budgets sont desormais tres larges : NE JAMAIS
+    OMETTRE DE MOT prime sur "titre court" (demande explicite -- un titre
+    RSS gaming reel depasse rarement 150-200 caracteres, un texte plus grand
+    ou sur plus de lignes est prefere a une info manquante).
 
     Les deux valeurs restent EN DESSOUS de la capacite reelle d'affichage
     (mesuree par un rendu Pillow reel avec video/text_render.fit_font_for_lines
-    a la taille de police minimale de chaque gabarit : ~103 caracteres pour
-    NEWS sur 3 lignes a 40px, ~58 pour BREAKING sur 2 lignes a 48px) --
-    une marge de securite est gardee car cette mesure varie legerement selon
-    les lettres du titre (un "M" prend plus de place qu'un "i")."""
+    a la taille de police minimale de chaque gabarit, voir story_composer._TITLE_SIZES :
+    un titre de ~290 caracteres tient deja en 5-6 lignes a 24px) -- au-dela
+    de ce plafond tres genereux, fit_font_for_lines() signale la coupure par
+    une ellipse plutot que de la faire silencieusement, voir son docstring."""
 
     key: str
     label: str
@@ -36,8 +38,8 @@ class TemplateSpec:
 
 TEMPLATES: tuple[TemplateSpec, ...] = (
     TemplateSpec(key=TEMPLATE_IMAGE, label="Image", show_title=False, show_badge=False, title_max_chars=0),
-    TemplateSpec(key=TEMPLATE_NEWS, label="News", show_title=True, show_badge=False, title_max_chars=100),
-    TemplateSpec(key=TEMPLATE_BREAKING, label="Breaking", show_title=True, show_badge=True, title_max_chars=54),
+    TemplateSpec(key=TEMPLATE_NEWS, label="News", show_title=True, show_badge=False, title_max_chars=300),
+    TemplateSpec(key=TEMPLATE_BREAKING, label="Breaking", show_title=True, show_badge=True, title_max_chars=200),
 )
 
 _BY_KEY = {t.key: t for t in TEMPLATES}

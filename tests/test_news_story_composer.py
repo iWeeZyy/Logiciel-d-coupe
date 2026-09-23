@@ -197,6 +197,24 @@ class TestManualOverrides:
         drawn_texts = " ".join(" ".join(lines) for lines in calls)
         assert "RUMEUR" in drawn_texts
 
+    def test_a_long_realistic_title_is_never_missing_a_word(self, monkeypatch, tmp_path):
+        # REGRESSION A EVITER : un titre RSS gaming ordinaire, meme long,
+        # doit apparaitre EN ENTIER -- "c'est pas grave si ca en fait un
+        # grand texte" (demande explicite), tant qu'aucun mot ne manque.
+        calls = []
+        monkeypatch.setattr(story_composer, "draw_outlined_text",
+                            lambda draw, x, y, lines, *a, **k: calls.append(list(lines)))
+        src = _solid(tmp_path / "src.jpg", (1920, 1080), (20, 20, 20))
+        title = ("Pourquoi 90% de ces joueurs sont favorables a la prise de poids des "
+                 "heros de jeux video comme dans GTA 6 ?")
+        compose_story(src, tmp_path / "out.png", StoryOptions(
+            template=TEMPLATE_NEWS, title=title, source_label="Jeuxvideo.com",
+        ))
+        title_lines = calls[0]  # le titre est toujours dessine en premier
+        drawn = " ".join(title_lines)
+        assert drawn.rstrip("…").strip() == title
+        assert not drawn.endswith("…")
+
 
 def _center_region_differs_from_background(image: Image.Image, background: tuple) -> bool:
     """Vrai si au moins un pixel de la zone centrale (celle du logo, pose au
