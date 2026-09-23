@@ -198,34 +198,35 @@ class TestManualOverrides:
         assert "RUMEUR" in drawn_texts
 
 
-def _top_right_region_differs_from_background(image: Image.Image, background: tuple) -> bool:
-    """Vrai si au moins un pixel de la zone haut-droite (celle du logo) ne
-    correspond plus au fond uni d'origine -- une sonde sur un pixel unique
-    tomberait parfois sur un coin anti-aliase transparent du logo et donnerait
-    un faux negatif."""
-    for x in range(900, 1080, 4):
-        for y in range(10, 200, 4):
+def _center_region_differs_from_background(image: Image.Image, background: tuple) -> bool:
+    """Vrai si au moins un pixel de la zone centrale (celle du logo, pose au
+    milieu de l'image sur demande explicite) ne correspond plus au fond uni
+    d'origine -- une sonde sur un pixel unique tomberait parfois sur un coin
+    anti-aliase transparent du logo et donnerait un faux negatif."""
+    cx, cy = image.width // 2, image.height // 2
+    for x in range(cx - 90, cx + 90, 4):
+        for y in range(cy - 90, cy + 90, 4):
             if image.getpixel((x, y)) != background:
                 return True
     return False
 
 
 class TestBranding:
-    def test_branding_disabled_leaves_the_top_right_corner_untouched(self, tmp_path):
+    def test_branding_disabled_leaves_the_center_untouched(self, tmp_path):
         background = (20, 20, 20)
         src = _solid(tmp_path / "src.jpg", (1920, 1080), background)
         out = tmp_path / "out.png"
         compose_story(src, out, StoryOptions(template=TEMPLATE_IMAGE, source_label="VGC", branding_enabled=False))
         with Image.open(out) as result:
-            assert not _top_right_region_differs_from_background(result, background)
+            assert not _center_region_differs_from_background(result, background)
 
-    def test_branding_enabled_changes_the_top_right_corner(self, tmp_path):
+    def test_branding_enabled_changes_the_center(self, tmp_path):
         background = (20, 20, 20)
         src = _solid(tmp_path / "src.jpg", (1920, 1080), background)
         out = tmp_path / "out.png"
         compose_story(src, out, StoryOptions(template=TEMPLATE_IMAGE, source_label="VGC", branding_enabled=True))
         with Image.open(out) as result:
-            assert _top_right_region_differs_from_background(result, background)
+            assert _center_region_differs_from_background(result, background)
 
     def test_a_missing_logo_file_does_not_break_the_export(self, monkeypatch, tmp_path):
         from pathlib import Path

@@ -72,9 +72,12 @@ _BADGE_PAD_Y = 14
 # Meme raisonnement que video/watermark.py (DEFAULT_SIZE_PERCENT) : la taille
 # du logo est un pourcentage du PLUS PETIT cote, jamais de la largeur seule,
 # pour qu'il paraisse aussi gros quelle que soit la forme de l'image source.
+# Centre sur le canvas (demande explicite) plutot qu'en coin : une marque au
+# milieu de l'image lit comme un veritable filigrane, pas comme un accent de
+# coin -- d'ou aussi une opacite plus faible qu'un logo de coin, pour rester
+# discrete malgre sa position bien plus visible.
 _BRANDING_SIZE_FRAC = 0.12
-_BRANDING_MARGIN_FRAC = 0.035
-_BRANDING_OPACITY = 0.85
+_BRANDING_OPACITY = 0.6
 
 
 @dataclass(frozen=True)
@@ -206,9 +209,11 @@ def _draw_badge(canvas) -> None:
 
 def _paste_branding(canvas) -> None:
     """Incrustation du logo ClipsOfStreams EXISTANT (video/watermark.py) --
-    jamais un logo invente pour cette fonctionnalite. Silencieux si le
-    fichier est absent : une Story sans marque reste utilisable, une
-    exception ne devrait jamais faire echouer tout l'export pour ca."""
+    jamais un logo invente pour cette fonctionnalite. Centre sur l'image
+    plutot qu'en coin (demande explicite) : c'est ce qui le fait lire comme
+    un veritable filigrane. Silencieux si le fichier est absent : une Story
+    sans marque reste utilisable, une exception ne devrait jamais faire
+    echouer tout l'export pour ca."""
     from PIL import Image
 
     from video.watermark import default_image_path
@@ -230,8 +235,7 @@ def _paste_branding(canvas) -> None:
                 alpha = logo.split()[3].point(lambda a: int(a * _BRANDING_OPACITY))
                 logo.putalpha(alpha)
 
-            margin = int(_BRANDING_MARGIN_FRAC * min(CANVAS_W, CANVAS_H))
-            x, y = CANVAS_W - margin - logo.width, margin
+            x, y = (CANVAS_W - logo.width) // 2, (CANVAS_H - logo.height) // 2
             canvas.paste(logo, (x, y), mask=logo)
     except Exception as e:  # noqa: BLE001 -- une marque ratee ne doit pas faire echouer l'export
         logger.warning(f"Incrustation de marque ignoree : {e}")
