@@ -34,11 +34,15 @@ def _even(n: int) -> int:
     return n - (n % 2)
 
 
-def base_crop_size(src_w: int, src_h: int) -> tuple[int, int]:
-    """Plus grande fenetre 9:16 tenant dans l'image source."""
-    if src_w / src_h > _TARGET_ASPECT:
-        return _even(min(src_w, round(src_h * _TARGET_ASPECT))), _even(src_h)
-    return _even(src_w), _even(min(src_h, round(src_w / _TARGET_ASPECT)))
+def base_crop_size(src_w: int, src_h: int, target_aspect: float = _TARGET_ASPECT) -> tuple[int, int]:
+    """Plus grande fenetre a `target_aspect` (largeur/hauteur) tenant dans
+    l'image source -- 9:16 par defaut. Le mode portrait webcam+gameplay
+    (FIT_SPLIT_WEBCAM) passe l'aspect propre a chaque bande (bien plus large
+    que haute pour la webcam, bien plus haute que large pour le jeu) : c'est
+    la meme geometrie, appliquee a un rectangle different."""
+    if src_w / src_h > target_aspect:
+        return _even(min(src_w, round(src_h * target_aspect))), _even(src_h)
+    return _even(src_w), _even(min(src_h, round(src_w / target_aspect)))
 
 
 def piecewise_expression(points: list[tuple[float, float]], variable: str = "t") -> str:
@@ -89,6 +93,48 @@ def _framing_points(
     return xs, ys
 
 
+def _fixed_crop_rect(src_w: int, src_h: int, target_aspect: float,
+                     hint) -> tuple[int, int, int, int]:
+    """Rectangle de crop FIXE (x, y, w, h) a `target_aspect`, vise sur `hint`
+    si fourni, sinon centre. Generalisation de video.cropper.compute_crop_rect
+    a un aspect quelconque -- celle-ci reste cablee sur le 9:16 global et sert
+    ailleurs (miniatures, images d'article) ; la dupliquer ici pour un aspect
+    par bande evite de toucher a un module partage par des chemins sans
+    rapport avec le mode portrait webcam+gameplay."""
+    crop_w, crop_h = base_crop_size(src_w, src_h, target_aspect)
+    if hint is not None:
+        x = hint.x_center_frac * src_w - crop_w / 2
+        y = hint.y_center_frac * src_h - crop_h / 2
+    else:
+        x = (src_w - crop_w) / 2
+        y = (src_h - crop_h) / 2
+    x = _even(int(max(0, min(x, src_w - crop_w))))
+    y = _even(int(max(0, min(y, src_h - crop_h))))
+    return x, y, crop_w, crop_h
+
+
+def _crop_stage(plan: FramingPlan | None, face_hint, edit_list: EditList,
+                src_w: int, src_h: int, target_aspect: float) -> tuple[str, int, int]:
+    """Le filtre `crop=...` (sans mise a l'echelle) pour UNE fenetre a
+    `target_aspect`, plus sa taille source (crop_w, crop_h) -- reutilise par
+    le cadrage classique et chacune des deux bandes du mode portrait
+    webcam+gameplay, seul `target_aspect` differant entre les trois."""
+    moving = plan is not None and not plan.is_static and len(plan.keyframes) >= 2
+    if moving:
+        crop_w, crop_h = base_crop_size(src_w, src_h, target_aspect)
+        xs, ys = _framing_points(plan, edit_list, src_w, src_h, crop_w, crop_h)
+        x_expr = piecewise_expression(xs)
+        y_expr = piecewise_expression(ys)
+        return f"crop={crop_w}:{crop_h}:x='{x_expr}':y='{y_expr}'", crop_w, crop_h
+
+    hint = face_hint
+    if plan is not None and plan.keyframes:
+        kf = plan.keyframes[0]
+        hint = CenterHint(kf.cx, kf.cy)
+    x, y, crop_w, crop_h = _fixed_crop_rect(src_w, src_h, target_aspect, hint)
+    return f"crop={crop_w}:{crop_h}:{x}:{y}", crop_w, crop_h
+
+
 FILL_BLACK = "noir"
 FILL_BLUR = "flou"
 
@@ -103,9 +149,24 @@ FILL_BLUR = "flou"
 # ne doit sortir du champ : un plan large, un paysage, un tableau de jeu. Un
 # clip 16:9 poste en vertical y gagne un cadre rempli au lieu de deux bandes
 # noires ajoutees par la plateforme.
+#
+# `webcam_gameplay` : la camera du streamer en bande du HAUT, le jeu en bande
+# du BAS -- le rendu du mode "Telecharger en mode portrait" de Twitch, compose
+# ici plutot que recupere tout fait (Twitch ne l'expose ni via son API Helix ni
+# via yt-dlp, voir editing/subject.py). Necessite une webcam identifiee de
+# facon fiable (editing/subject.webcam_track) ; sans elle, retombe
+# silencieusement sur FIT_CROP -- voir build_video_chain.
 FIT_CROP = "recadrer"
 FIT_WHOLE = "entier"
-FIT_MODES = (FIT_CROP, FIT_WHOLE)
+FIT_SPLIT_WEBCAM = "webcam_gameplay"
+FIT_MODES = (FIT_CROP, FIT_WHOLE, FIT_SPLIT_WEBCAM)
+
+# Part de la hauteur de sortie reservee a la bande webcam (le reste va au
+# jeu). Twitch calcule autrement -- son rendu portrait connait la position
+# EXACTE de l'incrustation dans le flux qu'il compose lui-meme -- mais visant
+# le meme resultat visuel : un visage bien lisible sans reduire le jeu, qui
+# reste l'attraction principale du clip, a une bande trop etroite.
+WEBCAM_HEIGHT_FRAC = 0.35
 
 # Flou du fond. Assez fort pour qu'on ne lise plus l'image, assez faible pour
 # que les couleurs et le mouvement restent -- c'est ce qui fait que le cadre
@@ -275,6 +336,59 @@ def _delire_filters(plan) -> list:
     return filters
 
 
+def _split_webcam_chain(
+    edit_list: EditList, webcam_plan: FramingPlan, gameplay_plan: FramingPlan | None,
+    face_hint, src_w: int, src_h: int, out_w: int, out_h: int,
+    webcam_height_frac: float = WEBCAM_HEIGHT_FRAC,
+) -> str:
+    """Mode portrait webcam+gameplay (FIT_SPLIT_WEBCAM) : la webcam du
+    streamer en bande du HAUT, le jeu en bande du BAS, dans UN SEUL passage
+    ffmpeg -- comme le rendu "Telecharger en mode portrait" de Twitch, mais
+    compose ici plutot que recupere tout fait (voir editing/subject.py pour
+    pourquoi).
+
+    Chaque bande a sa PROPRE fenetre de cadrage, a son PROPRE aspect (la bande
+    webcam est bien plus large que haute, la bande jeu bien plus haute que
+    large) et son PROPRE plan de suivi : le meme mecanisme `crop=` anime que
+    le cadrage classique (`_crop_stage`), applique deux fois sur deux copies
+    de la source (`split=2`), puis empile verticalement (`vstack`, dans
+    l'ordre webcam-puis-jeu -- vstack empile ses entrees de haut en bas dans
+    l'ordre donne). Meme principe de composition multi-flux que
+    `landscape_fill_chain` (fond+premier plan), la seule autre de ce fichier.
+
+    `gameplay_plan` peut etre None (aucun sujet fiable en dehors de la
+    webcam) : `_crop_stage` sait deja retomber sur `face_hint` puis un crop
+    centre pur dans ce cas, exactement comme le cadrage classique.
+
+    Le zoom dynamique (zoompan) N'EST PAS applique ici, deliberement : il
+    zoome sur UNE fenetre, hors de propos des qu'il y en a deux independantes
+    -- l'animer sur les deux a la fois demanderait deux etages zoompan
+    distincts pour un gain que le split lui-meme, deja un changement de mise
+    en page marque, rend secondaire.
+    """
+    webcam_h = _even(round(out_h * webcam_height_frac))
+    gameplay_h = out_h - webcam_h  # le reste EXACT, jamais un second arrondi
+    webcam_aspect = out_w / webcam_h
+    gameplay_aspect = out_w / gameplay_h
+
+    webcam_crop, webcam_cw, _ = _crop_stage(webcam_plan, None, edit_list, src_w, src_h, webcam_aspect)
+    gameplay_crop, gameplay_cw, _ = _crop_stage(
+        gameplay_plan, face_hint, edit_list, src_w, src_h, gameplay_aspect)
+
+    webcam_sharpen = _sharpen(out_w / webcam_cw if webcam_cw else 0)
+    gameplay_sharpen = _sharpen(out_w / gameplay_cw if gameplay_cw else 0)
+
+    top = ",".join(p for p in (webcam_crop, _scale(out_w, webcam_h), webcam_sharpen) if p)
+    bottom = ",".join(p for p in (gameplay_crop, _scale(out_w, gameplay_h), gameplay_sharpen) if p)
+
+    return (
+        "split=2[wcsrc][gpsrc];"
+        f"[wcsrc]{top}[wctop];"
+        f"[gpsrc]{bottom}[gpbottom];"
+        "[wctop][gpbottom]vstack=inputs=2"
+    )
+
+
 def build_video_chain(
     *,
     edit_list: EditList,
@@ -289,6 +403,7 @@ def build_video_chain(
     fill: str = FILL_BLACK,
     fit: str = FIT_CROP,
     delire_plan=None,
+    webcam_plan: FramingPlan | None = None,
 ) -> str:
     """Chaine video (sans le montage, applique en amont) : cadrage, zoom,
     mise a l'echelle, sous-titres.
@@ -303,8 +418,23 @@ def build_video_chain(
     cadre est alors rempli exactement comme en paysage. Le suivi de visage et
     le zoom n'ont plus rien a decider dans ce cas -- il n'y a pas de choix a
     faire sur ce qu'on garde, on garde tout.
+
+    `fit` a `webcam_gameplay` demande le mode portrait webcam+gameplay --
+    mais seulement si `webcam_plan` est fourni (voir editing/subject.py,
+    editing/framing.build_webcam_framing_plan) : SANS webcam identifiee de
+    facon fiable, il n'y a rien a mettre dans la bande du haut, et ce mode
+    retombe silencieusement sur `recadrer` -- jamais une bande vide ni une
+    erreur (repli explicitement demande).
     """
     out_w, out_h = target_size
+
+    if fit == FIT_SPLIT_WEBCAM and webcam_plan is not None and out_w < out_h:
+        chain = [_split_webcam_chain(edit_list, webcam_plan, framing_plan, face_hint,
+                                     src_w, src_h, out_w, out_h)]
+        chain.extend(_delire_filters(delire_plan))
+        if ass_path:
+            chain.append(subtitle_filter(ass_path))
+        return ",".join(chain)
     if out_w >= out_h or fit == FIT_WHOLE:
         # L'image entiere est conservee, et le cadre est complete -- par des
         # bandes noires, ou par une copie floutee de l'image (voir
@@ -434,6 +564,7 @@ def build_ffmpeg_args(
     fit: str = FIT_CROP,
     delire_plan=None,
     intro=None,
+    webcam_plan: FramingPlan | None = None,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -443,6 +574,7 @@ def build_ffmpeg_args(
         edit_list=edit_list, framing_plan=framing_plan, zoom_track=zoom_track,
         src_w=src_w, src_h=src_h, fps=fps, face_hint=face_hint, ass_path=ass_path,
         target_size=target_size, fill=fill, fit=fit, delire_plan=delire_plan,
+        webcam_plan=webcam_plan,
     )
     audio_chain = build_audio_chain(audio_cfg)
 

@@ -24,7 +24,9 @@ from video.filter_graph import (
     FILL_BLACK,
     FILL_BLUR,
     FIT_CROP,
+    FIT_SPLIT_WEBCAM,
     FIT_WHOLE,
+    WEBCAM_HEIGHT_FRAC,
     build_ffmpeg_args,
     build_video_chain,
 )
@@ -93,6 +95,78 @@ class TestCadrageVertical:
                          framing_plan=plan)
         assert "crop=1080:1920" in produced
         assert ":x='" not in produced, "aucune trajectoire ne doit rester"
+
+
+class TestModePortraitWebcamGameplay:
+    """FIT_SPLIT_WEBCAM : la webcam du streamer en bande du haut, le jeu en
+    bande du bas -- voir video/filter_graph._split_webcam_chain."""
+
+    def _plan(self, cx=0.1, cy=0.3):
+        from editing.framing import FramingKeyframe, FramingPlan
+
+        return FramingPlan(keyframes=(FramingKeyframe(t=0.0, cx=cx, cy=cy),),
+                           mode="static", confidence=0.9)
+
+    def test_le_split_produit_bien_deux_bandes_empilees(self):
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._plan())
+        assert "split=2[wcsrc][gpsrc]" in produced
+        assert "vstack=inputs=2" in produced
+
+    def test_les_proportions_font_bien_la_hauteur_totale(self):
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._plan())
+        webcam_h = round(1920 * WEBCAM_HEIGHT_FRAC)
+        if webcam_h % 2:
+            webcam_h -= 1
+        gameplay_h = 1920 - webcam_h
+        assert f"scale=1080:{webcam_h}" in produced
+        assert f"scale=1080:{gameplay_h}" in produced
+
+    def test_aucun_zoom_dynamique_en_mode_split(self):
+        """Le zoom vise UNE fenetre ; hors de propos des qu'il y en a deux
+        independantes."""
+        from editing.zoom import ZoomKeyframe, ZoomTrack
+
+        track = ZoomTrack(keyframes=(ZoomKeyframe(t=0.0, zoom=1.0),
+                                     ZoomKeyframe(t=1.0, zoom=1.1),
+                                     ZoomKeyframe(t=2.0, zoom=1.0)), events=1)
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._plan(), zoom_track=track)
+        assert "zoompan" not in produced
+
+    def test_sans_webcam_le_mode_retombe_sur_le_recadrage_classique(self):
+        """Repli silencieux explicitement demande : jamais de bande vide ni
+        d'erreur quand aucune webcam n'est identifiee."""
+        fallback = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM, webcam_plan=None)
+        classic = chain(target_size=PORTRAIT_SIZE, fit=FIT_CROP)
+        assert fallback == classic
+
+    def test_le_cadrage_du_jeu_reste_celui_du_plan_classique(self):
+        """La bande du bas reutilise EXACTEMENT le meme framing_plan que le
+        cadrage classique -- pas un second mecanisme invente."""
+        gameplay_plan = self._plan(cx=0.7, cy=0.5)
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._plan(cx=0.1, cy=0.3),
+                         framing_plan=gameplay_plan)
+        bottom = produced.split("[gpsrc]")[1]
+        assert "crop=" in bottom
+
+    def test_les_sous_titres_restent_incrustes_par_dessus_le_split(self):
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._plan(), ass_path="/tmp/x.ass")
+        assert "subtitles=" in produced
+        assert produced.index("vstack") < produced.index("subtitles=")
+
+    def test_la_commande_complete_transmet_bien_le_plan_webcam(self):
+        args = build_ffmpeg_args(
+            video_path="s.mp4", edit_list=EditList.identity(0.0, 6.0),
+            framing_plan=self._plan(cx=0.7, cy=0.5), zoom_track=None,
+            src_w=1920, src_h=1080, fps=24.0, face_hint=None, ass_path=None,
+            audio_cfg=None, export_settings={}, out_mp4_path="o.mp4",
+            target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM, webcam_plan=self._plan(),
+        )
+        assert "vstack=inputs=2" in " ".join(args)
 
 
 class TestPaysageInchange:
@@ -228,6 +302,29 @@ class TestInterfaceDeProduction:
         self._select_fit(box, FIT_WHOLE)
         self._select_fit(box, FIT_CROP)
         assert box.boxes["framing"].isEnabled()
+
+    def test_le_mode_webcam_gameplay_coche_et_grise_le_cadrage_intelligent(self, box):
+        """Ce n'est pas une amelioration optionnelle dans ce mode : sans lui,
+        rien ne sait ou est la webcam."""
+        self._select_fit(box, FIT_SPLIT_WEBCAM)
+        assert box.boxes["framing"].isChecked() is True
+        assert not box.boxes["framing"].isEnabled()
+        assert box.editing_overrides()["framing"] is True
+
+    def test_le_mode_webcam_gameplay_pose_un_texte_d_aide(self, box):
+        self._select_fit(box, FIT_SPLIT_WEBCAM)
+        assert box.hint.text() != ""
+
+    def test_revenir_au_recadrage_depuis_le_mode_webcam_rend_la_case(self, box):
+        self._select_fit(box, FIT_SPLIT_WEBCAM)
+        self._select_fit(box, FIT_CROP)
+        assert box.boxes["framing"].isEnabled()
+
+    def test_le_mode_webcam_gameplay_ne_grise_pas_le_remplissage(self, box):
+        """Ce mode recadre bel et bien (deux fois) -- rien a remplir, comme
+        FIT_CROP, jamais comme FIT_WHOLE."""
+        self._select_fit(box, FIT_SPLIT_WEBCAM)
+        assert not box.blur_check.isEnabled()
         assert box.editing_overrides()["framing"] is True
 
 

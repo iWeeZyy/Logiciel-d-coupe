@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from editing import delire, presets
 from video import watermark
 from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
-from video.filter_graph import FIT_CROP, FIT_WHOLE
+from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM, FIT_WHOLE
 
 # Modules proposes a la coche. Source unique : l'accueil et le Radar lisent
 # cette liste, ils n'en tiennent pas chacun la leur.
@@ -55,13 +55,24 @@ WHOLE_HINT = ("L'image entière est conservée et centrée : le haut et le bas d
               "cadre sont remplis. Aucun recadrage, donc pas de cadrage "
               "intelligent.")
 
-# Comment faire tenir l'image dans un cadre vertical. Les deux ont un usage
-# reel : recadrer suit le sujet et remplit l'ecran mais perd les bords ; garder
-# l'image entiere ne perd rien et remplit le cadre avec un fond flou -- ce que
-# Instagram et TikTok font sinon avec deux bandes noires.
+SPLIT_WEBCAM_HINT = ("La webcam du streamer en haut, le jeu en bas — comme le "
+                     "mode « Télécharger en mode portrait » de Twitch. Le "
+                     "cadrage intelligent est requis pour suivre la webcam, "
+                     "donc toujours activé dans ce mode. Sans webcam "
+                     "identifiée sur le clip, le recadrage classique est "
+                     "utilisé à la place.")
+
+# Comment faire tenir l'image dans un cadre vertical. Les trois ont un usage
+# reel : recadrer suit le sujet et remplit l'ecran mais perd les bords ;
+# garder l'image entiere ne perd rien et remplit le cadre avec un fond flou --
+# ce que Instagram et TikTok font sinon avec deux bandes noires ; le mode
+# webcam+jeu compose deux bandes independantes, chacune suivie par le meme
+# cadrage intelligent (voir editing/subject.py pour comment la webcam est
+# distinguee du jeu).
 FIT_CHOICES = [
     (FIT_CROP, "Recadrer sur le sujet (l'image est rognée)"),
     (FIT_WHOLE, "Image entière + fond de remplissage"),
+    (FIT_SPLIT_WEBCAM, "Webcam en haut + Gameplay en bas"),
 ]
 
 
@@ -463,16 +474,27 @@ class ProductionOptionsBox(QWidget):
         """
         portrait = self.is_portrait()
         whole = self.keeps_whole_image()
+        split_webcam = portrait and self.fit_mode() == FIT_SPLIT_WEBCAM
 
         self.fit_combo.setEnabled(portrait)
         if whole:
             self.hint.setText(WHOLE_HINT if portrait else LANDSCAPE_HINT)
+        elif split_webcam:
+            self.hint.setText(SPLIT_WEBCAM_HINT)
         else:
             self.hint.setText("")
-        self.hint.setVisible(whole)
+        self.hint.setVisible(whole or split_webcam)
 
         box = self.boxes.get("framing")
         if box is not None:
-            box.setEnabled(not whole)
+            # Le mode webcam+jeu a besoin du suivi pour cadrer les DEUX
+            # bandes -- ce n'est pas une amelioration optionnelle ici,
+            # c'est le mecanisme lui-meme (voir pipeline._analyse_framing,
+            # qui force de toute facon le suivi dans ce mode meme si cette
+            # case etait decochee). La cocher et la griser dit la verite
+            # plutot que de laisser croire qu'elle a un effet.
+            if split_webcam:
+                box.setChecked(True)
+            box.setEnabled(not whole and not split_webcam)
         # Le remplissage ne sert que si quelque chose reste a remplir.
         self.blur_check.setEnabled(whole)

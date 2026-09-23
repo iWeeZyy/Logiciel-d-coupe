@@ -39,7 +39,7 @@ from core.steps import (
 )
 from editing.captions import CaptionGroup, build_captions, choose_margin_v, score_emphasis
 from editing.context import ContextResult, adjust_clip_bounds, resolve_overlaps
-from editing.framing import FramingPlan, build_framing_plan
+from editing.framing import FramingPlan, build_framing_plan, build_webcam_framing_plan
 from editing.metadata import build_metadata
 from editing.sentences import build_sentences, sentences_in_range
 from editing.silence_cut import MontagePlan, build_montage_plan
@@ -66,6 +66,7 @@ from video import ffmpeg_utils
 from video.audio_extractor import extract_audio
 from video.clip_builder import build_clip
 from video.cropper import compute_crop_rect, face_center_in_output
+from video.filter_graph import FIT_SPLIT_WEBCAM
 from video.face_detector import crop_hint_from_track, detect_face_track
 from video.thumbnailer import generate_thumbnails
 
@@ -85,11 +86,23 @@ def _log_upscale(src_w: int, src_h: int, settings) -> None:
     message.
     """
     from video.cropper import target_size
-    from video.filter_graph import base_crop_size, sharpen_amount
+    from video.filter_graph import FIT_SPLIT_WEBCAM, WEBCAM_HEIGHT_FRAC, base_crop_size, sharpen_amount
 
     try:
         out_w, out_h = target_size(getattr(settings, "aspect_ratio", None) or "9:16")
-        if out_w >= out_h or getattr(settings, "fit_mode", "recadrer") != "recadrer":
+        fit_mode = getattr(settings, "fit_mode", "recadrer")
+        if out_w < out_h and fit_mode == FIT_SPLIT_WEBCAM:
+            # Deux fenetres independantes (voir video.filter_graph._split_webcam_chain) --
+            # ce log reste informatif, il ne cherche pas a deviner si la
+            # webcam a ete detectee (verifie plus loin, au rendu reel).
+            webcam_h = round(out_h * WEBCAM_HEIGHT_FRAC)
+            logger.info(
+                f"Cadrage : mode portrait webcam+gameplay -- bande webcam {out_w}x{webcam_h}, "
+                f"bande jeu {out_w}x{out_h - webcam_h} (retombe sur un cadrage classique si "
+                "aucune webcam n'est identifiee au rendu)."
+            )
+            return
+        if out_w >= out_h or fit_mode != "recadrer":
             # L'image est gardee entiere : c'est la plus petite des deux mises a
             # l'echelle qui la limite, pas la fenetre.
             facteur = min(out_w / src_w, out_h / src_h) if src_w and src_h else 0.0
@@ -324,7 +337,7 @@ def run(
                 fraction=(i - 1) / len(clips),
             )
 
-            face_hint, framing_plan = _analyse_framing(
+            face_hint, framing_plan, webcam_plan = _analyse_framing(
                 settings, str(input_path), c, audio_analyzer, face_cfg
             )
 
@@ -389,6 +402,7 @@ def run(
                     fill=settings.fill_mode,
                     fit=settings.fit_mode,
                     intro=intro,
+                    webcam_plan=webcam_plan,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -625,9 +639,11 @@ def _analyse_framing(
     candidate: Candidate,
     audio_analyzer: AudioAnalyzer,
     face_cfg: dict,
-) -> tuple[object, Optional[FramingPlan]]:
-    """Une seule passe de detection de visages, deux usages : le cadrage fixe
-    (repli historique) et la trajectoire de suivi.
+) -> tuple[object, Optional[FramingPlan], Optional[FramingPlan]]:
+    """Une seule passe de detection de visages, TROIS usages : le cadrage fixe
+    (repli historique), la trajectoire de suivi du sujet, et -- en mode
+    portrait webcam+gameplay (FIT_SPLIT_WEBCAM) -- la trajectoire de suivi de
+    la webcam elle-meme.
 
     Rien n'est detecte quand l'image est gardee ENTIERE : il n'y a alors aucun
     choix a faire sur ce qu'on garde, donc rien a centrer ni a suivre. Chercher
@@ -635,13 +651,20 @@ def _analyse_framing(
     un resultat que le rendu ignorerait.
     """
     if getattr(settings, "fit_mode", "recadrer") == "entier":
-        return None, None
+        return None, None, None
+
+    split_webcam = getattr(settings, "fit_mode", "recadrer") == FIT_SPLIT_WEBCAM
 
     framing_cfg = settings.editing_module("framing")
-    tracking = framing_cfg.get("enabled", False)
+    # Le mode portrait webcam+gameplay a besoin du suivi pour cadrer les DEUX
+    # bandes -- ce n'est pas une amelioration optionnelle comme pour le
+    # cadrage classique, c'est le mecanisme lui-meme. Force le suivi
+    # independamment de la case "Cadrage intelligent" (grisee et cochee
+    # d'office par l'interface dans ce mode, voir production_options.py).
+    tracking = framing_cfg.get("enabled", False) or split_webcam
 
     if not face_cfg.get("enabled", True) and not tracking:
-        return None, None
+        return None, None, None
 
     samples = detect_face_track(
         video_path, candidate.start, candidate.end,
@@ -650,12 +673,16 @@ def _analyse_framing(
         max_samples=int(framing_cfg.get("max_samples_per_clip", 140)) if tracking
         else int(face_cfg.get("max_samples_per_clip", 20)),
         confidence_threshold=float(framing_cfg.get("confidence_threshold", face_cfg.get("confidence_threshold", 0.6))),
-        max_faces=2 if tracking else 1,
+        # 3 en mode split : il faut voir la webcam ET le sujet/groupe du
+        # gameplay dans le MEME echantillon pour les distinguer (voir
+        # editing/subject.py) -- 2 suffit au cadrage classique, qui n'a que
+        # l'incrustation a ecarter, jamais a l'identifier separement.
+        max_faces=(3 if split_webcam else 2) if tracking else 1,
     )
     face_hint = crop_hint_from_track(samples)
 
     if not tracking:
-        return face_hint, None
+        return face_hint, None, None
 
     speaker_decisions = []
     speaker_cfg = framing_cfg.get("active_speaker", {})
@@ -682,7 +709,20 @@ def _analyse_framing(
         max_keyframes=int(framing_cfg.get("max_keyframes", 60)),
         static_movement_threshold=float(framing_cfg.get("static_movement_threshold", 0.03)),
     )
-    return face_hint, plan
+
+    webcam_plan = None
+    if split_webcam:
+        webcam_plan = build_webcam_framing_plan(
+            samples,
+            min_samples_ratio=float(framing_cfg.get("min_samples_ratio", 0.35)),
+            smoothing_alpha=float(framing_cfg.get("smoothing_alpha", 0.25)),
+            max_speed_frac_per_s=float(framing_cfg.get("max_speed_frac_per_s", 0.12)),
+            deadzone_frac=float(framing_cfg.get("deadzone_frac", 0.02)),
+            max_keyframes=int(framing_cfg.get("max_keyframes", 60)),
+            static_movement_threshold=float(framing_cfg.get("static_movement_threshold", 0.03)),
+        )
+
+    return face_hint, plan, webcam_plan
 
 
 def _delire_cues(cfg: dict) -> dict:

@@ -67,12 +67,19 @@ def choose_targets(
     speaker_decisions: list[SpeakerDecision] | None = None,
     two_faces_min_distance_frac: float = 0.18,
     vertical_bias: float = 0.42,
+    subject_filter=None,
 ) -> tuple[list[FramingKeyframe], str]:
     """Cible brute a chaque echantillon, plus le mode retenu.
 
     `vertical_bias` place le visage un peu au-dessus du centre du cadre (0.42 =
     aux deux cinquiemes) : un visage exactement centre en 9:16 laisse un vide
     au-dessus de la tete et coupe le buste.
+
+    `subject_filter` decide QUI cadrer -- par defaut `keep_subject_faces`
+    (voir plus bas), qui ecarte une incrustation webcam. Le mode portrait
+    webcam+gameplay (video/filter_graph.py, FIT_SPLIT_WEBCAM) passe
+    `keep_webcam_faces` a la place pour cadrer l'inverse exact : l'incrustation
+    elle-meme, voir editing/subject.py.
     """
     # Meme regle que pour le cadrage fixe : une incrustation webcam n'est pas un
     # participant. Sans ce filtre, deux visages eloignes -- le sujet et la
@@ -80,7 +87,9 @@ def choose_targets(
     # les deux.
     from editing.subject import keep_subject_faces
 
-    samples = keep_subject_faces(samples)
+    subject_filter = subject_filter or keep_subject_faces
+    filtered = subject_filter(samples)
+    samples = filtered if filtered is not None else []
 
     targets: list[FramingKeyframe] = []
     modes: list[str] = []
@@ -179,8 +188,13 @@ def build_framing_plan(
     deadzone_frac: float = 0.02,
     max_keyframes: int = 60,
     static_movement_threshold: float = 0.03,
+    subject_filter=None,
 ) -> FramingPlan:
-    """Trajectoire de cadrage, ou plan statique si le suivi n'est pas fiable."""
+    """Trajectoire de cadrage, ou plan statique si le suivi n'est pas fiable.
+
+    `subject_filter` est transmis tel quel a `choose_targets` -- voir son
+    docstring. Reste `None` (donc `keep_subject_faces`) pour tout appelant
+    existant."""
     if not samples:
         return FramingPlan((), MODE_STATIC, 0.0, ("aucune detection de visage",))
 
@@ -193,7 +207,8 @@ def build_framing_plan(
         )
 
     targets, mode = choose_targets(
-        with_faces, speaker_decisions, two_faces_min_distance_frac, vertical_bias
+        with_faces, speaker_decisions, two_faces_min_distance_frac, vertical_bias,
+        subject_filter=subject_filter,
     )
     if not targets:
         return FramingPlan((), MODE_STATIC, 0.0, ("aucune cible exploitable",))
@@ -219,4 +234,68 @@ def build_framing_plan(
 
     return FramingPlan(
         tuple(_decimate(smoothed, max_keyframes)), mode, round(ratio, 3), tuple(reasons)
+    )
+
+
+def build_webcam_framing_plan(
+    samples: list[FaceSample],
+    *,
+    min_samples_ratio: float = 0.35,
+    smoothing_alpha: float = 0.25,
+    max_speed_frac_per_s: float = 0.12,
+    deadzone_frac: float = 0.02,
+    max_keyframes: int = 60,
+    static_movement_threshold: float = 0.03,
+) -> FramingPlan | None:
+    """Trajectoire de cadrage pour la bande WEBCAM du mode portrait (voir
+    video/filter_graph.py, FIT_SPLIT_WEBCAM), ou None si aucune webcam ne se
+    degage clairement.
+
+    None est un signal DISTINCT d'un FramingPlan statique : c'est ce qui dit a
+    l'appelant (pipeline.py) qu'il n'y a rien a cadrer pour la bande du haut,
+    et qu'il faut renoncer au mode portrait pour ce clip plutot que de cadrer
+    une bande entiere sur du bruit (demande explicite : repli silencieux vers
+    le cadrage classique quand aucune webcam n'est detectee).
+
+    Verifie AVANT tout calcul de trajectoire, sur l'ensemble complet des
+    echantillons avec visage -- pas seulement en cas d'echec du lissage plus
+    bas, qui ne distinguerait pas "pas de webcam" de "webcam trop instable
+    pour etre suivie" (ce dernier cas retombe legitimement sur un cadrage fixe,
+    comme build_framing_plan le fait deja pour le sujet)."""
+    from editing.subject import build_tracks, keep_webcam_faces, webcam_track
+
+    with_faces = [s for s in samples if s.faces]
+    webcam = webcam_track(build_tracks(with_faces))
+    if webcam is None:
+        return None
+
+    # `vertical_bias=0.5` (centre) et non 0.42 (le biais du cadrage plein
+    # cadre) : ce dernier reserve de la place SOUS le visage pour le buste,
+    # pertinent sur un cadre de 1920px de haut, pas sur une bande de ~670px
+    # (35% de 1920) ou centrer le visage epuise deja presque toute la place.
+    plan = build_framing_plan(
+        samples,
+        min_samples_ratio=min_samples_ratio,
+        vertical_bias=0.5,
+        smoothing_alpha=smoothing_alpha,
+        max_speed_frac_per_s=max_speed_frac_per_s,
+        deadzone_frac=deadzone_frac,
+        max_keyframes=max_keyframes,
+        static_movement_threshold=static_movement_threshold,
+        subject_filter=keep_webcam_faces,
+    )
+    if plan.keyframes:
+        return plan
+
+    # `webcam_track` a trouve une incrustation fiable (sinon on serait deja
+    # sorti plus haut), mais `min_samples_ratio` -- calcule sur la proportion
+    # GLOBALE d'echantillons avec AU MOINS un visage, webcam ou pas -- peut
+    # rester en dessous du seuil meme quand la webcam elle-meme est bien
+    # identifiee (ex: le sujet principal, lui, est rarement visible). Un
+    # cadrage fixe sur sa position MESUREE vaut toujours mieux qu'un crop
+    # centre au hasard, qui ignorerait completement ou elle se trouve.
+    return FramingPlan(
+        (FramingKeyframe(t=with_faces[0].t if with_faces else 0.0, cx=webcam.cx, cy=webcam.cy),),
+        MODE_STATIC, plan.confidence,
+        plan.reasons + ("cadrage fixe sur la position mesuree de la webcam",),
     )

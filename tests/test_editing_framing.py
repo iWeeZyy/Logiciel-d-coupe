@@ -231,3 +231,79 @@ def test_two_faces_still_land_exactly_between_them():
 
     assert plan.mode == MODE_BOTH
     assert abs(plan.keyframes[0].cx - 0.55) < 1e-6
+
+
+# --------------------------------------------- mode portrait webcam+gameplay
+# build_webcam_framing_plan cadre l'INVERSE exact de build_framing_plan : la
+# petite incrustation que celui-ci ecarte deliberement (voir editing/subject.py).
+
+def _face_area(cx, cy, area, confidence=0.9):
+    side = area ** 0.5
+    return FaceBox(x=cx - side / 2, y=cy - side / 2, w=side, h=side, confidence=confidence)
+
+
+class TestBuildWebcamFramingPlan:
+    def test_the_small_stable_face_is_tracked_not_the_larger_moving_one(self):
+        from editing.framing import build_webcam_framing_plan
+
+        samples = []
+        for i in range(12):
+            webcam = _face_area(0.09, 0.5, 0.013)  # petite, fixe
+            sujet = _face_area(0.30 + i * 0.03, 0.5, 0.03)  # grande, mobile
+            samples.append(FaceSample(t=i * 0.5, faces=(sujet, webcam),
+                                      mouth_activity=(0.0, 0.0)))
+
+        plan = build_webcam_framing_plan(samples, deadzone_frac=0.0, static_movement_threshold=0.0)
+
+        assert plan is not None
+        assert all(k.cx < 0.2 for k in plan.keyframes), [round(k.cx, 2) for k in plan.keyframes]
+
+    def test_two_comparable_faces_yield_no_webcam(self):
+        """Deux personnes cote a cote, de MEME taille : aucune incrustation a
+        designer."""
+        from editing.framing import build_webcam_framing_plan
+
+        samples = _samples([[(0.30, 0.5), (0.70, 0.5)] for _ in range(10)])
+
+        assert build_webcam_framing_plan(samples) is None
+
+    def test_no_face_at_all_yields_no_webcam(self):
+        from editing.framing import build_webcam_framing_plan
+
+        assert build_webcam_framing_plan([]) is None
+        assert build_webcam_framing_plan([FaceSample(t=0.0, faces=(), mouth_activity=())]) is None
+
+    def test_falls_back_to_the_measured_position_when_the_global_ratio_is_too_low(self):
+        """La webcam elle-meme est fiable (vue tres souvent PARMI les
+        echantillons ou un visage existe), mais la plupart des echantillons
+        GLOBAUX n'ont aucun visage du tout -- build_framing_plan retomberait
+        seul sur des keyframes vides ; le repli doit rester cadre sur la
+        webcam, pas sur un crop centre au hasard."""
+        from editing.framing import build_webcam_framing_plan
+
+        webcam_samples = [FaceSample(t=float(i), faces=(_face_area(0.1, 0.5, 0.02),),
+                                     mouth_activity=(0.0,)) for i in range(3)]
+        empty_samples = [FaceSample(t=float(i), faces=(), mouth_activity=())
+                         for i in range(3, 23)]
+
+        plan = build_webcam_framing_plan(webcam_samples + empty_samples)
+
+        assert plan is not None
+        assert len(plan.keyframes) == 1
+        assert round(plan.keyframes[0].cx, 1) == 0.1
+        assert "position mesuree" in plan.reasons[-1]
+
+    def test_a_reliable_webcam_still_yields_a_plan_when_it_barely_moves(self):
+        """Une webcam est quasiment toujours fixe : le plan statique reste un
+        VRAI plan (pas None), avec un keyframe sur sa position."""
+        from editing.framing import build_webcam_framing_plan
+
+        samples = [FaceSample(t=float(i),
+                              faces=(_face_area(0.5, 0.4, 0.03), _face_area(0.1, 0.55, 0.013)),
+                              mouth_activity=(0.0, 0.0)) for i in range(12)]
+
+        plan = build_webcam_framing_plan(samples)
+
+        assert plan is not None
+        assert plan.is_static
+        assert round(plan.keyframes[0].cx, 1) == 0.1

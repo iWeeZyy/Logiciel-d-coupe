@@ -1,4 +1,5 @@
-"""Qui cadrer : la personne au premier plan, pas l'incrustation.
+"""Qui cadrer : la personne au premier plan, pas l'incrustation -- et, pour le
+mode portrait webcam+gameplay, l'inverse exact : l'incrustation ELLE-MEME.
 
 DEFAUT REEL QUE CE MODULE CORRIGE. Sur un clip Twitch, la camera du streamer est
 souvent affichee en petit dans un coin, en plus de la personne filmee au premier
@@ -18,6 +19,16 @@ l'incrustation ni de la mise en page de la chaine.
 Le cas de deux personnes cote a cote reste traite comme avant : leurs visages
 sont de taille comparable, les deux sont donc gardes et le cadrage groupe
 s'applique.
+
+LE MODE PORTRAIT (webcam en haut, gameplay en bas -- video/filter_graph.py,
+FIT_SPLIT_WEBCAM) a besoin de l'inverse : cadrer PRECISEMENT l'incrustation que
+`keep_subject_faces` ecarte deliberement. `webcam_track`/`keep_webcam_faces`
+partagent le meme regroupement en pistes (`build_tracks`) mais appliquent la
+regle symetrique -- avec un garde-fou supplementaire, `MIN_WEBCAM_PRESENCE` :
+une webcam REELLE est visible la quasi-totalite du temps (fixe, bien eclairee,
+de face), donc un faux positif ponctuel ne doit jamais etre pris pour elle --
+l'erreur serait bien pire ici, ou la piste designee occupe toute une bande du
+clip final, que pour le sujet, ou elle ne fait que decaler un peu le cadrage.
 """
 from __future__ import annotations
 
@@ -36,6 +47,14 @@ MIN_AREA_RATIO = 0.55
 # En dessous, la piste est trop rare pour etre le sujet : un faux positif
 # apparu deux fois ne doit pas voler le cadrage a une personne presente partout.
 MIN_PRESENCE = 0.10
+
+# Seuil de presence pour la webcam, bien plus strict que MIN_PRESENCE : une
+# incrustation reelle est vue presque partout (fixe, bien eclairee, de face),
+# contrairement au sujet qui se retourne ou sort du champ. Sous ce seuil, la
+# piste la plus petite est plus probablement un faux positif isole (une main,
+# un reflet) qu'une vraie webcam -- mieux vaut renoncer au split que cadrer une
+# bande entiere du clip sur du bruit.
+MIN_WEBCAM_PRESENCE = 0.35
 
 
 @dataclass(frozen=True)
@@ -143,6 +162,72 @@ def keep_subject_faces(samples, radius: float = CLUSTER_RADIUS,
 
     def belongs(box) -> bool:
         return any(((t.cx - box.cx) ** 2 + (t.cy - box.cy) ** 2) ** 0.5 < radius for t in kept)
+
+    filtered = []
+    for sample in samples:
+        faces = tuple(b for b in (getattr(sample, "faces", ()) or ()) if belongs(b))
+        if len(faces) == len(sample.faces):
+            filtered.append(sample)
+            continue
+        activity = tuple(
+            a for b, a in zip(sample.faces, sample.mouth_activity or ()) if belongs(b)
+        )
+        filtered.append(replace(sample, faces=faces, mouth_activity=activity))
+    return filtered
+
+
+def webcam_track(tracks: list[FaceTrack], min_area_ratio: float = MIN_AREA_RATIO,
+                 min_presence: float = MIN_WEBCAM_PRESENCE) -> FaceTrack | None:
+    """La piste qui EST l'incrustation webcam, ou None si aucune ne se degage
+    clairement.
+
+    Deux cas, symetriques a `subject_tracks` :
+
+    - UNE SEULE piste dans tout le clip : c'est forcement elle -- un streamer
+      seul visible face camera, jeu sans visage en arriere-plan, est la
+      configuration la plus courante sur Twitch. Elle doit quand meme etre
+      assez presente (`min_presence`) pour ecarter un unique faux positif.
+    - PLUSIEURS pistes : la plus petite est candidate, mais seulement si elle
+      est significativement plus petite que la plus grande (meme seuil que
+      `subject_tracks`, applique a l'envers) ET assez presente. Deux
+      personnes de taille comparable ne produisent aucune webcam identifiable
+      -- ce cas doit renvoyer None, pas deviner laquelle est l'incrustation.
+    """
+    usable = [t for t in tracks if t.presence >= min_presence]
+    if not usable:
+        return None
+
+    if len(usable) == 1:
+        return usable[0]
+
+    smallest = min(usable, key=lambda t: t.area)
+    largest_area = max(t.area for t in usable)
+    if largest_area <= 0:
+        return None
+    if smallest.area >= largest_area * min_area_ratio:
+        # Toutes les pistes sont de taille comparable : pas d'incrustation a
+        # designer, seulement des participants.
+        return None
+    return smallest
+
+
+def keep_webcam_faces(samples, radius: float = CLUSTER_RADIUS,
+                      min_area_ratio: float = MIN_AREA_RATIO,
+                      min_presence: float = MIN_WEBCAM_PRESENCE):
+    """Renvoie les memes echantillons, prives de tout visage QUI N'EST PAS la
+    webcam -- l'inverse exact de `keep_subject_faces`.
+
+    None si aucune webcam ne se degage : l'appelant (editing/framing.py) sait
+    alors qu'il n'y a rien a cadrer pour la bande du haut, et doit renoncer au
+    mode portrait plutot que de cadrer une bande sur du bruit."""
+    samples = list(samples)
+    tracks = build_tracks(samples, radius=radius)
+    webcam = webcam_track(tracks, min_area_ratio=min_area_ratio, min_presence=min_presence)
+    if webcam is None:
+        return None
+
+    def belongs(box) -> bool:
+        return ((webcam.cx - box.cx) ** 2 + (webcam.cy - box.cy) ** 2) ** 0.5 < radius
 
     filtered = []
     for sample in samples:

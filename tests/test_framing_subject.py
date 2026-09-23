@@ -15,9 +15,12 @@ import pytest
 
 from editing.subject import (
     MIN_AREA_RATIO,
+    MIN_WEBCAM_PRESENCE,
     build_tracks,
     keep_subject_faces,
+    keep_webcam_faces,
     subject_tracks,
+    webcam_track,
 )
 from video.face_detector import FaceBox, FaceSample
 
@@ -161,3 +164,72 @@ class TestCadrageResultant:
         targets, mode = choose_targets(CLIP_REEL)
         assert mode != MODE_BOTH, "la vignette ne doit pas declencher un cadrage de groupe"
         assert all(k.cx > 0.4 for k in targets), [round(k.cx, 2) for k in targets]
+
+
+class TestChoixDeLaWebcam:
+    """L'inverse exact de TestChoixDuSujet : cadrer la vignette elle-meme,
+    pour le mode portrait webcam+gameplay (video/filter_graph.FIT_SPLIT_WEBCAM)."""
+
+    def test_c_est_la_vignette_qui_est_designee(self):
+        webcam = webcam_track(build_tracks(CLIP_REEL))
+        assert webcam is not None
+        assert round(webcam.cx, 1) == 0.1, "la webcam doit designer la vignette, pas le streamer"
+
+    def test_le_seuil_de_presence_est_bien_plus_strict_que_celui_du_sujet(self):
+        """Une incrustation reelle est visible presque partout ; un faux
+        positif ponctuel ne doit jamais etre pris pour elle."""
+        from editing.subject import MIN_PRESENCE
+
+        assert MIN_WEBCAM_PRESENCE > MIN_PRESENCE, "doit depasser le seuil du sujet"
+
+    def test_deux_personnes_cote_a_cote_ne_donnent_aucune_webcam(self):
+        """Le cas legitime ne doit pas etre casse : deux visages comparables
+        sont deux participants, ni l'un ni l'autre n'est une incrustation."""
+        duo = [sample(float(i), face(0.30, 0.5, 0.024), face(0.70, 0.5, 0.021))
+               for i in range(6)]
+        assert webcam_track(build_tracks(duo)) is None
+
+    def test_un_seul_visage_present_est_identifie_comme_la_webcam(self):
+        """Cas le plus courant sur Twitch : le streamer seul en incrustation,
+        le jeu sans aucun visage en arriere-plan."""
+        solo = [sample(float(i), face(0.5, 0.5, 0.02)) for i in range(10)]
+        webcam = webcam_track(build_tracks(solo))
+        assert webcam is not None
+        assert round(webcam.cx, 1) == 0.5
+
+    def test_un_faux_positif_isole_plus_petit_ne_vole_pas_la_designation(self):
+        """Un faux positif ponctuel (une main, un reflet), plus petit que la
+        piste fiable, ne doit jamais etre pris pour LA webcam a sa place --
+        MIN_WEBCAM_PRESENCE l'ecarte malgre sa taille plus petite."""
+        avec_bruit = [sample(float(i), face(0.3, 0.5, 0.024)) for i in range(20)]
+        avec_bruit.append(sample(20.0, face(0.9, 0.1, 0.01)))
+        webcam = webcam_track(build_tracks(avec_bruit))
+        assert webcam is not None
+        assert round(webcam.cx, 1) == 0.3, "la piste fiable doit etre designee, pas le bruit"
+
+    def test_aucun_visage_ne_donne_aucune_webcam(self):
+        assert webcam_track(build_tracks([sample(0.0), sample(1.0)])) is None
+
+
+class TestFiltrageWebcam:
+    def test_seule_la_vignette_subsiste(self):
+        filtres = keep_webcam_faces(CLIP_REEL)
+        assert filtres is not None
+        for s in filtres:
+            for box in s.faces:
+                assert box.cx < 0.3, "seule la vignette doit subsister"
+
+    def test_un_echantillon_sans_vignette_devient_vide(self):
+        # A t=19.0 la vignette ET le sujet co-apparaissent dans CLIP_REEL --
+        # ce jeu construit plutot un instant "sujet seul", absent du clip reel.
+        sujet_seul = list(CLIP_REEL) + [sample(21.0, SUJET())]
+        filtres = {s.t: s for s in keep_webcam_faces(sujet_seul)}
+        assert filtres[21.0].faces == (), "le sujet seul, sans vignette, ne doit rien laisser"
+        assert filtres[0.0].faces, "la vignette, elle, doit rester"
+
+    def test_aucune_webcam_identifiable_renvoie_none(self):
+        """Distinct d'une liste vide : None dit a l'appelant qu'il n'y a rien
+        a cadrer du tout, pas seulement rien sur CET echantillon."""
+        duo = [sample(float(i), face(0.30, 0.5, 0.024), face(0.70, 0.5, 0.021))
+               for i in range(6)]
+        assert keep_webcam_faces(duo) is None

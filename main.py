@@ -99,11 +99,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     production.add_argument("--black-bars", dest="black_bars", action="store_true",
                             help="Completer avec des bandes noires au lieu du fond flou "
                                  "(16:9, ou 9:16 avec --fit entier).")
-    production.add_argument("--fit", dest="fit_mode", choices=["recadrer", "entier"],
+    production.add_argument("--fit", dest="fit_mode",
+                            choices=["recadrer", "entier", "webcam_gameplay"],
                             help="Image qui n'a pas la forme du cadre : 'recadrer' garde "
                                  "une fenetre et jette le reste (defaut en 9:16), 'entier' "
                                  "garde toute l'image et remplit ce qui manque (flou ou "
-                                 "bandes noires selon --black-bars).")
+                                 "bandes noires selon --black-bars), 'webcam_gameplay' "
+                                 "compose la webcam du streamer en haut et le jeu en bas "
+                                 "(retombe sur 'recadrer' si aucune webcam n'est identifiee).")
     production.add_argument("--whole-source", dest="whole_source", action="store_true",
                             help="La source est deja un clip : la traiter en entier, "
                                  "sans y chercher ni y recadrer un passage.")
