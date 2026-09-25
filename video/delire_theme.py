@@ -103,47 +103,77 @@ class ThemeLayer:
 # SEULEMENT PROCHE du vert cle, pas seulement les bords du sujet -- invisible
 # sur un fond de test uni, flagrant sur un fond bariole (constate en
 # isolant le bug sur "chimpanzee").
+#
+# `chroma_similarity` RE-MESUREE PAR THEME (signale par l'utilisateur : liseré
+# vert residuel visible, "manga etc"). Methode : chromakey applique a chaque
+# rush a une gamme de `similarity`, en comptant a chaque palier les pixels
+# encore opaques ET verdatres (liseré non retire) contre les pixels opaques
+# totaux (contenu du theme reellement perdu) -- voir le script de mesure,
+# non conserve dans le depot (mesure ponctuelle, pas un outil a rejouer).
+# `chroma_color` lui-meme n'a PAS bouge : remesure en mode/moyenne sur
+# "manga", le mode dominant (16,224,12) colle deja quasiment exactement a la
+# valeur configuree -- le liseré ne vient pas d'une couleur de reference
+# fausse mais des pixels d'ANTI-ALIASING, au voisinage flou entre le vert et
+# le contenu dessine, qu'un simple recentrage ne resout pas.
+#
+# LIMITE CONNUE -- "manga" : ses traits blancs sont si fins que la bande
+# d'anti-aliasing occupe presque toute leur largeur ; retirer le liseré vert
+# en poussant `similarity`/`blend` plus loin efface les traits eux-memes AVANT
+# que le vert ait completement disparu (verifie : a similarity=0.20 les deux
+# sont deja a zero). Le reglage ci-dessous ADOUCIT le liseré (il devient
+# partiellement transparent au lieu de rester vert plein) sans effacer les
+# traits -- une limite du rush source a cette definition, pas un reglage
+# encore a corriger indefiniment (meme genre de limite deja documentee pour
+# "pluie"). `chroma_blend` plafonne a 0.05 comme pour les huit autres
+# (voir TestCatalogueDesCalques::test_le_degrade_de_transparence_reste_bas_
+# partout) : un blend plus genereux adoucirait davantage le liseré, mais au
+# prix du meme risque de bleed-through deja diagnostique sur "chimpanzee" --
+# pas justifie ici pour un theme sans sujet sombre a proteger.
 _LAYERS = {
     THEME_CHIMPANZEE: (
         ThemeLayer("chimpanzee.mp4", fit=FIT_COVER, opacity=0.80,
-                   chroma_color="0x0ECA42", chroma_similarity=0.14, chroma_blend=0.02),
+                   chroma_color="0x0ECA42", chroma_similarity=0.24, chroma_blend=0.02),
     ),
     THEME_CONFETTIS: (
         ThemeLayer("confettis.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
-                   chroma_color="0x00FF01", chroma_similarity=0.14, chroma_blend=0.02),
+                   chroma_color="0x00FF01", chroma_similarity=0.20, chroma_blend=0.02),
     ),
     THEME_EUROS: (
         ThemeLayer("euros.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
-                   chroma_color="0x0FFA05", chroma_similarity=0.14, chroma_blend=0.02),
+                   chroma_color="0x0FFA05", chroma_similarity=0.30, chroma_blend=0.02),
     ),
     THEME_FLAMMES: (
         ThemeLayer("flammes.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_BOTTOM, opacity=0.75,
-                   chroma_color="0x12850F", chroma_similarity=0.17, chroma_blend=0.02),
+                   chroma_color="0x12850F", chroma_similarity=0.18, chroma_blend=0.02),
     ),
     THEME_FLEURS: (
         ThemeLayer("fleurs.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
-                   chroma_color="0x00CA00", chroma_similarity=0.14, chroma_blend=0.02),
+                   chroma_color="0x00CA00", chroma_similarity=0.28, chroma_blend=0.02),
     ),
     THEME_PLUIE: (
         # Fond le plus texturise des neuf rushes (gouttes translucides sur
         # toute la surface, voir la mesure dans le docstring du module) --
         # similarity plus genereuse pour capter les variations du fond, mais
         # blend reste bas pour ne pas rendre les gouttes elles-memes
-        # translucides jusqu'a disparaitre.
+        # translucides jusqu'a disparaitre. Deja quasi propre a la remesure
+        # (liseré residuel < 0.02% a ce reglage) -- inchange.
         ThemeLayer("pluie.mp4", fit=FIT_COVER, opacity=0.68,
                    chroma_color="0x00FD16", chroma_similarity=0.26, chroma_blend=0.04),
     ),
     THEME_INFOS: (
         ThemeLayer("infos.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.80,
-                   chroma_color="0x1DCC0A", chroma_similarity=0.14, chroma_blend=0.02),
+                   chroma_color="0x1DCC0A", chroma_similarity=0.26, chroma_blend=0.02),
     ),
     THEME_INTELLIGENCE: (
         ThemeLayer("intelligence.mp4", fit=FIT_COVER, opacity=0.68,
-                   chroma_color="0x0ECA42", chroma_similarity=0.18, chroma_blend=0.02),
+                   chroma_color="0x0ECA42", chroma_similarity=0.20, chroma_blend=0.02),
     ),
     THEME_MANGA: (
+        # Voir la note "LIMITE CONNUE" ci-dessus : liseré adouci, pas
+        # supprime -- les traits sont trop fins pour separer proprement le
+        # vert de l'anti-aliasing par un simple seuil.
         ThemeLayer("manga.mp4", fit=FIT_COVER, opacity=0.75,
-                   chroma_color="0x12E10C", chroma_similarity=0.14, chroma_blend=0.02),
+                   chroma_color="0x12E10C", chroma_similarity=0.16, chroma_blend=0.05),
     ),
     # THEME_MYSTERE est absent DELIBEREMENT : voir video/delire_theme_filters.py,
     # qui le traite par deux filtres ffmpeg natifs (vignette + desaturation),
