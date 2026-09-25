@@ -131,7 +131,7 @@
     "choice": ""
   },
   "intro": {
-    "_comment": "Video posee EN INCRUSTATION (medaillon en haut a droite) sur les premieres secondes de chaque clip produit -- pas une scene concatenee avant lui, voir video/intro_overlay.py. La video par defaut est assets/branding/intro_follow.mp4, livree avec l'application ; 'video' permet d'en designer une autre. Son fond noir devient transparent au rendu, et l'incrustation disparait d'elle-meme une fois sa propre duree ecoulee -- le clip reste visible en dessous et autour tout du long.",
+    "_comment": "Video posee EN INCRUSTATION (medaillon en haut a droite) sur les premieres secondes de chaque clip produit -- pas une scene concatenee avant lui, voir video/intro_overlay.py. La video par defaut est assets/branding/intro_follow.mp4, livree avec l'application ; 'video' permet d'en designer une autre. Sa transparence vient du masque precalcule (assets/branding/intro_follow_mask.mp4, genere par tools/build_intro_asset.py -- a regenerer si la video change), et l'incrustation disparait d'elle-meme une fois sa propre duree ecoulee -- le clip reste visible en dessous et autour tout du long.",
     "enabled": true,
     "video": ""
   },
