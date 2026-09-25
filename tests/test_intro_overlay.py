@@ -82,7 +82,7 @@ def test_transparency_comes_from_alphamerge_with_the_precomputed_mask():
     # Plus de colorkey : un colorkey supprimerait aussi le noir VOULU a
     # l'interieur de l'anneau (le disque du logo). alphamerge avec le
     # masque precalcule est ce qui le preserve -- voir tools/
-    # generate_intro_mask.py pour le flood-fill qui construit ce masque.
+    # build_intro_asset.py, qui construit ce masque.
     intro = _intro()
 
     filt = prepare_filter(intro, 1080, 1920, video_index=2, mask_index=3)
