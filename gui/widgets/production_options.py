@@ -55,12 +55,14 @@ WHOLE_HINT = ("L'image entière est conservée et centrée : le haut et le bas d
               "cadre sont remplis. Aucun recadrage, donc pas de cadrage "
               "intelligent.")
 
-SPLIT_WEBCAM_HINT = ("La webcam du streamer en haut, le jeu en bas — comme le "
-                     "mode « Télécharger en mode portrait » de Twitch. Le "
-                     "cadrage intelligent est requis pour suivre la webcam, "
-                     "donc toujours activé dans ce mode. Sans webcam "
-                     "identifiée sur le clip, le recadrage classique est "
-                     "utilisé à la place.")
+SPLIT_WEBCAM_HINT = ("La webcam du streamer en haut, le jeu en bas. Pour un clip "
+                     "Twitch, le rendu portrait généré par Twitch lui-même est "
+                     "téléchargé directement (menu Partager → « Télécharger la "
+                     "version portrait ») — plus fiable qu'un recadrage reconstruit "
+                     "depuis la vidéo paysage. Pour une autre source, le cadrage "
+                     "intelligent suit la webcam par détection de visage ; sans "
+                     "webcam identifiée, le recadrage classique est utilisé à la "
+                     "place.")
 
 # Comment faire tenir l'image dans un cadre vertical. Les trois ont un usage
 # reel : recadrer suit le sujet et remplit l'ecran mais perd les bords ;

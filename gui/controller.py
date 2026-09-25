@@ -104,10 +104,30 @@ class AnalysisThread(QThread):
                 # page par laquelle on est passe.
                 from radar.analysis.media import clips_dir
 
+                # "Webcam en haut + Gameplay en bas" ne recadre plus le clip
+                # nous-memes : signale par l'utilisateur, notre propre split
+                # (suivi de visage puis fenetre au plus grand format
+                # correspondant) montrait deux fois quasiment le meme cadrage
+                # sur un clip reel, la fenetre webcam n'etant jamais assez
+                # resserree pour isoler la vignette. Twitch genere LUI-MEME
+                # cette disposition pour les clips ou il a detecte une webcam
+                # (menu Partager -> "Telecharger la version portrait" --
+                # voir radar/clip_download._portrait_format) : on demande
+                # cette variante et on laisse le cadrage classique s'appliquer
+                # dessus, plutot que de refaire un split moins bon. Sans
+                # variante pour ce clip precis, prefer_portrait retombe en
+                # silence sur le rendu paysage -- le cadrage classique reste
+                # alors le bon repli, exactement comme le split webcam
+                # retombait dessus quand aucune webcam n'etait identifiee.
+                from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
+
+                split_webcam = self.settings.fit_mode == FIT_SPLIT_WEBCAM
                 self.settings.input = download_clip(
                     self.twitch_source, str(clips_dir()),
-                    cancel_token=self.cancel_token,
+                    cancel_token=self.cancel_token, prefer_portrait=split_webcam,
                 )
+                if split_webcam:
+                    self.settings.fit_mode = FIT_CROP
 
             results = pipeline.run(
                 self.settings, on_progress=self.progress.emit, cancel_token=self.cancel_token,

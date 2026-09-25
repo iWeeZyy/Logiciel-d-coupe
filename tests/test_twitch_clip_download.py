@@ -88,6 +88,29 @@ class TestTelechargement:
         assert "[ext=mp4]" not in selector
         assert "[height<=" not in selector
 
+    def test_prefer_portrait_demande_le_rendu_de_twitch_en_priorite(self, tmp_path, fake_ytdlp):
+        """Twitch expose sa propre variante "webcam en haut + jeu en bas"
+        comme un format a part, prefixe "portrait" -- voir
+        yt_dlp.extractor.twitch.TwitchClipsIE.asset_portrait -- jamais choisi
+        par "best" seul (il porte une priorite plus basse), d'ou le besoin de
+        le cibler explicitement quand on le veut."""
+        clip_download.download_clip("AbcClip", str(tmp_path), prefer_portrait=True)
+        selector = fake_ytdlp.last_options["format"]
+        assert selector.startswith("best[format_id^=portrait]")
+
+    def test_prefer_portrait_retombe_sur_le_meilleur_format_ordinaire(self, tmp_path, fake_ytdlp):
+        """Un clip sans variante portrait (Twitch n'a pas detecte de webcam)
+        ne doit jamais faire echouer le telechargement -- repli silencieux,
+        meme philosophie que le split webcam qu'il remplace."""
+        clip_download.download_clip("AbcClip", str(tmp_path), prefer_portrait=True)
+        selector = fake_ytdlp.last_options["format"]
+        assert "/best/best" in selector or selector.endswith("/best")
+
+    def test_sans_prefer_portrait_le_selecteur_ordinaire_est_inchange(self, tmp_path, fake_ytdlp):
+        clip_download.download_clip("AbcClip", str(tmp_path))
+        selector = fake_ytdlp.last_options["format"]
+        assert "portrait" not in selector
+
     def test_un_plafond_de_definition_est_transmis(self, tmp_path, fake_ytdlp):
         clip_download.download_clip("AbcClip", str(tmp_path), max_height=720)
         assert "[height<=720]" in fake_ytdlp.last_options["format"]

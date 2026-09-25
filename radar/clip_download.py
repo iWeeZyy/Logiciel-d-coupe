@@ -131,14 +131,38 @@ def _explain(raw_message: str) -> str:
     return f"Le téléchargement du clip a échoué. Détail : {raw_message.strip()[:300]}"
 
 
+def _portrait_format(max_height: int = 0) -> str:
+    """Selecteur de format demandant le rendu "portrait" que TWITCH LUI-MEME
+    genere pour un clip -- webcam en haut, jeu en bas, detecte par Twitch au
+    moment du direct -- plutot que de le reconstruire nous-memes par cadrage.
+
+    yt_dlp.extractor.twitch.TwitchClipsIE l'expose deja comme un format a
+    part entiere, avec un `format_id` prefixe "portrait" (ex. "portrait1080")
+    -- voir asset_portrait dans son code source. Jamais choisi par "best"
+    seul : ce format porte 'quality': -2, une priorite plus basse que les
+    formats standards, precisement pour ne pas remplacer silencieusement le
+    rendu paysage attendu par defaut. `[format_id^=portrait]` le cible donc
+    explicitement en premier ; le repli sur le meilleur format ordinaire
+    couvre les clips qui n'ont pas cette variante (elle depend d'une
+    disposition webcam+jeu que Twitch a pu detecter, pas garantie partout)."""
+    ceiling = f"[height<={int(max_height)}]" if max_height and max_height > 0 else ""
+    return f"best[format_id^=portrait]{ceiling}/best{ceiling}/best"
+
+
 def download_clip(url_or_slug: str, out_dir: str, *, max_height: int = 0,
-                  on_progress=None, cancel_token=None) -> str:
+                  on_progress=None, cancel_token=None, prefer_portrait: bool = False) -> str:
     """Telecharge un clip et renvoie le chemin du fichier.
 
     `on_progress` recoit une fraction entre 0 et 1 quand yt-dlp connait la
     taille totale, et None sinon -- une barre qui avance au hasard vaut moins
     qu'une barre qui assume ne pas savoir.
-    """
+
+    `prefer_portrait` demande la variante que Twitch genere lui-meme pour le
+    mode "Webcam en haut + Gameplay en bas" (voir _portrait_format) --
+    l'appelant qui l'utilise doit ensuite verifier la forme reelle du fichier
+    obtenu (video.ffmpeg_utils.video_resolution) : sans cette variante pour
+    CE clip precis, le repli silencieux renvoie le rendu paysage ordinaire,
+    pas une erreur."""
     try:
         import yt_dlp
     except ImportError as error:
@@ -162,7 +186,7 @@ def download_clip(url_or_slug: str, out_dir: str, *, max_height: int = 0,
         on_progress(min(1.0, done / total) if total else None)
 
     options = {
-        "format": build_format(max_height),
+        "format": _portrait_format(max_height) if prefer_portrait else build_format(max_height),
         "outtmpl": str(Path(out_dir) / "%(id)s.%(ext)s"),
         "merge_output_format": "mp4",
         "quiet": True,

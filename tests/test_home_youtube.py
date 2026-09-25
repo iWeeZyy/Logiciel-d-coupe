@@ -396,3 +396,53 @@ class TestFilDAnalyseTwitch:
 
         thread.run()
         assert vu.get("cancel_token") is thread.cancel_token
+
+    def test_mode_webcam_gameplay_demande_le_rendu_portrait_a_twitch(self, thread, monkeypatch):
+        """REGRESSION A EVITER : signale par l'utilisateur, notre propre
+        split (suivi de visage) montrait deux fois quasiment le meme cadrage
+        sur un clip reel -- la fenetre webcam n'etait jamais assez resserree
+        pour isoler la vignette. Twitch genere LUI-MEME cette disposition
+        (menu Partager -> "Telecharger la version portrait") : on la demande
+        au telechargement plutot que de refaire un split moins bon."""
+        from video.filter_graph import FIT_SPLIT_WEBCAM
+
+        thread.settings.fit_mode = FIT_SPLIT_WEBCAM
+        vu = {}
+        import radar.clip_download as cd
+
+        monkeypatch.setattr(cd, "download_clip",
+                            lambda url, out_dir, **k: vu.update(k) or "/tmp/c.mp4")
+        monkeypatch.setattr("pipeline.run", lambda *a, **k: [])
+
+        thread.run()
+        assert vu.get("prefer_portrait") is True
+
+    def test_mode_webcam_gameplay_repasse_sur_le_cadrage_classique_apres_telechargement(
+            self, thread, monkeypatch):
+        """Le rendu telecharge (portrait Twitch, ou son repli paysage) n'a
+        plus besoin -- et ne doit plus subir -- notre propre split : le
+        cadrage classique s'applique dessus, exactement comme quand aucune
+        webcam n'etait identifiee avant ce changement."""
+        from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
+
+        thread.settings.fit_mode = FIT_SPLIT_WEBCAM
+        import radar.clip_download as cd
+
+        monkeypatch.setattr(cd, "download_clip", lambda url, out_dir, **k: "/tmp/c.mp4")
+        monkeypatch.setattr("pipeline.run", lambda *a, **k: [])
+
+        thread.run()
+        assert thread.settings.fit_mode == FIT_CROP
+
+    def test_les_autres_modes_de_cadrage_ne_demandent_pas_le_portrait(self, thread, monkeypatch):
+        """Le repli existant (recadrage classique, image entiere) ne doit pas
+        se mettre a demander une variante Twitch qu'il n'a jamais utilisee."""
+        vu = {}
+        import radar.clip_download as cd
+
+        monkeypatch.setattr(cd, "download_clip",
+                            lambda url, out_dir, **k: vu.update(k) or "/tmp/c.mp4")
+        monkeypatch.setattr("pipeline.run", lambda *a, **k: [])
+
+        thread.run()
+        assert vu.get("prefer_portrait") is False
