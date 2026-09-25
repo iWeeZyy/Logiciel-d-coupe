@@ -186,12 +186,26 @@ class TestRightsNotice:
 
 
 class TestTemplateAndTitleEditing:
-    def test_the_title_field_is_prefilled_with_the_auto_shortened_title(self, app):
+    def test_the_title_field_is_prefilled_with_the_title_and_summary_combined(self, app):
+        """Le champ prerempli montre desormais ce qui sera reellement
+        compose sur l'image -- titre PUIS resume (voir
+        title_shortener.build_display_title) -- pas seulement le titre,
+        souvent un teaser sans l'information elle-meme."""
         p1, p2 = _patched_single_candidate()
         with p1, p2:
             from gui.radar.story_dialog import StoryDialog
 
-            article = _fake_article(title="Un titre tout a fait normal")
+            article = _fake_article(title="Un titre tout a fait normal", summary="Un résumé")
+            dialog = StoryDialog(article)
+            assert dialog.title_edit.text() == "Un titre tout a fait normal. Un résumé"
+            dialog.cleanup()
+
+    def test_sans_resume_le_champ_ne_montre_que_le_titre(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            article = _fake_article(title="Un titre tout a fait normal", summary="")
             dialog = StoryDialog(article)
             assert dialog.title_edit.text() == "Un titre tout a fait normal"
             dialog.cleanup()

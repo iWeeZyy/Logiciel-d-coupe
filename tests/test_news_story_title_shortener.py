@@ -97,3 +97,50 @@ class TestBuildDisplayTitle:
         result = build_display_title(title, max_chars=90)
         body = result.text.rstrip("…").strip()
         assert title.startswith(body)
+
+
+class TestTitreEtResumeCombines:
+    """Signale par l'utilisateur : un titre seul est souvent un teaser sans
+    l'information elle-meme -- le resume du flux, quand il existe, doit
+    desormais faire partie du texte affiche, jamais reformule."""
+
+    def test_le_resume_est_ajoute_apres_le_titre(self):
+        result = build_display_title(
+            "Un jeu culte revient enfin", "Il sortira le 3 mars sur toutes les plateformes.",
+            max_chars=200)
+        assert result.text == ("Un jeu culte revient enfin. Il sortira le 3 mars sur "
+                               "toutes les plateformes.")
+
+    def test_sans_resume_seul_le_titre_est_affiche(self):
+        result = build_display_title("Un titre suffisant a lui seul", "", max_chars=200)
+        assert result.text == "Un titre suffisant a lui seul"
+
+    def test_le_balisage_html_du_resume_est_retire(self):
+        result = build_display_title(
+            "Un studio annonce une mise a jour",
+            "<p>Elle ajoute de <b>nouvelles</b> armes.</p>", max_chars=200)
+        assert "<p>" not in result.text and "<b>" not in result.text
+        assert "Elle ajoute de nouvelles armes." in result.text
+
+    def test_un_resume_qui_ne_fait_que_repeter_le_titre_n_est_pas_duplique(self):
+        result = build_display_title(
+            "Un jeu culte revient enfin", "Un jeu culte revient enfin", max_chars=200)
+        assert result.text == "Un jeu culte revient enfin"
+
+    def test_le_point_final_du_titre_n_est_jamais_double(self):
+        result = build_display_title(
+            "Le studio confirme la date.", "Elle est fixee au 3 mars.", max_chars=200)
+        assert ".." not in result.text
+
+    def test_le_texte_combine_reste_verbatim_titre_puis_resume(self):
+        """Ne reformule jamais : le texte combine doit rester un titre
+        verbatim suivi d'un resume verbatim, jamais un melange des deux."""
+        title, summary = "Titre exact", "Resume exact avec des details precis"
+        result = build_display_title(title, summary, max_chars=200)
+        assert result.text.startswith(title)
+        assert summary in result.text
+
+    def test_un_resume_tres_long_reste_soumis_au_meme_budget_de_caracteres(self):
+        result = build_display_title("Titre court", "x" * 500, max_chars=40)
+        assert len(result.text) <= 41
+        assert result.truncated is True

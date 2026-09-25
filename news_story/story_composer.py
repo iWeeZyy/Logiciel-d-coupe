@@ -71,7 +71,13 @@ _TITLE_SCALE_MIN, _TITLE_SCALE_MAX = 0.6, 1.6
 # descendre dans la bande "Source" (_SOURCE_BAND_H, reservee separement
 # seulement quand une source sera effectivement dessinee).
 _TITLE_TOP_SAFE_FRAC = {TEMPLATE_NEWS: 0.05, TEMPLATE_BREAKING: 0.11}
-_TITLE_MAX_LINES_CAP = 20  # garde-fou contre un mur de texte illisible
+_TITLE_MAX_LINES_CAP = 60  # garde-fou contre un mur de texte illisible
+# 60 correspond au nombre de lignes MAXIMAL qu'atteindrait effectivement la
+# hauteur de securite disponible a la taille minimale (~1700px / ~28px) :
+# c'est donc `max_total_height`, pas ce plafond, qui borne reellement le
+# texte en pratique. Un titre+resume combine (voir title_shortener.py) tient
+# couramment en 15-20 lignes -- un plafond bas coupait ces textes normaux
+# avant meme d'atteindre la limite de hauteur reelle.
 
 _SOURCE_BAND_H = 96
 _SOURCE_FONT_SIZE = 32
@@ -323,6 +329,17 @@ def compose_story(image_path: str | Path, out_path: str | Path,
     source_label = (options.source_override if options.source_override is not None
                     else options.source_label).strip()
 
+    # La marque se pose EN PREMIER, avant le titre : le texte occupe
+    # desormais couramment tout l'espace vertical dispo (titre+resume
+    # combines, voir title_shortener.build_display_title), et peut recouvrir
+    # le centre de l'image ou la marque est posee. La dessiner avant laisse
+    # le bandeau+texte du titre passer PAR-DESSUS elle la ou ils se
+    # chevauchent -- une marque discrete (opacite 0.6) partiellement cachee
+    # par le texte reste correcte, l'inverse (du texte illisible sous le
+    # logo) ne l'est pas.
+    if options.branding_enabled:
+        _paste_branding(canvas)
+
     if template.show_title:
         title_text = (options.title_override if options.title_override is not None
                       else build_display_title(options.title, options.summary, template.title_max_chars).text)
@@ -341,9 +358,6 @@ def compose_story(image_path: str | Path, out_path: str | Path,
 
     if source_label:
         _draw_source(canvas, source_label)
-
-    if options.branding_enabled:
-        _paste_branding(canvas)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if options.output_format.upper() == "JPEG":

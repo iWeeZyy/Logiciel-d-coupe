@@ -15,19 +15,20 @@ TEMPLATE_BREAKING = "breaking"
 
 @dataclass(frozen=True)
 class TemplateSpec:
-    """Ce qu'un gabarit affiche. `title_max_chars` borne le titre raccourci
-    (title_shortener.build_display_title) -- BREAKING reste le plus court
-    des deux, mais les deux budgets sont desormais tres larges : NE JAMAIS
-    OMETTRE DE MOT prime sur "titre court" (demande explicite -- un titre
-    RSS gaming reel depasse rarement 150-200 caracteres, un texte plus grand
-    ou sur plus de lignes est prefere a une info manquante).
+    """Ce qu'un gabarit affiche. `title_max_chars` borne le texte raccourci
+    (title_shortener.build_display_title) -- desormais le TITRE ET LE RESUME
+    combines quand l'article en fournit un (le titre seul est souvent un
+    teaser sans l'information elle-meme -- demande explicite de
+    l'utilisateur). BREAKING reste le plus court des deux, mais les deux
+    budgets restent larges : NE JAMAIS OMETTRE DE MOT prime sur "texte
+    court".
 
-    Les deux valeurs restent EN DESSOUS de la capacite reelle d'affichage
-    (mesuree par un rendu Pillow reel avec video/text_render.fit_font_for_lines
-    a la taille de police minimale de chaque gabarit, voir story_composer._TITLE_SIZES :
-    un titre de ~290 caracteres tient deja en 5-6 lignes a 24px) -- au-dela
-    de ce plafond tres genereux, fit_font_for_lines() signale la coupure par
-    une ellipse plutot que de la faire silencieusement, voir son docstring."""
+    story_composer._draw_title() n'est plus borne par un nombre de lignes
+    fixe (voir son _available_title_lines) : il utilise tout l'espace
+    vertical reellement disponible sur le canvas, donc ces plafonds ne sont
+    plus contraints par une capacite d'affichage mesuree a l'avance -- ils
+    restent la pour garder le texte "compacte" (demande explicite) plutot
+    que d'afficher un resume de flux dans son integralite."""
 
     key: str
     label: str
@@ -38,8 +39,8 @@ class TemplateSpec:
 
 TEMPLATES: tuple[TemplateSpec, ...] = (
     TemplateSpec(key=TEMPLATE_IMAGE, label="Image", show_title=False, show_badge=False, title_max_chars=0),
-    TemplateSpec(key=TEMPLATE_NEWS, label="News", show_title=True, show_badge=False, title_max_chars=300),
-    TemplateSpec(key=TEMPLATE_BREAKING, label="Breaking", show_title=True, show_badge=True, title_max_chars=200),
+    TemplateSpec(key=TEMPLATE_NEWS, label="News", show_title=True, show_badge=False, title_max_chars=550),
+    TemplateSpec(key=TEMPLATE_BREAKING, label="Breaking", show_title=True, show_badge=True, title_max_chars=400),
 )
 
 _BY_KEY = {t.key: t for t in TEMPLATES}

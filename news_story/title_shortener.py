@@ -12,13 +12,50 @@ parfaitement factuels -- l'utiliser comme signal inventerait un jugement que
 la source ne porte pas). C'est une heuristique legere par mots-cles, pas un
 modele -- coherent avec la contrainte "aucune IA generative/de classification
 lourde" de la specification.
+
+LE TITRE SEUL NE SUFFIT SOUVENT PAS. Signale par l'utilisateur apres le
+premier passage sur l'espace disponible (voir news_story/story_composer.py) :
+beaucoup de titres de presse gaming sont des teasers ("Ce jeu culte revient
+enfin !") qui n'annoncent rien de concret -- le resume du flux RSS/Atom
+(Article.summary, deja recupere mais jamais affiche jusqu'ici) est en general
+ce qui porte l'information reelle (quoi, quand, comment). build_display_title
+combine donc desormais les deux -- jamais l'un a la place de l'autre, jamais
+reformules -- avant de raccourcir : le texte affiche explique la news, il ne
+se contente plus de l'annoncer.
 """
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
 RUMOR_LABEL = "RUMEUR : "
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str) -> str:
+    """Retire le balisage HTML qu'une balise <description>/<summary> de flux
+    porte souvent tel quel -- un retrait de balises, jamais une reecriture :
+    ce qui reste est un sous-ensemble verbatim du texte source, les espaces
+    en trop qu'un tag retire laisse derriere lui simplement normalises."""
+    return " ".join(_HTML_TAG_RE.sub(" ", text).split())
+
+
+def _combine_title_and_summary(title: str, summary: str) -> str:
+    """Le texte complet a afficher : le titre puis le resume, quand celui-ci
+    apporte une information reellement distincte -- jamais l'un reecrit dans
+    l'autre. Certains flux dupliquent quasiment le titre dans le resume (ou
+    l'inverse) : afficher la redite deux fois n'ajoute rien, donc on ne garde
+    que le plus long des deux dans ce cas."""
+    summary_clean = _strip_html(summary or "")
+    if not summary_clean:
+        return title
+    norm_title, norm_summary = _normalize(title), _normalize(summary_clean)
+    if norm_summary.startswith(norm_title) or norm_title.startswith(norm_summary):
+        return summary_clean if len(summary_clean) > len(title) else title
+    separator = "" if title.rstrip().endswith((".", "!", "?", ":")) else "."
+    return f"{title}{separator} {summary_clean}"
 
 # Mots-cles qui, dans la presse gaming francophone, marquent deja
 # eux-memes un article comme non confirme -- on ne fait que relayer cette
@@ -93,13 +130,16 @@ class DisplayTitle:
 
 
 def build_display_title(title: str, summary: str = "", max_chars: int = 90) -> DisplayTitle:
-    """Le titre pret a afficher : espaces normalises, raccourci si besoin,
+    """Le texte pret a afficher : le titre ENRICHI du resume quand il en a un
+    (voir _combine_title_and_summary -- un titre seul est souvent un teaser
+    sans l'information elle-meme), espaces normalises, raccourci si besoin,
     et prefixe "RUMEUR : " si l'article se presente lui-meme comme tel --
     jamais l'inverse (un article confirme n'est jamais requalifie en
     rumeur, une rumeur n'est jamais presentee comme confirmee)."""
     normalized_title = " ".join(title.split())
     rumor = is_rumor(normalized_title, summary)
     prefix = RUMOR_LABEL if rumor else ""
+    combined = _combine_title_and_summary(normalized_title, summary)
     budget = max(10, max_chars - len(prefix))
-    body, truncated = _truncate(normalized_title, budget)
+    body, truncated = _truncate(combined, budget)
     return DisplayTitle(text=prefix + body, is_rumor=rumor, truncated=truncated)
