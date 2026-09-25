@@ -47,13 +47,16 @@ _SCRIM_PADDING = 28
 
 _TITLE_MAX_WIDTH_FRAC = 0.86
 # (taille max, taille min, lignes max) par gabarit -- BREAKING garde un
-# style plus imposant que NEWS (taille max plus grande), mais les deux
-# tolerent desormais BEAUCOUP plus de lignes a une taille bien plus petite :
-# ne jamais omettre un mot du titre prime sur "titre court" (demande
-# explicite -- mesure reelle : meme un titre de ~290 caracteres tient en
-# 5-6 lignes a 24px, voir story_templates.TemplateSpec). Un titre court
-# garde son rendu actuel : fit_font_for_lines() part de la taille MAX et ne
-# descend que si necessaire.
+# style plus imposant que NEWS (taille max plus grande). `lignes max` n'est
+# plus qu'un PLANCHER : _draw_title() l'agrandit dynamiquement jusqu'a
+# occuper tout l'espace vertical dispo (voir _available_title_lines) --
+# demande explicite de l'utilisateur ("prendre le plus de place possible sur
+# l'image") apres constat qu'un titre long, meme jamais coupe, finissait
+# ecrase a la taille minimale dans une bande etroite pres du bas : le
+# plafond fixe forcait fit_font_for_lines() a choisir une PETITE police pour
+# tenir en peu de lignes plutot qu'une GRANDE police sur plus de lignes,
+# alors que l'image avait la place. Un titre court garde son rendu actuel :
+# fit_font_for_lines() part de la taille MAX et ne descend que si necessaire.
 _TITLE_SIZES = {
     TEMPLATE_NEWS: (72, 24, 6),
     TEMPLATE_BREAKING: (88, 28, 4),
@@ -61,6 +64,14 @@ _TITLE_SIZES = {
 _TITLE_Y_FRAC = {"top": 0.16, "center": 0.50, "bottom": 0.82}
 _TITLE_Y_FRAC_AUTO = {TEMPLATE_NEWS: 0.80, TEMPLATE_BREAKING: 0.82}
 _TITLE_SCALE_MIN, _TITLE_SCALE_MAX = 0.6, 1.6
+
+# Marges de securite pour l'agrandissement dynamique du bloc de titre : ne
+# jamais remonter plus haut que ca (laisse toujours un peu de photo visible
+# en haut, et pour BREAKING passe sous le badge, voir _draw_badge) ni
+# descendre dans la bande "Source" (_SOURCE_BAND_H, reservee separement
+# seulement quand une source sera effectivement dessinee).
+_TITLE_TOP_SAFE_FRAC = {TEMPLATE_NEWS: 0.05, TEMPLATE_BREAKING: 0.11}
+_TITLE_MAX_LINES_CAP = 20  # garde-fou contre un mur de texte illisible
 
 _SOURCE_BAND_H = 96
 _SOURCE_FONT_SIZE = 32
@@ -158,17 +169,56 @@ def _apply_scrim(canvas, top: int, bottom: int, alpha: int = _SCRIM_ALPHA) -> No
     canvas.paste(blended.convert("RGB"))
 
 
+def _available_title_lines(min_size: int, top_safe_px: float, bottom_safe_px: float,
+                           base_max_lines: int) -> int:
+    """Combien de lignes tiennent, AU PIRE (a la taille minimale), dans
+    l'espace vertical reellement disponible entre les deux marges de
+    securite -- le plancher configure (`base_max_lines`) reste le minimum
+    garanti meme si le calcul donne moins (canvas anormalement petit). Sert
+    de garde-fou de NOMBRE de lignes ; la hauteur reelle du bloc est bornee
+    separement par `max_total_height` (voir fit_font_for_lines), le seul
+    garde-fou qui reste correct quelle que soit la taille de police
+    finalement choisie."""
+    line_height = max(1, int(min_size * 1.18))
+    available_h = max(0, CANVAS_H - top_safe_px - bottom_safe_px)
+    return max(base_max_lines, min(_TITLE_MAX_LINES_CAP, available_h // line_height))
+
+
 def _draw_title(canvas, text: str, y_center_frac: float, max_size: int, min_size: int,
-                max_lines: int) -> None:
+                max_lines: int, top_safe_px: float, bottom_safe_px: float) -> None:
     from PIL import ImageDraw
 
     draw = ImageDraw.Draw(canvas)
     max_width = int(CANVAS_W * _TITLE_MAX_WIDTH_FRAC)
-    font, lines, size = fit_font_for_lines(draw, text, max_width, max_size, min_size, max_lines)
+    # Le plancher `max_lines` est agrandi jusqu'a occuper l'espace vertical
+    # REELLEMENT disponible : fit_font_for_lines() part toujours de la plus
+    # grande taille et ne descend que si necessaire, donc un plafond de
+    # lignes plus genereux le laisse choisir une police plus grande (plus de
+    # lignes permises) plutot que de forcer la taille minimale dans les
+    # anciennes 6/4 lignes -- exactement "prendre le plus de place possible".
+    # `max_total_height` est le garde-fou qui compte vraiment : un nombre de
+    # lignes genereux ne borne pas a lui seul l'espace occupe, puisqu'une
+    # taille plus grande tient en moins de lignes mais chacune plus haute.
+    available_h = max(0, CANVAS_H - top_safe_px - bottom_safe_px)
+    dynamic_max_lines = _available_title_lines(min_size, top_safe_px, bottom_safe_px, max_lines)
+    font, lines, size = fit_font_for_lines(draw, text, max_width, max_size, min_size,
+                                           dynamic_max_lines, max_total_height=available_h)
 
     line_height = int(size * 1.18)
     block_h = line_height * len(lines)
     y_center = CANVAS_H * y_center_frac
+
+    # Le bloc grandit AUTOUR de y_center : pour un titre long, ca le pousse
+    # aussi bien vers le haut que vers le bas. On le ramene dans la zone sure
+    # [top_safe_px, CANVAS_H - bottom_safe_px] plutot que de le laisser
+    # deborder du cadre ou empieter sur le badge/la bande Source -- la marge
+    # du haut est prioritaire (un titre qui deborde en haut se voit plus
+    # qu'un qui grignote la fine bande de securite du bas).
+    bottom_limit = CANVAS_H - bottom_safe_px
+    if y_center + block_h / 2 > bottom_limit:
+        y_center = bottom_limit - block_h / 2
+    if y_center - block_h / 2 < top_safe_px:
+        y_center = top_safe_px + block_h / 2
 
     # Pres du bas ("bottom"/"auto"), le bandeau s'etend jusqu'au bord plutot
     # que de s'arreter juste sous le texte : _draw_source() redessine de toute
@@ -270,6 +320,9 @@ def compose_story(image_path: str | Path, out_path: str | Path,
     with Image.open(image_path) as opened:
         canvas = _crop_and_resize(opened.convert("RGB"))
 
+    source_label = (options.source_override if options.source_override is not None
+                    else options.source_label).strip()
+
     if template.show_title:
         title_text = (options.title_override if options.title_override is not None
                       else build_display_title(options.title, options.summary, template.title_max_chars).text)
@@ -278,13 +331,14 @@ def compose_story(image_path: str | Path, out_path: str | Path,
             max_size, min_size, max_lines = _TITLE_SIZES[template.key]
             scale = max(_TITLE_SCALE_MIN, min(_TITLE_SCALE_MAX, options.title_scale))
             y_frac = _title_y_frac(options.title_position, template.key)
-            _draw_title(canvas, title_text, y_frac, int(max_size * scale), int(min_size * scale), max_lines)
+            top_safe_px = _TITLE_TOP_SAFE_FRAC[template.key] * CANVAS_H
+            bottom_safe_px = (_SOURCE_BAND_H + _SCRIM_PADDING) if source_label else _SCRIM_PADDING
+            _draw_title(canvas, title_text, y_frac, int(max_size * scale), int(min_size * scale),
+                       max_lines, top_safe_px, bottom_safe_px)
 
     if template.show_badge:
         _draw_badge(canvas)
 
-    source_label = (options.source_override if options.source_override is not None
-                    else options.source_label).strip()
     if source_label:
         _draw_source(canvas, source_label)
 

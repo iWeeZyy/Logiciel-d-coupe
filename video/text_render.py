@@ -63,7 +63,7 @@ def _mark_line_as_cut(draw, line: str, font, max_width: int) -> str:
 
 
 def fit_font_for_lines(draw, text: str, max_width: int, max_size: int, min_size: int,
-                       max_lines: int, step: int = 6):
+                       max_lines: int, step: int = 6, max_total_height: int | None = None):
     """Reduit la taille de police jusqu'a ce que le texte tienne dans
     `max_lines` lignes de largeur `max_width`. Renvoie (font, lines, size) --
     size est renvoye separement plutot que lu sur `font.size`, car
@@ -72,18 +72,33 @@ def fit_font_for_lines(draw, text: str, max_width: int, max_size: int, min_size:
     taille minimale ne suffit pas, les lignes en trop sont coupees -- mais la
     derniere ligne gardee recoit alors un "…" (voir _mark_line_as_cut) pour
     que la perte reste visible plutot que silencieuse : un lecteur qui voit
-    une phrase se terminer proprement croit avoir lu le titre en entier."""
+    une phrase se terminer proprement croit avoir lu le titre en entier.
+
+    `max_total_height`, optionnel, borne aussi la hauteur REELLE du bloc
+    (line_height * nombre de lignes) -- necessaire des que `max_lines` est
+    genereux (voir news_story/story_composer.py) : `max_lines` seul ne suffit
+    pas a borner l'espace occupe, puisqu'une taille plus grande tient dans
+    MOINS de lignes mais chacune est plus HAUTE ; sans ce second garde-fou,
+    le nombre de lignes pouvait rester sous le plafond tout en depassant tres
+    largement l'espace vertical reellement disponible. None (par defaut)
+    laisse le comportement des appelants existants (thumbnailer.py) intact."""
     size = max_size
     while size >= min_size:
         font = load_font(size)
         lines = wrap_text(draw, text, font, max_width)
-        if len(lines) <= max_lines and all(draw.textlength(line, font=font) <= max_width for line in lines):
+        line_height = int(size * 1.18)
+        height_ok = max_total_height is None or line_height * len(lines) <= max_total_height
+        if (len(lines) <= max_lines and height_ok
+                and all(draw.textlength(line, font=font) <= max_width for line in lines)):
             return font, lines, size
         size -= step
     font = load_font(min_size)
     lines = wrap_text(draw, text, font, max_width)
     kept = lines[:max_lines]
-    if len(lines) > max_lines and kept:
+    if max_total_height is not None:
+        line_height = max(1, int(min_size * 1.18))
+        kept = kept[:max(1, max_total_height // line_height)]
+    if len(lines) > len(kept) and kept:
         kept[-1] = _mark_line_as_cut(draw, kept[-1], font, max_width)
     return font, kept, min_size
 
