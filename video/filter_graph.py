@@ -687,7 +687,13 @@ def build_ffmpeg_args(
         current = base_label
         next_index = 1  # l'entree 0 est toujours la video principale
         for i, (input_args, filt, position, *rest) in enumerate(overlays):
-            n_inputs = len(input_args) // 2  # chaque entree est un couple "-i", chemin
+            # Le nombre de "-i" REELLEMENT poses, pas la longueur de la liste :
+            # un calque video (theme delire) porte "-stream_loop", "-1", "-i",
+            # chemin -- 4 elements pour UNE SEULE entree. `len(...)//2` comptait
+            # ce calque comme DEUX entrees, decalant l'index de tout calque
+            # suivant (filigrane, intro) d'un cran -- crash ffmpeg ("Invalid
+            # file index") des qu'un theme delire etait combine a un filigrane.
+            n_inputs = input_args.count("-i")
             enable = rest[0] if len(rest) > 0 else None
             prepared = rest[1] if len(rest) > 1 else False
             next_label = "vout" if i == len(overlays) - 1 else f"stage{i}"

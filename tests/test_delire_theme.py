@@ -253,6 +253,40 @@ class TestBrancheDansLaChaineFfmpeg:
         assert graph.count("overlay=") == 2
         # Trois entrees en tout : la video, le calque theme, le logo.
         assert args.count("-i") == 3
+        # REGRESSION (crash reel en usage) : le calque theme porte
+        # "-stream_loop", "-1", "-i", chemin -- 4 elements pour UNE SEULE
+        # entree ffmpeg. Compter les entrees en divisant la longueur de cette
+        # liste par deux (l'ancien calcul) prenait ce calque pour DEUX
+        # entrees et decalait l'index du filigrane a [3:v], un index qui
+        # n'existe pas (seules 3 entrees sont posees) -- ffmpeg refusait le
+        # filtergraph ("Invalid file index 3"). Le filigrane doit reference
+        # l'entree 2, jamais 3.
+        assert "[2:v]" in graph
+        assert "[3:v]" not in graph
+
+    def test_theme_filigrane_et_intro_se_composent_tous_les_trois(self):
+        """Le cas le plus charge : trois calques, dont un a DEUX entrees
+        (l'intro, video+masque -- voir video/intro_overlay.py). Verrouille la
+        meme classe de bug que le test precedent, un cran plus loin : une
+        seule entree comptee en trop dans N'IMPORTE LEQUEL des calques
+        decalerait tous les suivants."""
+        from video.intro_overlay import IntroOverlay
+        from video.watermark import Watermark
+
+        wm = Watermark(image="logo.png")
+        intro = IntroOverlay(path="intro.mp4", src_w=1080, src_h=1920, duration=7.0)
+        args = _args(delire_plan=build_theme_plan(THEME_PLUIE), watermark=wm, intro=intro)
+        graph = args[args.index("-filter_complex") + 1]
+
+        # 5 entrees en tout : video, theme, logo, intro, masque intro.
+        assert args.count("-i") == 5
+        assert graph.count("overlay=") == 3
+        # theme (index 1) -> filigrane (index 2) -> intro (index 3, masque 4).
+        assert "[1:v]" in graph
+        assert "[2:v]" in graph
+        assert "[3:v]" in graph
+        assert "[4:v]" in graph
+        assert "[5:v]" not in graph
 
     def test_un_theme_avec_montage_coupe_compose_toujours(self):
         """Le meme calque doit se brancher aussi quand des silences sont
