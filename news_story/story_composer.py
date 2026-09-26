@@ -97,10 +97,11 @@ _BADGE_PAD_Y = 14
 # pour qu'il paraisse aussi gros quelle que soit la forme de l'image source.
 # Centre sur le canvas (demande explicite) plutot qu'en coin : une marque au
 # milieu de l'image lit comme un veritable filigrane, pas comme un accent de
-# coin -- d'ou aussi une opacite plus faible qu'un logo de coin, pour rester
-# discrete malgre sa position bien plus visible.
+# coin. Opacite PLEINE (demande explicite) : la marque est posee AVANT le
+# titre (voir compose_story), donc le texte passe toujours par-dessus -- une
+# marque attenuee n'apportait rien a la lisibilite de la news.
 _BRANDING_SIZE_FRAC = 0.12
-_BRANDING_OPACITY = 0.6
+_BRANDING_OPACITY = 1.0
 
 
 @dataclass(frozen=True)
