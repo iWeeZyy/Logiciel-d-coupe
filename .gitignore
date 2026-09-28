@@ -32,6 +32,8 @@ ClipFarming-windows.zip
 # La video d'intro ClipsOfStreams est un asset livre avec l'appli (voir
 # video/intro.py), pas une video de test -- meme exception que ci-dessus.
 !assets/**/*.mp4
+# Source fond vert de l'intro, lue par tools/build_intro_asset.py.
+!tools/source/*.mp4
 
 .DS_Store
 

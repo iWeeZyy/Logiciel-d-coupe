@@ -303,7 +303,11 @@ def install_engine(on_progress: Optional[Callable] = None,
                     bundle.extractall(target)
             else:
                 with tarfile.open(archive) as bundle:
-                    bundle.extractall(target)
+                    # filter="data" : refuse les chemins absolus, les "../",
+                    # les liens hors du dossier et les fichiers speciaux --
+                    # une archive piegee ne peut rien ecrire hors de `target`
+                    # (zipfile.extractall neutralise deja ces chemins).
+                    bundle.extractall(target, filter="data")
         except (zipfile.BadZipFile, tarfile.TarError) as error:
             _shutil.rmtree(target, ignore_errors=True)
             raise PiperModelError(
