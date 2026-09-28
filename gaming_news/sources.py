@@ -21,7 +21,14 @@ DEFAULT_SOURCES = (
               feed_url="https://www.jeuxvideo.com/rss/rss.xml"),
     NewsSource(key="gamekult", label="Gamekult",
               feed_url="https://www.gamekult.com/feed.xml"),
+    # Aucun flux RSS disponible sur ce site : lu depuis sa page d'actualites.
+    NewsSource(key="breakflip", label="Breakflip",
+              feed_url="https://www.breakflip.com/actualites/", kind="breakflip"),
 )
+
+# Lecteurs connus (voir feed_fetcher.fetch_source) -- une valeur inconnue
+# dans la config retombe sur "rss" plutot que d'ecarter la source.
+KINDS = ("rss", "breakflip")
 
 
 def load_sources(config: dict | None = None) -> list[NewsSource]:
@@ -44,6 +51,9 @@ def load_sources(config: dict | None = None) -> list[NewsSource]:
         if not (key and feed_url):
             continue
         label = str(entry.get("label") or key).strip()
-        sources.append(NewsSource(key=key, label=label, feed_url=feed_url))
+        kind = str(entry.get("kind") or "rss").strip().lower()
+        if kind not in KINDS:
+            kind = "rss"
+        sources.append(NewsSource(key=key, label=label, feed_url=feed_url, kind=kind))
 
     return sources or list(DEFAULT_SOURCES)

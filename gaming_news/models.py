@@ -14,11 +14,16 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class NewsSource:
-    """Un site de presse gaming suivi, identifie par son flux."""
+    """Un site de presse gaming suivi, identifie par son flux.
+
+    `kind` choisit le lecteur : "rss" (flux RSS/Atom, le cas general) ou
+    "breakflip" (site sans flux, lu depuis sa page d'actualites -- voir
+    gaming_news/breakflip.py ; `feed_url` est alors l'URL de cette page)."""
 
     key: str
     label: str
     feed_url: str
+    kind: str = "rss"
 
 
 @dataclass(frozen=True)

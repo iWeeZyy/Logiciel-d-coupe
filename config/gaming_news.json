@@ -4,7 +4,9 @@
     {"key": "vgc", "label": "VGC", "feed_url": "https://www.videogameschronicle.com/feed/"},
     {"key": "ign_fr", "label": "IGN France", "feed_url": "https://fr.ign.com/feed.xml"},
     {"key": "jeuxvideo", "label": "Jeuxvideo.com", "feed_url": "https://www.jeuxvideo.com/rss/rss.xml"},
-    {"key": "gamekult", "label": "Gamekult", "feed_url": "https://www.gamekult.com/feed.xml"}
+    {"key": "gamekult", "label": "Gamekult", "feed_url": "https://www.gamekult.com/feed.xml"},
+    {"key": "breakflip", "label": "Breakflip", "feed_url": "https://www.breakflip.com/actualites/", "kind": "breakflip",
+     "_comment": "Breakflip n'a aucun flux RSS (tous desactives cote serveur, verifie le 2026-09-28) : kind \"breakflip\" lit sa page d'actualites et prend les dates dans son sitemap -- voir gaming_news/breakflip.py."}
   ],
   "scan": {
     "_comment": "Nombre maximal d'articles recuperes par source a chaque scan, et delai d'attente reseau par flux.",

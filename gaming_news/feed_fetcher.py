@@ -34,6 +34,7 @@ _NS = {
 
 DEFAULT_TIMEOUT_S = 10
 DEFAULT_MAX_ARTICLES = 20
+USER_AGENT = "ClipFarming/1.0 (+lecteur d'actualites gaming)"
 
 _IMG_SRC_RE = re.compile(r'<img[^>]+src="([^"]+)"', re.IGNORECASE)
 
@@ -90,10 +91,16 @@ def fetch_source(source: NewsSource, timeout_s: float = DEFAULT_TIMEOUT_S,
     du module)."""
     import requests
 
+    if source.kind == "breakflip":
+        from gaming_news import breakflip
+
+        return breakflip.fetch(source, timeout_s=timeout_s, max_articles=max_articles,
+                               user_agent=USER_AGENT)
+
     try:
         response = requests.get(
             source.feed_url, timeout=timeout_s,
-            headers={"User-Agent": "ClipFarming/1.0 (+lecteur d'actualites gaming)"},
+            headers={"User-Agent": USER_AGENT},
         )
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
