@@ -1,5 +1,6 @@
-"""Dialogue "Créer une Story" : transforme une actualité gaming selectionnee en
-visuel 9:16 pret a publier (news_story/).
+"""Dialogue "Créer un visuel" : transforme une actualité selectionnee en
+visuel pret a publier (news_story/) -- Story 9:16, ou post de fil 4:5 avec sa
+legende a copier (gabarit POST, format des comptes d'actualite cinema).
 
 Trois etapes dans une seule fenetre, meme convention que
 gui/radar/analysis_dialog.py (ClipAnalysisDialog) : recuperation de l'image
@@ -21,8 +22,8 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -42,8 +44,16 @@ from gaming_news.models import Article
 from news_story.image_cache import ImageFetchError, download as cache_download
 from news_story.image_fetcher import candidates_for_article
 from news_story.story_composer import StoryOptions, compose_story
-from news_story.story_templates import TEMPLATE_BREAKING, TEMPLATE_IMAGE, TEMPLATE_NEWS, TEMPLATES, get_template
-from news_story.title_shortener import build_display_title
+from news_story.caption import build_caption
+from news_story.story_templates import (
+    TEMPLATE_BREAKING,
+    TEMPLATE_IMAGE,
+    TEMPLATE_NEWS,
+    TEMPLATE_POST,
+    TEMPLATES,
+    get_template,
+)
+from news_story.title_shortener import build_display_title, is_rumor
 
 RIGHTS_NOTICE = ("Image provenant de l'article source. Vérifiez les droits de "
                  "réutilisation avant publication.")
@@ -52,13 +62,18 @@ _TEMPLATE_DISPLAY_LABELS = {
     TEMPLATE_IMAGE: "Image seule",
     TEMPLATE_NEWS: "Actualité (titre + source)",
     TEMPLATE_BREAKING: "Alerte BREAKING",
+    TEMPLATE_POST: "Post du fil 4:5 (titre + légende)",
 }
+# Etiquettes proposees au-dessus du titre du post ; la liste est editable.
+_POST_LABELS = ("ACTUALITÉ", "BANDE-ANNONCE", "EXCLU", "RUMEUR", "CASTING", "BOX-OFFICE", "ANECDOTE")
+_SETTINGS_ORG, _SETTINGS_APP = "ClipFarming", "NewsVisuals"
 _POSITION_LABELS = {"auto": "Automatique", "top": "Haut", "center": "Centre", "bottom": "Bas"}
 _SIZE_LABELS = {0.8: "Petit", 1.0: "Normal", 1.3: "Grand"}
 
 _MAX_CANDIDATES = 4
 _PREVIEW_DEBOUNCE_MS = 250
 _PREVIEW_DISPLAY_SIZE = QSize(270, 480)
+_PREVIEW_POST_SIZE = QSize(384, 480)
 
 
 class _FetchImagesThread(QThread):
@@ -123,12 +138,14 @@ class _ComposeThread(QThread):
 class StoryDialog(QDialog):
     """Transforme `article` en Story verticale prete a exporter."""
 
-    def __init__(self, article: Article, parent=None):
+    def __init__(self, article: Article, parent=None, theme: str = "gaming"):
         super().__init__(parent)
-        self.setWindowTitle("Créer une Story")
-        self.setMinimumSize(780, 640)
+        self.setWindowTitle("Créer un visuel")
+        self.setMinimumSize(820, 700)
 
         self.article = article
+        self.theme = theme
+        self._logo_path = self._saved_logo_path()
         self._candidates: list[tuple] = []  # [(ImageCandidate, CachedImage), ...]
         self._thumbnail_buttons: list[QPushButton] = []
         self._selected_index: int | None = None
@@ -192,9 +209,22 @@ class StoryDialog(QDialog):
         self.template_combo = QComboBox()
         for spec in TEMPLATES:
             self.template_combo.addItem(_TEMPLATE_DISPLAY_LABELS.get(spec.key, spec.label), spec.key)
-        self.template_combo.setCurrentIndex([t.key for t in TEMPLATES].index(TEMPLATE_NEWS))
+        # Le fil cinema est fait pour alimenter un compte de posts 4:5 : ce
+        # modele y est propose d'emblee ; les autres fils gardent la Story.
+        default_template = TEMPLATE_POST if theme == "cinema" else TEMPLATE_NEWS
+        self.template_combo.setCurrentIndex([t.key for t in TEMPLATES].index(default_template))
         self.template_combo.currentIndexChanged.connect(self._on_template_changed)
         options_panel.addWidget(self.template_combo)
+
+        self.label_caption = QLabel("Étiquette")
+        options_panel.addWidget(self.label_caption)
+        self.label_combo = QComboBox()
+        self.label_combo.setEditable(True)
+        self.label_combo.addItems(_POST_LABELS)
+        if is_rumor(article.title, article.summary):
+            self.label_combo.setCurrentText("RUMEUR")
+        self.label_combo.currentTextChanged.connect(self._schedule_preview)
+        options_panel.addWidget(self.label_combo)
 
         options_panel.addWidget(QLabel("Titre"))
         self.title_edit = QLineEdit()
@@ -221,10 +251,31 @@ class StoryDialog(QDialog):
         self.size_combo.currentIndexChanged.connect(self._schedule_preview)
         options_panel.addWidget(self.size_combo)
 
-        self.branding_check = QCheckBox("Ajouter le logo ClipsOfStreams")
+        logo_row = QHBoxLayout()
+        self.branding_check = QCheckBox("Ajouter le logo")
         self.branding_check.setChecked(True)
         self.branding_check.toggled.connect(self._schedule_preview)
-        options_panel.addWidget(self.branding_check)
+        logo_row.addWidget(self.branding_check)
+        self.logo_btn = QPushButton("Choisir le logo…")
+        self.logo_btn.setToolTip("Logo propre à ce fil (gaming, cinéma…), mémorisé pour les prochaines fois.")
+        self.logo_btn.clicked.connect(self._choose_logo)
+        logo_row.addWidget(self.logo_btn)
+        logo_row.addStretch(1)
+        options_panel.addLayout(logo_row)
+        self.logo_label = QLabel(self._logo_description())
+        self.logo_label.setProperty("role", "muted")
+        options_panel.addWidget(self.logo_label)
+
+        # Legende du post : titre + resume + source, tels que fournis par le
+        # flux (news_story/caption.py), retouchables avant de copier.
+        options_panel.addWidget(QLabel("Légende (description du post)"))
+        self.caption_edit = QPlainTextEdit(build_caption(
+            article.title, article.summary, article.source_label, theme))
+        self.caption_edit.setMinimumHeight(110)
+        options_panel.addWidget(self.caption_edit)
+        copy_btn = QPushButton("📋 Copier la légende")
+        copy_btn.clicked.connect(self._copy_caption)
+        options_panel.addWidget(copy_btn)
 
         options_panel.addStretch(1)
         body.addLayout(options_panel, stretch=1)
@@ -296,16 +347,48 @@ class StoryDialog(QDialog):
     # --------------------------------------------------------- edition
     def _on_template_changed(self) -> None:
         template = get_template(self.template_combo.currentData())
+        is_post = template.key == TEMPLATE_POST
         self.title_edit.setEnabled(template.show_title)
+        self.label_caption.setVisible(is_post)
+        self.label_combo.setVisible(is_post)
+        # Le post a une mise en page fixe (titre en bas) : pas de position.
+        self.position_combo.setEnabled(not is_post)
+        self.preview_label.setFixedSize(_PREVIEW_POST_SIZE if is_post else _PREVIEW_DISPLAY_SIZE)
         if template.show_title:
             # Ne remplace le titre que s'il vaut encore la valeur auto-generee
             # precedente -- une modification manuelle de l'utilisateur ne doit
             # jamais etre effacee par un simple changement de modele.
             if self.title_edit.text() in ("", self._auto_title):
+                summary = self.article.summary if template.title_uses_summary else ""
                 self._auto_title = build_display_title(
-                    self.article.title, self.article.summary, template.title_max_chars).text
+                    self.article.title, summary, template.title_max_chars).text
                 self.title_edit.setText(self._auto_title)
         self._schedule_preview()
+
+    # ------------------------------------------------------------ logo
+    def _settings(self) -> QSettings:
+        return QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+
+    def _saved_logo_path(self) -> str | None:
+        value = self._settings().value(f"logo/{self.theme}", "")
+        return value if value and Path(value).is_file() else None
+
+    def _logo_description(self) -> str:
+        return f"Logo : {Path(self._logo_path).name}" if self._logo_path else "Logo : celui de l'application"
+
+    def _choose_logo(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choisir le logo", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        if not path:
+            return
+        self._logo_path = path
+        self._settings().setValue(f"logo/{self.theme}", path)
+        self.logo_label.setText(self._logo_description())
+        self._schedule_preview()
+
+    def _copy_caption(self) -> None:
+        QGuiApplication.clipboard().setText(self.caption_edit.toPlainText())
+        self.status_label.setText("Légende copiée dans le presse-papiers.")
 
     def _schedule_preview(self) -> None:
         self._preview_timer.start(_PREVIEW_DEBOUNCE_MS)
@@ -322,6 +405,8 @@ class StoryDialog(QDialog):
             title_position=self.position_combo.currentData(),
             title_scale=self.size_combo.currentData(),
             output_format="PNG",
+            label=self.label_combo.currentText(),
+            branding_path=self._logo_path,
         )
 
     # ------------------------------------------------------------ apercu
@@ -342,7 +427,7 @@ class StoryDialog(QDialog):
         pixmap = QPixmap(path)
         if not pixmap.isNull():
             self.preview_label.setPixmap(pixmap.scaled(
-                _PREVIEW_DISPLAY_SIZE, Qt.AspectRatioMode.KeepAspectRatio,
+                self.preview_label.size(), Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation))
         self.export_btn.setEnabled(True)
         if self._compose_pending:
@@ -357,9 +442,10 @@ class StoryDialog(QDialog):
     def _export(self) -> None:
         if self._selected_index is None:
             return
-        default_name = f"story_{self.article.article_id}.png"
+        prefix = "post" if self.template_combo.currentData() == TEMPLATE_POST else "story"
+        default_name = f"{prefix}_{self.article.article_id}.png"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Exporter la Story", default_name,
+            self, "Exporter le visuel", default_name,
             "Image PNG (*.png);;Image JPEG (*.jpg *.jpeg)")
         if not path:
             return
@@ -378,7 +464,7 @@ class StoryDialog(QDialog):
     def _on_export_ready(self, path: str) -> None:
         self.export_btn.setEnabled(True)
         self.status_label.setText("")
-        QMessageBox.information(self, "Story exportée", f"Story enregistrée :\n{path}")
+        QMessageBox.information(self, "Visuel exporté", f"Visuel enregistré :\n{path}")
 
     def _on_export_failed(self, message: str) -> None:
         self.export_btn.setEnabled(True)

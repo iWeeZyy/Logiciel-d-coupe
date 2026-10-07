@@ -1,12 +1,16 @@
 {
-  "_comment": "Sources et reglages du Radar Gaming News. Chaque source est un flux RSS/Atom independant : une source injoignable ou dont l'URL a change n'empeche pas les autres de s'afficher (gaming_news/feed_fetcher.py). IMPORTANT : ces URLs de flux n'ont PAS pu etre verifiees par un acces reseau reel depuis l'environnement de developpement (reseau restreint au moment de l'ecriture) -- verifie-les une fois l'application lancee, et corrige ici (simple edition de texte, aucun code a toucher) si un site ne renvoie plus rien.",
+  "_comment": "Sources et reglages du Radar News. \"theme\" (gaming par defaut, ou cinema) range chaque source dans un fil, filtre dans l'onglet News. Chaque source est un flux RSS/Atom independant : une source injoignable ou dont l'URL a change n'empeche pas les autres de s'afficher (gaming_news/feed_fetcher.py). IMPORTANT : ces URLs de flux n'ont PAS pu etre verifiees par un acces reseau reel depuis l'environnement de developpement (reseau restreint au moment de l'ecriture) -- verifie-les une fois l'application lancee, et corrige ici (simple edition de texte, aucun code a toucher) si un site ne renvoie plus rien.",
   "sources": [
     {"key": "vgc", "label": "VGC", "feed_url": "https://www.videogameschronicle.com/feed/"},
     {"key": "ign_fr", "label": "IGN France", "feed_url": "https://fr.ign.com/feed.xml"},
     {"key": "jeuxvideo", "label": "Jeuxvideo.com", "feed_url": "https://www.jeuxvideo.com/rss/rss.xml"},
     {"key": "gamekult", "label": "Gamekult", "feed_url": "https://www.gamekult.com/feed.xml"},
     {"key": "breakflip", "label": "Breakflip", "feed_url": "https://www.breakflip.com/actualites/", "kind": "breakflip",
-     "_comment": "Breakflip n'a aucun flux RSS (tous desactives cote serveur, verifie le 2026-09-28) : kind \"breakflip\" lit sa page d'actualites et prend les dates dans son sitemap -- voir gaming_news/breakflip.py."}
+     "_comment": "Breakflip n'a aucun flux RSS (tous desactives cote serveur, verifie le 2026-09-28) : kind \"breakflip\" lit sa page d'actualites et prend les dates dans son sitemap -- voir gaming_news/breakflip.py."},
+    {"key": "allocine", "label": "AlloCiné", "feed_url": "https://www.allocine.fr/rss/news.xml", "theme": "cinema"},
+    {"key": "ecranlarge", "label": "Écran Large", "feed_url": "https://www.ecranlarge.com/rss/", "theme": "cinema"},
+    {"key": "cinechronicle", "label": "CinéChronicle", "feed_url": "https://www.cinechronicle.com/feed/", "theme": "cinema"},
+    {"key": "numerama_cinema", "label": "Numerama Ciné", "feed_url": "https://www.numerama.com/pop-culture/cinema/feed/", "theme": "cinema"}
   ],
   "scan": {
     "_comment": "Nombre maximal d'articles recuperes par source a chaque scan, et delai d'attente reseau par flux.",

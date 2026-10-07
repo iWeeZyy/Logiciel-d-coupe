@@ -11,6 +11,7 @@ from dataclasses import dataclass
 TEMPLATE_IMAGE = "image"
 TEMPLATE_NEWS = "news"
 TEMPLATE_BREAKING = "breaking"
+TEMPLATE_POST = "post"
 
 
 @dataclass(frozen=True)
@@ -35,12 +36,22 @@ class TemplateSpec:
     show_title: bool
     show_badge: bool
     title_max_chars: int
+    # Format de sortie. Les Stories sont en 9:16 ; POST est un post de fil
+    # Instagram en 4:5 (1080x1350), le format portrait le plus grand que le
+    # fil affiche sans le rogner.
+    canvas_size: tuple[int, int] = (1080, 1920)
+    # POST n'affiche que le TITRE, court et percutant : le detail de la news
+    # va dans la legende du post (news_story/caption.py), pas sur l'image --
+    # le format des comptes d'actu qui l'ont demande.
+    title_uses_summary: bool = True
 
 
 TEMPLATES: tuple[TemplateSpec, ...] = (
     TemplateSpec(key=TEMPLATE_IMAGE, label="Image", show_title=False, show_badge=False, title_max_chars=0),
     TemplateSpec(key=TEMPLATE_NEWS, label="News", show_title=True, show_badge=False, title_max_chars=550),
     TemplateSpec(key=TEMPLATE_BREAKING, label="Breaking", show_title=True, show_badge=True, title_max_chars=400),
+    TemplateSpec(key=TEMPLATE_POST, label="Post 4:5", show_title=True, show_badge=False,
+                 title_max_chars=160, canvas_size=(1080, 1350), title_uses_summary=False),
 )
 
 _BY_KEY = {t.key: t for t in TEMPLATES}

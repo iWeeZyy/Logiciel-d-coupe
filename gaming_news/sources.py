@@ -24,7 +24,22 @@ DEFAULT_SOURCES = (
     # Aucun flux RSS disponible sur ce site : lu depuis sa page d'actualites.
     NewsSource(key="breakflip", label="Breakflip",
               feed_url="https://www.breakflip.com/actualites/", kind="breakflip"),
+    # Cinema & series -- flux verifies le 2026-10-07 (Premiere et Le Film
+    # Francais n'exposent pas de flux RSS exploitable).
+    NewsSource(key="allocine", label="AlloCiné",
+              feed_url="https://www.allocine.fr/rss/news.xml", theme="cinema"),
+    NewsSource(key="ecranlarge", label="Écran Large",
+              feed_url="https://www.ecranlarge.com/rss/", theme="cinema"),
+    NewsSource(key="cinechronicle", label="CinéChronicle",
+              feed_url="https://www.cinechronicle.com/feed/", theme="cinema"),
+    NewsSource(key="numerama_cinema", label="Numerama Ciné",
+              feed_url="https://www.numerama.com/pop-culture/cinema/feed/", theme="cinema"),
 )
+
+# Fils thematiques connus, dans l'ordre d'affichage du selecteur de l'onglet
+# News -- une valeur inconnue dans la config retombe sur "gaming".
+THEMES = ("gaming", "cinema")
+THEME_LABELS = {"gaming": "🎮 Gaming", "cinema": "🎬 Cinéma & séries"}
 
 # Lecteurs connus (voir feed_fetcher.fetch_source) -- une valeur inconnue
 # dans la config retombe sur "rss" plutot que d'ecarter la source.
@@ -54,6 +69,9 @@ def load_sources(config: dict | None = None) -> list[NewsSource]:
         kind = str(entry.get("kind") or "rss").strip().lower()
         if kind not in KINDS:
             kind = "rss"
-        sources.append(NewsSource(key=key, label=label, feed_url=feed_url, kind=kind))
+        theme = str(entry.get("theme") or "gaming").strip().lower()
+        if theme not in THEMES:
+            theme = "gaming"
+        sources.append(NewsSource(key=key, label=label, feed_url=feed_url, kind=kind, theme=theme))
 
     return sources or list(DEFAULT_SOURCES)

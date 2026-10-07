@@ -24,11 +24,12 @@ avant d'en arriver la.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from core.logging_setup import get_logger
-from news_story.story_templates import TEMPLATE_BREAKING, TEMPLATE_NEWS, get_template
+from news_story.story_templates import TEMPLATE_BREAKING, TEMPLATE_NEWS, TEMPLATE_POST, get_template
 from news_story.title_shortener import build_display_title
 from video.cropper import TARGET_H, TARGET_W, CenterHint, compute_crop_rect
 from video.face_detector import detect_faces_in_image
@@ -122,6 +123,12 @@ class StoryOptions:
     title_position: str = "auto"  # "auto" | "top" | "center" | "bottom"
     title_scale: float = 1.0
     output_format: str = "PNG"  # "PNG" | "JPEG"
+    # Etiquette au-dessus du titre (gabarit POST seulement) : ACTUALITE,
+    # BANDE-ANNONCE, RUMEUR...
+    label: str = "ACTUALITÉ"
+    # Logo a incruster ; None = le logo de l'appli (video/watermark.py).
+    # Permet un logo par compte (un compte cinema n'a pas le logo gaming).
+    branding_path: str | None = None
 
 
 def _smart_crop_hint(image) -> CenterHint | None:
@@ -270,7 +277,13 @@ def _draw_badge(canvas) -> None:
     draw.text((x0 + _BADGE_PAD_X, y0 + _BADGE_PAD_Y // 2), label, font=font, fill=_BADGE_TEXT_COLOR)
 
 
-def _paste_branding(canvas) -> None:
+def _branding_path(options: "StoryOptions") -> Path:
+    from video.watermark import default_image_path
+
+    return Path(options.branding_path) if options.branding_path else default_image_path()
+
+
+def _paste_branding(canvas, logo_path: Path | None = None) -> None:
     """Incrustation du logo ClipsOfStreams EXISTANT (video/watermark.py) --
     jamais un logo invente pour cette fonctionnalite. Centre sur l'image
     plutot qu'en coin (demande explicite) : c'est ce qui le fait lire comme
@@ -281,7 +294,7 @@ def _paste_branding(canvas) -> None:
 
     from video.watermark import default_image_path
 
-    logo_path = default_image_path()
+    logo_path = logo_path or default_image_path()
     if not logo_path.is_file():
         logger.info("Logo de marque introuvable -- Story generee sans incrustation.")
         return
@@ -324,6 +337,9 @@ def compose_story(image_path: str | Path, out_path: str | Path,
     image_path, out_path = Path(image_path), Path(out_path)
     template = get_template(options.template)
 
+    if template.key == TEMPLATE_POST:
+        return _compose_post(image_path, out_path, options, template)
+
     with Image.open(image_path) as opened:
         canvas = _crop_and_resize(opened.convert("RGB"))
 
@@ -339,7 +355,7 @@ def compose_story(image_path: str | Path, out_path: str | Path,
     # par le texte reste correcte, l'inverse (du texte illisible sous le
     # logo) ne l'est pas.
     if options.branding_enabled:
-        _paste_branding(canvas)
+        _paste_branding(canvas, _branding_path(options))
 
     if template.show_title:
         title_text = (options.title_override if options.title_override is not None
@@ -366,3 +382,29 @@ def compose_story(image_path: str | Path, out_path: str | Path,
     else:
         canvas.save(out_path, format="PNG")
     return out_path
+
+
+_RUMOR_PREFIX_RE = re.compile(r"^(\s*rumeurs?\s*:\s*)+", re.IGNORECASE)
+
+
+def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, template) -> Path:
+    """Gabarit POST (4:5) : voir news_story/post_composer.py. Titre seul,
+    jamais le resume (il va dans la legende) ; un titre que la source
+    marque deja comme rumeur passe son « RUMEUR : » dans l'etiquette plutot
+    que de le garder dans le titre."""
+    from news_story.post_composer import DEFAULT_LABEL, compose_post
+
+    title = (options.title_override if options.title_override is not None
+             else build_display_title(options.title, "", template.title_max_chars).text).strip()
+    label = options.label
+    # Le prefixe peut apparaitre deux fois : ajoute par build_display_title
+    # ET deja present dans le titre de la source (« Rumeur : ... »).
+    stripped = _RUMOR_PREFIX_RE.sub("", title)
+    if stripped != title:
+        title = stripped
+        if label.strip().upper() == DEFAULT_LABEL:
+            label = "RUMEUR"
+    return compose_post(
+        image_path, out_path, title=title, label=label,
+        logo_path=_branding_path(options) if options.branding_enabled else None,
+        title_scale=options.title_scale, output_format=options.output_format)

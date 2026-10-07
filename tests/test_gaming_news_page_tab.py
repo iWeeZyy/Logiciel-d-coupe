@@ -114,7 +114,7 @@ class TestGamingNewsTab:
         opened = []
 
         class _FakeDialog:
-            def __init__(self, article, parent=None):
+            def __init__(self, article, parent=None, theme="gaming"):
                 opened.append(article)
 
             def exec(self):
@@ -128,8 +128,36 @@ class TestGamingNewsTab:
 
         card = tab.list_layout.itemAt(0).widget()
         story_button = [b for b in card.findChildren(type(tab.refresh_btn))
-                        if "Story" in b.text()][0]
+                        if "visuel" in b.text()][0]
         story_button.click()
 
         assert opened == [article]
+        tab.cleanup()
+
+
+class TestFiltreParTheme:
+    def test_le_selecteur_ne_montre_que_les_articles_du_fil_choisi(self, app, monkeypatch):
+        from gaming_news.models import Article, NewsSource
+        from gui.radar import news_page_tab
+
+        sources = [NewsSource(key="vgc", label="VGC", feed_url="https://x.test/a"),
+                   NewsSource(key="allocine", label="AlloCiné", feed_url="https://x.test/b", theme="cinema")]
+        monkeypatch.setattr(news_page_tab, "load_sources", lambda config: sources)
+        articles = [Article(source_key="vgc", source_label="VGC", title="Un jeu", url="https://x.test/1"),
+                    Article(source_key="allocine", source_label="AlloCiné", title="Un film", url="https://x.test/2")]
+        monkeypatch.setattr(news_page_tab, "fetch_all_sources", lambda *a, **k: articles)
+
+        tab = news_page_tab.GamingNewsTab()
+        themes = [tab.theme_combo.itemData(i) for i in range(tab.theme_combo.count())]
+        assert themes == ["gaming", "cinema", ""]
+        tab.refresh()
+        assert _process_until(app, lambda: tab.list_layout.count() == 1)  # fil gaming par defaut
+
+        tab.theme_combo.setCurrentIndex(themes.index("cinema"))
+        app.processEvents()
+        assert [a.title for a in tab._visible_articles()] == ["Un film"]
+
+        tab.theme_combo.setCurrentIndex(themes.index(""))
+        app.processEvents()
+        assert len(tab._visible_articles()) == 2
         tab.cleanup()

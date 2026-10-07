@@ -302,3 +302,79 @@ class TestExport:
                 dialog._export()
             assert dialog.export_btn.isEnabled()  # jamais desactive pour un export qui n'a pas eu lieu
             dialog.cleanup()
+
+
+class TestPostDuFil:
+    """Gabarit POST 4:5 : propose d'emblee pour le fil cinema, titre seul,
+    legende a copier."""
+
+    def test_le_fil_cinema_propose_le_post_avec_le_titre_seul(self, app):
+        from news_story.story_templates import TEMPLATE_POST
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Un film annonce", summary="Le détail."), theme="cinema")
+            assert dialog.template_combo.currentData() == TEMPLATE_POST
+            assert dialog.title_edit.text() == "Un film annonce"
+            assert dialog.label_combo.isVisibleTo(dialog)
+            dialog.cleanup()
+
+    def test_le_fil_gaming_garde_la_story_par_defaut(self, app):
+        from news_story.story_templates import TEMPLATE_NEWS
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article())
+            assert dialog.template_combo.currentData() == TEMPLATE_NEWS
+            assert not dialog.label_combo.isVisibleTo(dialog)
+            dialog.cleanup()
+
+    def test_la_legende_est_preremplie_et_copiable(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from PySide6.QtGui import QGuiApplication
+
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Un film annonce", summary="Le détail."), theme="cinema")
+            caption = dialog.caption_edit.toPlainText()
+            assert caption.startswith("🎬 Un film annonce") and "Le détail." in caption
+            dialog._copy_caption()
+            assert QGuiApplication.clipboard().text() == caption
+            dialog.cleanup()
+
+    def test_une_rumeur_preselectionne_l_etiquette_rumeur(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Rumeur : un reboot en préparation", summary=""),
+                                 theme="cinema")
+            assert dialog.label_combo.currentText() == "RUMEUR"
+            dialog.cleanup()
+
+    def test_l_export_du_post_est_en_4_5(self, app, tmp_path):
+        from PIL import Image
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            assert _process_until(app, lambda: dialog.export_btn.isEnabled())
+            out_path = str(tmp_path / "post.png")
+            with patch("PySide6.QtWidgets.QFileDialog.getSaveFileName", return_value=(out_path, "")), \
+                 patch("PySide6.QtWidgets.QMessageBox.information", lambda *a, **k: None):
+                dialog._export()
+                assert _process_until(app, lambda: os.path.exists(out_path) and os.path.getsize(out_path) > 0)
+                # Attendre aussi la confirmation (_on_export_ready) tant que la
+                # boite de message est neutralisee : sinon elle s'ouvrirait
+                # pour de vrai dans un test suivant et le bloquerait.
+                assert _process_until(app, lambda: dialog.export_btn.isEnabled())
+            with Image.open(out_path) as im:
+                assert im.size == (1080, 1350)
+            dialog.cleanup()

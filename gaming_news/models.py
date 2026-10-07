@@ -18,12 +18,16 @@ class NewsSource:
 
     `kind` choisit le lecteur : "rss" (flux RSS/Atom, le cas general) ou
     "breakflip" (site sans flux, lu depuis sa page d'actualites -- voir
-    gaming_news/breakflip.py ; `feed_url` est alors l'URL de cette page)."""
+    gaming_news/breakflip.py ; `feed_url` est alors l'URL de cette page).
+
+    `theme` range la source dans un fil ("gaming", "cinema") : l'onglet News
+    filtre dessus, pour alimenter un compte par theme sans tout melanger."""
 
     key: str
     label: str
     feed_url: str
     kind: str = "rss"
+    theme: str = "gaming"
 
 
 @dataclass(frozen=True)

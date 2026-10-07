@@ -1,4 +1,4 @@
-"""Onglet "📰 Gaming News" du Radar : agrege les flux RSS/Atom configures
+"""Onglet "📰 News" du Radar : agrege les flux RSS/Atom configures
 (config/gaming_news.json) et propose, pour chaque article, de l'ouvrir ou d'en
 tirer une Story verticale (news_story/, gui/radar/story_dialog.py).
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -24,7 +25,7 @@ from PySide6.QtWidgets import (
 
 from core.config_loader import load_gaming_news_config
 from gaming_news.feed_fetcher import fetch_all_sources
-from gaming_news.sources import load_sources
+from gaming_news.sources import THEME_LABELS, THEMES, load_sources
 
 
 class NewsScanThread(QThread):
@@ -68,6 +69,7 @@ class GamingNewsTab(QWidget):
         self.max_articles = scan_cfg.get("max_articles_per_source", 20)
         self._thread: NewsScanThread | None = None
         self._articles: list = []
+        self._theme_by_source = {s.key: s.theme for s in self.sources}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 8, 0, 0)
@@ -77,6 +79,16 @@ class GamingNewsTab(QWidget):
         self.refresh_btn = QPushButton("🔄 Actualiser")
         self.refresh_btn.clicked.connect(self.refresh)
         header.addWidget(self.refresh_btn)
+        # Un fil par theme (un compte gaming, un compte cinema...) : le scan
+        # recupere toutes les sources, le filtre ne fait que choisir quoi
+        # afficher -- changer de fil est instantane, sans nouveau scan.
+        self.theme_combo = QComboBox()
+        for theme in THEMES:
+            if any(s.theme == theme for s in self.sources):
+                self.theme_combo.addItem(THEME_LABELS.get(theme, theme), theme)
+        self.theme_combo.addItem("Tout", "")
+        self.theme_combo.currentIndexChanged.connect(lambda _=0: self._render())
+        header.addWidget(self.theme_combo)
         header.addStretch(1)
         outer.addLayout(header)
 
@@ -130,6 +142,13 @@ class GamingNewsTab(QWidget):
         self.refresh_btn.setEnabled(True)
         self.status_label.setText(message)
 
+    def _theme_of(self, article) -> str:
+        return self._theme_by_source.get(article.source_key, "gaming")
+
+    def _visible_articles(self) -> list:
+        theme = self.theme_combo.currentData()
+        return [a for a in self._articles if not theme or self._theme_of(a) == theme]
+
     def _render(self) -> None:
         self._clear()
         if not self._articles:
@@ -137,8 +156,9 @@ class GamingNewsTab(QWidget):
                 "Aucune actualité récupérée. Vérifiez la connexion internet, ou les adresses de "
                 "flux dans config/gaming_news.json (un site a pu changer son adresse).")
             return
-        self.status_label.setText(f"{len(self._articles)} actualité(s) récupérée(s).")
-        for article in self._articles:
+        visible = self._visible_articles()
+        self.status_label.setText(f"{len(visible)} actualité(s) récupérée(s).")
+        for article in visible:
             self.list_layout.addWidget(self._article_card(article))
 
     def _article_card(self, article) -> QFrame:
@@ -168,7 +188,7 @@ class GamingNewsTab(QWidget):
         open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(article.url)))
         actions.addWidget(open_btn)
 
-        story_btn = QPushButton("📸 Créer une Story")
+        story_btn = QPushButton("📸 Créer un visuel")
         story_btn.clicked.connect(lambda _=False, a=article: self._open_story_dialog(a))
         actions.addWidget(story_btn)
         actions.addStretch(1)
@@ -178,7 +198,7 @@ class GamingNewsTab(QWidget):
     def _open_story_dialog(self, article) -> None:
         from gui.radar.story_dialog import StoryDialog
 
-        dialog = StoryDialog(article, parent=self)
+        dialog = StoryDialog(article, parent=self, theme=self._theme_of(article))
         dialog.exec()
 
     def cleanup(self) -> None:

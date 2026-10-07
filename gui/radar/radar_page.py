@@ -215,7 +215,7 @@ class RadarPage(QWidget):
         # actualite de presse n'est ni un Creator ni une Opportunity
         # (radar/models.py), rien du scoring/scan existant ne s'y applique.
         self.news_tab = GamingNewsTab()
-        self.tabs.addTab(self.news_tab, "📰 Gaming News")
+        self.tabs.addTab(self.news_tab, "📰 News")
         outer.addWidget(self.tabs, stretch=1)
 
     def _build_tab(self, key: str) -> QWidget:
