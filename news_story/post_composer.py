@@ -20,6 +20,7 @@ manque, jamais une erreur.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from core.logging_setup import get_logger
@@ -36,7 +37,7 @@ _TITLE_LINE_HEIGHT = 1.08
 _LABEL_SIZE = 46
 _LABEL_GAP = 26                  # espace entre l'etiquette et chaque filet
 _RULE_THICKNESS = 2
-_LOGO_MAX_H = 84
+_LOGO_MAX_H = 104
 _LOGO_MAX_W = 300
 _BOTTOM_MARGIN = 54
 _GAP_TITLE_LOGO = 34
@@ -46,6 +47,35 @@ _GRADIENT_MAX_ALPHA = 240
 _GRADIENT_COLOR = (10, 10, 14)
 
 DEFAULT_LABEL = "ACTUALITÉ"
+
+# Typographie francaise : l'espace avant ? ! : ; » est insecable -- sans ca,
+# le retour a la ligne laissait un « ? » seul sur la derniere ligne.
+_NBSP = "\u00a0"
+_SPACE_BEFORE_HIGH_PUNCT = re.compile(r" +([?!:;»])")
+_SPACE_AFTER_OPEN_QUOTE = re.compile(r"(«) +")
+
+
+def _wrap(draw, text: str, font, max_width: int) -> list[str]:
+    """Retour a la ligne sur les espaces ORDINAIRES seulement (str.split()
+    sans argument couperait aussi sur l'espace insecable)."""
+    lines, current = [], ""
+    for word in text.split(" "):
+        if not word:
+            continue
+        candidate = f"{current} {word}" if current else word
+        if current and draw.textlength(candidate, font=font) > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _french_spacing(text: str) -> str:
+    text = _SPACE_BEFORE_HIGH_PUNCT.sub(_NBSP + r"\1", text)
+    return _SPACE_AFTER_OPEN_QUOTE.sub(r"\1" + _NBSP, text)
 
 
 def _title_font_path() -> Path:
@@ -105,8 +135,7 @@ def _apply_gradient(canvas) -> None:
 
 
 def _fit_title(draw, text: str, scale: float):
-    from video.text_render import wrap_text
-
+    wrap_text = _wrap
     max_size = int(_TITLE_SIZES[0] * scale)
     min_size = int(_TITLE_SIZES[1] * scale)
     size = max_size
@@ -163,7 +192,7 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
         canvas.paste(logo, ((POST_W - logo.width) // 2, bottom - logo.height), logo)
         bottom -= logo.height + _GAP_TITLE_LOGO
 
-    title = " ".join(title.split()).upper()
+    title = _french_spacing(" ".join(title.split()).upper())
     if title:
         font, lines, size = _fit_title(draw, title, max(0.6, min(1.6, title_scale)))
         line_h = int(size * _TITLE_LINE_HEIGHT)

@@ -67,6 +67,9 @@ _TEMPLATE_DISPLAY_LABELS = {
 # Etiquettes proposees au-dessus du titre du post ; la liste est editable.
 _POST_LABELS = ("ACTUALITÉ", "BANDE-ANNONCE", "EXCLU", "RUMEUR", "CASTING", "BOX-OFFICE", "ANECDOTE")
 _SETTINGS_ORG, _SETTINGS_APP = "ClipFarming", "NewsVisuals"
+# Logo livre avec l'appli pour un fil, utilise tant que l'utilisateur n'en a
+# pas choisi un autre pour ce fil (bouton « Choisir le logo… »).
+_THEME_DEFAULT_LOGOS = {"cinema": "branding/logo-cinema.png"}
 _POSITION_LABELS = {"auto": "Automatique", "top": "Haut", "center": "Centre", "bottom": "Bas"}
 _SIZE_LABELS = {0.8: "Petit", 1.0: "Normal", 1.3: "Grand"}
 
@@ -371,7 +374,16 @@ class StoryDialog(QDialog):
 
     def _saved_logo_path(self) -> str | None:
         value = self._settings().value(f"logo/{self.theme}", "")
-        return value if value and Path(value).is_file() else None
+        if value and Path(value).is_file():
+            return value
+        default = _THEME_DEFAULT_LOGOS.get(self.theme)
+        if default:
+            from core.paths import app_base_dir
+
+            path = app_base_dir() / "assets" / default
+            if path.is_file():
+                return str(path)
+        return None
 
     def _logo_description(self) -> str:
         return f"Logo : {Path(self._logo_path).name}" if self._logo_path else "Logo : celui de l'application"

@@ -149,3 +149,16 @@ class TestThemes:
         root = Path(__file__).resolve().parent.parent
         config = json.loads((root / "config" / "gaming_news.json").read_text(encoding="utf-8"))
         assert any(s.theme == "cinema" for s in sources.load_sources(config))
+
+
+class TestTypographie:
+    def test_un_point_d_interrogation_ne_finit_jamais_seul_sur_une_ligne(self):
+        from PIL import ImageDraw
+
+        from news_story.post_composer import _font, _french_spacing, _wrap
+
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        title = _french_spacing("QUI A VRAIMENT DOMINÉ LES VENTES EN 2026 ?")
+        for width in range(200, 1000, 20):
+            lines = _wrap(draw, title, _font(70), width)
+            assert all(line.strip() != "?" for line in lines)

@@ -378,3 +378,29 @@ class TestPostDuFil:
             with Image.open(out_path) as im:
                 assert im.size == (1080, 1350)
             dialog.cleanup()
+
+
+class TestLogoParFil:
+    def test_le_fil_cinema_utilise_le_logo_cinema_livre_par_defaut(self, app, monkeypatch):
+        from PySide6.QtCore import QSettings
+
+        monkeypatch.setattr(QSettings, "value", lambda self, key, default=None: "")
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            assert dialog._logo_path and dialog._logo_path.endswith("logo-cinema.png")
+            dialog.cleanup()
+
+    def test_le_fil_gaming_garde_le_logo_de_l_application(self, app, monkeypatch):
+        from PySide6.QtCore import QSettings
+
+        monkeypatch.setattr(QSettings, "value", lambda self, key, default=None: "")
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article())
+            assert dialog._logo_path is None
+            dialog.cleanup()
