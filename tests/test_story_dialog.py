@@ -417,3 +417,26 @@ class TestLogoParFil:
             dialog = StoryDialog(_fake_article())
             assert dialog._logo_path is None
             dialog.cleanup()
+
+
+class TestPetitEcran:
+    """Retour utilisateur : sur un ecran peu haut, « Copier la légende »
+    s'affichait par-dessus la legende. Le panneau d'options defile, et le
+    bouton est dans la barre du bas."""
+
+    def test_rien_ne_se_chevauche_a_la_hauteur_minimale(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Un film", summary="Le détail."), theme="cinema")
+            dialog.resize(dialog.minimumWidth(), dialog.minimumHeight())
+            dialog.show()
+            app.processEvents()
+            btn, caption = dialog.copy_caption_btn, dialog.caption_edit
+            assert btn.isVisible()
+            # Le bouton n'est plus dans le panneau qui defile.
+            assert not dialog.options_scroll.widget().isAncestorOf(btn)
+            # La legende garde sa hauteur minimale au lieu d'etre ecrasee.
+            assert caption.height() >= caption.minimumHeight()
+            dialog.cleanup()

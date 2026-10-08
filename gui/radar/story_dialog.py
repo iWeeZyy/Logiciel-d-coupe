@@ -29,12 +29,15 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -141,13 +144,50 @@ class _ComposeThread(QThread):
             self.ready.emit(str(self.out_path))
 
 
+class _PreviewLabel(QLabel):
+    """Apercu qui se reduit avec la fenetre au lieu d'imposer sa hauteur :
+    a hauteur fixe (480 px), il debordait sur les boutons du bas sur un
+    ecran peu haut. L'image est re-mise a l'echelle a chaque redimension."""
+
+    _MIN_HEIGHT = 220
+
+    def __init__(self, text: str):
+        super().__init__(text)
+        self._source: QPixmap | None = None
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Ignored)
+
+    def set_frame_size(self, size: QSize) -> None:
+        self.setFixedWidth(size.width())
+        self.setMinimumHeight(self._MIN_HEIGHT)
+        self.setMaximumHeight(size.height())
+        self._rescale()
+
+    def set_source(self, pixmap: QPixmap) -> None:
+        self._source = pixmap
+        self._rescale()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 -- API Qt
+        super().resizeEvent(event)
+        self._rescale()
+
+    def _rescale(self) -> None:
+        if self._source is not None and not self._source.isNull():
+            self.setPixmap(self._source.scaled(
+                self.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation))
+
+
 class StoryDialog(QDialog):
     """Transforme `article` en Story verticale prete a exporter."""
 
     def __init__(self, article: Article, parent=None, theme: str = "gaming"):
         super().__init__(parent)
         self.setWindowTitle("Créer un visuel")
-        self.setMinimumSize(820, 700)
+        # Hauteur minimale modeste : sur un ecran portable a 125-150 % le
+        # panneau d'options ne tenait pas, et Qt empilait les widgets les uns
+        # sur les autres (bouton « Copier la légende » par-dessus la legende).
+        # Le panneau defile desormais (voir options_scroll).
+        self.setMinimumSize(820, 520)
 
         self.article = article
         self.theme = theme
@@ -202,13 +242,15 @@ class StoryDialog(QDialog):
         body = QHBoxLayout()
         body.setSpacing(20)
 
-        self.preview_label = QLabel("Aperçu indisponible")
-        self.preview_label.setFixedSize(_PREVIEW_DISPLAY_SIZE)
+        self.preview_label = _PreviewLabel("Aperçu indisponible")
+        self.preview_label.set_frame_size(_PREVIEW_DISPLAY_SIZE)
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setStyleSheet("border: 1px solid #E3E5EA; background: #16181D; color: white;")
         body.addWidget(self.preview_label)
 
-        options_panel = QVBoxLayout()
+        options_widget = QWidget()
+        options_panel = QVBoxLayout(options_widget)
+        options_panel.setContentsMargins(0, 0, 8, 0)
         options_panel.setSpacing(10)
 
         options_panel.addWidget(QLabel("Modèle"))
@@ -281,12 +323,14 @@ class StoryDialog(QDialog):
             article.title, article.summary, article.source_label, theme))
         self.caption_edit.setMinimumHeight(110)
         options_panel.addWidget(self.caption_edit)
-        copy_btn = QPushButton("📋 Copier la légende")
-        copy_btn.clicked.connect(self._copy_caption)
-        options_panel.addWidget(copy_btn)
 
         options_panel.addStretch(1)
-        body.addLayout(options_panel, stretch=1)
+        self.options_scroll = QScrollArea()
+        self.options_scroll.setWidgetResizable(True)
+        self.options_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.options_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.options_scroll.setWidget(options_widget)
+        body.addWidget(self.options_scroll, stretch=1)
         outer.addLayout(body, stretch=1)
 
         buttons = QHBoxLayout()
@@ -295,12 +339,18 @@ class StoryDialog(QDialog):
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._export)
         buttons.addWidget(self.export_btn)
+        # Dans la barre du bas, toujours visible, plutot que sous la legende
+        # ou il pouvait sortir de l'ecran.
+        self.copy_caption_btn = QPushButton("📋 Copier la légende")
+        self.copy_caption_btn.clicked.connect(self._copy_caption)
+        buttons.addWidget(self.copy_caption_btn)
         buttons.addStretch(1)
         close_btn = QPushButton("Fermer")
         close_btn.clicked.connect(self.reject)
         buttons.addWidget(close_btn)
         outer.addLayout(buttons)
 
+        self._fit_to_screen()
         self._on_template_changed()  # pose le titre initial avant tout fetch
         self._start_fetch()
 
@@ -352,6 +402,17 @@ class StoryDialog(QDialog):
         self.low_res_label.setVisible(cached.is_low_resolution)
         self._schedule_preview()
 
+    def _fit_to_screen(self) -> None:
+        """Taille initiale bornee a l'ecran disponible (barre des taches
+        comprise) : la fenetre ne deborde jamais, le panneau d'options defile."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        avail = screen.availableGeometry()
+        hint = self.sizeHint()
+        self.resize(max(self.minimumWidth(), min(max(hint.width(), 980), avail.width() - 40)),
+                    max(self.minimumHeight(), min(max(hint.height(), 760), avail.height() - 60)))
+
     # --------------------------------------------------------- edition
     def _on_template_changed(self) -> None:
         template = get_template(self.template_combo.currentData())
@@ -361,7 +422,7 @@ class StoryDialog(QDialog):
         self.label_combo.setVisible(is_post)
         # Le post a une mise en page fixe (titre en bas) : pas de position.
         self.position_combo.setEnabled(not is_post)
-        self.preview_label.setFixedSize(
+        self.preview_label.set_frame_size(
             _PREVIEW_POST_SIZE if template.key == TEMPLATE_POST else _PREVIEW_DISPLAY_SIZE)
         if template.show_title:
             # Ne remplace le titre que s'il vaut encore la valeur auto-generee
@@ -450,9 +511,7 @@ class StoryDialog(QDialog):
     def _on_preview_ready(self, path: str) -> None:
         pixmap = QPixmap(path)
         if not pixmap.isNull():
-            self.preview_label.setPixmap(pixmap.scaled(
-                self.preview_label.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation))
+            self.preview_label.set_source(pixmap)
         self.export_btn.setEnabled(True)
         if self._compose_pending:
             self._render_preview()
