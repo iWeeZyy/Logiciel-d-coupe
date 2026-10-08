@@ -70,6 +70,31 @@ class TestPost:
         assert Image.open(out).format == "JPEG"
 
 
+class TestTailleDuTitre:
+    """Le titre prend toute la place disponible en bas de l'image (retour
+    utilisateur : avec un plafond de 78 px, il restait petit)."""
+
+    @staticmethod
+    def _text_rows(path):
+        img = Image.open(path).convert("L")
+        rows = [y for y in range(img.height)
+                if img.crop((0, y, img.width, y + 1)).getextrema()[1] > 240]
+        return min(rows), max(rows)
+
+    def test_un_titre_court_est_dessine_en_tres_gros(self, tmp_path):
+        src = _source(tmp_path, color=(0, 0, 0))
+        out = compose_post(src, tmp_path / "p.png", title="Superman revient", label="")
+        top, bottom = self._text_rows(out)
+        assert bottom - top > 110  # une ligne en ~78 px avant ; bien plus grand desormais
+
+    def test_un_titre_long_reste_sous_la_photo(self, tmp_path):
+        src = _source(tmp_path, color=(0, 0, 0))
+        long_title = " ".join(["Une phrase de titre assez longue"] * 6)
+        out = compose_post(src, tmp_path / "p.png", title=long_title, label="ACTUALITÉ")
+        top, _ = self._text_rows(out)
+        assert top >= int(POST_H * 0.38)
+
+
 class TestPostVertical:
     """Le meme post en 9:16 pour TikTok / Reels / Story : le texte et le
     logo restent hors de la zone que l'interface de ces applications

@@ -127,12 +127,29 @@ def parse_feed(raw_xml: bytes | str, source: NewsSource,
         entries = root.findall(".//atom:entry", _NS)  # Atom
         is_atom = bool(entries)
 
+    title_re = _compile_title_filter(source)
     articles: list[Article] = []
-    for entry in entries[:max_articles]:
+    for entry in entries:
+        if len(articles) >= max_articles:
+            break
         article = _entry_to_article(entry, source, is_atom)
-        if article is not None:
-            articles.append(article)
+        if article is None or (title_re is not None and not title_re.search(article.title)):
+            continue
+        articles.append(article)
     return articles
+
+
+def _compile_title_filter(source: NewsSource):
+    """Le filtre de titre de la source, ou None. Une expression invalide
+    dans la config est ignoree (avec un avertissement) plutot que de vider
+    le fil."""
+    if not source.title_filter:
+        return None
+    try:
+        return re.compile(source.title_filter, re.IGNORECASE)
+    except re.error as e:
+        logger.warning(f"Filtre de titre invalide pour « {source.label} », ignore : {e}")
+        return None
 
 
 def _text(entry, tag: str) -> str:
@@ -149,7 +166,8 @@ def _entry_to_article(entry, source: NewsSource, is_atom: bool) -> Article | Non
         link_node = entry.find("atom:link", _NS)
         url = link_node.get("href", "") if link_node is not None else ""
         published = _text(entry, "atom:published") or _text(entry, "atom:updated")
-        summary = _text(entry, "atom:summary") or _text(entry, "atom:content")
+        summary = (_text(entry, "atom:summary") or _text(entry, "atom:content")
+                   or _text(entry, "media:group/media:description"))  # YouTube
     else:
         title = _text(entry, "title")
         url = _text(entry, "link")
@@ -171,7 +189,7 @@ def _extract_feed_image(entry, summary: str) -> str:
     media_content = entry.find("media:content", _NS)
     if media_content is not None and media_content.get("url"):
         return media_content.get("url")
-    media_thumb = entry.find("media:thumbnail", _NS)
+    media_thumb = entry.find(".//media:thumbnail", _NS)  # YouTube : dans media:group
     if media_thumb is not None and media_thumb.get("url"):
         return media_thumb.get("url")
     enclosure = entry.find("enclosure")

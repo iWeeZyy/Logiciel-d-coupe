@@ -20,14 +20,21 @@ class NewsSource:
     "breakflip" (site sans flux, lu depuis sa page d'actualites -- voir
     gaming_news/breakflip.py ; `feed_url` est alors l'URL de cette page).
 
-    `theme` range la source dans un fil ("gaming", "cinema") : l'onglet News
-    filtre dessus, pour alimenter un compte par theme sans tout melanger."""
+    `theme` range la source dans un fil ("gaming", "cinema", "trailers") :
+    l'onglet News filtre dessus, pour alimenter un compte par theme sans tout
+    melanger.
+
+    `title_filter` (expression reguliere, insensible a la casse) ne garde que
+    les entrees dont le titre correspond -- sert aux chaines YouTube des
+    studios, qui publient aussi des extraits et des Shorts : seules leurs
+    bandes-annonces vont dans le fil. Vide = tout garder."""
 
     key: str
     label: str
     feed_url: str
     kind: str = "rss"
     theme: str = "gaming"
+    title_filter: str = ""
 
 
 @dataclass(frozen=True)

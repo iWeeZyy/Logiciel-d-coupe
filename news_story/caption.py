@@ -18,14 +18,28 @@ from news_story.title_shortener import _normalize, _strip_html
 # une virgule (« est <b>finalisée</b>. » -> « est finalisée . »).
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,)])")
 
-THEME_EMOJI = {"cinema": "🎬", "gaming": "🎮"}
+# Lignes de description YouTube qui ne parlent pas du film : liens, comptes
+# sociaux, appels a s'abonner. Retirees ligne entiere (le reste demeure un
+# sous-ensemble verbatim de la description, rien n'est reformule).
+_PROMO_LINE_RE = re.compile(
+    r"https?://|www\.|\.com\b|@\w|abonne|suivez[- ]nous|facebook|twitter|instagram|tiktok|threads",
+    re.IGNORECASE)
+
+
+def drop_promo_lines(text: str) -> str:
+    if "\n" not in text:
+        return text
+    return "\n".join(line for line in text.splitlines() if not _PROMO_LINE_RE.search(line))
+
+
+THEME_EMOJI = {"cinema": "🎬", "trailers": "🎞️", "gaming": "🎮"}
 _MAX_SUMMARY_CHARS = 1600  # Instagram coupe a 2200 caracteres au total
 
 
 def build_caption(title: str, summary: str = "", source_label: str = "",
                   theme: str = "") -> str:
     title = " ".join((title or "").split())
-    summary = _SPACE_BEFORE_PUNCT.sub(r"\1", _strip_html(summary or ""))
+    summary = _SPACE_BEFORE_PUNCT.sub(r"\1", _strip_html(drop_promo_lines(summary or "")))
     if len(summary) > _MAX_SUMMARY_CHARS:
         summary = summary[:_MAX_SUMMARY_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
 

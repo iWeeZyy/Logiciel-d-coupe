@@ -1,5 +1,5 @@
 {
-  "_comment": "Sources et reglages du Radar News. \"theme\" (gaming par defaut, ou cinema) range chaque source dans un fil, filtre dans l'onglet News. Chaque source est un flux RSS/Atom independant : une source injoignable ou dont l'URL a change n'empeche pas les autres de s'afficher (gaming_news/feed_fetcher.py). IMPORTANT : ces URLs de flux n'ont PAS pu etre verifiees par un acces reseau reel depuis l'environnement de developpement (reseau restreint au moment de l'ecriture) -- verifie-les une fois l'application lancee, et corrige ici (simple edition de texte, aucun code a toucher) si un site ne renvoie plus rien.",
+  "_comment": "Sources et reglages du Radar News. \"theme\" (gaming par defaut, cinema ou trailers) range chaque source dans un fil, filtre dans l'onglet News. Chaque source est un flux RSS/Atom independant : une source injoignable ou dont l'URL a change n'empeche pas les autres de s'afficher (gaming_news/feed_fetcher.py). IMPORTANT : ces URLs de flux n'ont PAS pu etre verifiees par un acces reseau reel depuis l'environnement de developpement (reseau restreint au moment de l'ecriture) -- verifie-les une fois l'application lancee, et corrige ici (simple edition de texte, aucun code a toucher) si un site ne renvoie plus rien.",
   "sources": [
     {"key": "vgc", "label": "VGC", "feed_url": "https://www.videogameschronicle.com/feed/"},
     {"key": "ign_fr", "label": "IGN France", "feed_url": "https://fr.ign.com/feed.xml"},
@@ -10,7 +10,17 @@
     {"key": "allocine", "label": "AlloCiné", "feed_url": "https://www.allocine.fr/rss/news.xml", "theme": "cinema"},
     {"key": "ecranlarge", "label": "Écran Large", "feed_url": "https://www.ecranlarge.com/rss/", "theme": "cinema"},
     {"key": "cinechronicle", "label": "CinéChronicle", "feed_url": "https://www.cinechronicle.com/feed/", "theme": "cinema"},
-    {"key": "numerama_cinema", "label": "Numerama Ciné", "feed_url": "https://www.numerama.com/pop-culture/cinema/feed/", "theme": "cinema"}
+    {"key": "numerama_cinema", "label": "Numerama Ciné", "feed_url": "https://www.numerama.com/pop-culture/cinema/feed/", "theme": "cinema"},
+    {"key": "yt_filmsactu", "label": "FilmsActu", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC_i8X3p8oZNaik8X513Zn1Q", "theme": "trailers",
+     "_comment": "Bandes-annonces : flux des chaines YouTube (verifies le 2026-10-08). FilmsActu ne publie que des bandes-annonces ; les studios publient aussi extraits et Shorts, d'ou title_filter (expression reguliere sur le titre, insensible a la casse)."},
+    {"key": "yt_allocine", "label": "AlloCiné (YouTube)", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCwXc5G-RAKu9oC2yO4cXmuw", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_netflix_fr", "label": "Netflix France", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCroNr00O68n25IqSNapMK8w", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_prime_video_fr", "label": "Prime Video France", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC4YtyYW5RpGBgQqChMyjfIg", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_warner_fr", "label": "Warner Bros. France", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCZ0o1IeuSSceEixZbSATWtw", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_universal_fr", "label": "Universal Pictures France", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UChbOoefuXz17nioY3sgvZxQ", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_sony_fr", "label": "Sony Pictures France", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC2I1RkNIDzTCAWB8M7BbAQw", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_disney_fr", "label": "Disney FR", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCakQLdwrxuo0KhJ49Sq2csA", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"},
+    {"key": "yt_gaumont", "label": "Gaumont", "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCKnyzIyfL5Zj7cHhcC6bTyg", "theme": "trailers", "title_filter": "bande[- ]?annonce|teaser|trailer"}
   ],
   "scan": {
     "_comment": "Nombre maximal d'articles recuperes par source a chaque scan, et delai d'attente reseau par flux.",

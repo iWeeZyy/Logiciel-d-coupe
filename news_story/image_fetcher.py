@@ -165,6 +165,17 @@ def fetch_article_html(url: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> str:
     return response.text
 
 
+_YOUTUBE_ID_RE = re.compile(
+    r"^https?://(?:www\.|m\.)?(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/)|youtu\.be/)"
+    r"([A-Za-z0-9_-]{11})")
+
+
+def youtube_video_id(url: str) -> str:
+    """Identifiant d'une video YouTube (watch, Shorts, youtu.be), ou ""."""
+    match = _YOUTUBE_ID_RE.match(url or "")
+    return match.group(1) if match else ""
+
+
 def candidates_for_article(article_url: str, feed_image_url: str = "",
                            timeout_s: float = DEFAULT_TIMEOUT_S) -> list[ImageCandidate]:
     """Toutes les candidates connues pour un article, dans l'ordre de
@@ -172,6 +183,19 @@ def candidates_for_article(article_url: str, feed_image_url: str = "",
     -> image de contenu -> image du flux RSS en tout dernier repli (jamais
     prioritaire, une image de flux est souvent une vignette generique du
     site plutot que l'image reelle de l'article)."""
+    video_id = youtube_video_id(article_url)
+    if video_id:
+        # Bande-annonce YouTube : les vignettes du CDN d'images suffisent, sans
+        # passer par la page (bandeau de consentement en Europe, pas d'og:image).
+        # maxresdefault (1280x720) n'existe pas pour toutes les videos : les
+        # tailles suivantes servent de repli, la vignette du flux en dernier.
+        candidates = [ImageCandidate(url=f"https://i.ytimg.com/vi/{video_id}/{name}.jpg",
+                                     source="youtube", priority=0)
+                      for name in ("maxresdefault", "sddefault", "hqdefault")]
+        if feed_image_url and feed_image_url not in {c.url for c in candidates}:
+            candidates.append(ImageCandidate(url=feed_image_url, source="feed", priority=4))
+        return candidates
+
     html = fetch_article_html(article_url, timeout_s=timeout_s)
     candidates = extract_candidates(html, page_url=article_url) if html else []
 

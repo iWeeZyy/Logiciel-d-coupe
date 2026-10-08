@@ -72,7 +72,7 @@ _POST_LABELS = ("ACTUALITÉ", "BANDE-ANNONCE", "EXCLU", "RUMEUR", "CASTING", "BO
 _SETTINGS_ORG, _SETTINGS_APP = "ClipFarming", "NewsVisuals"
 # Logo livre avec l'appli pour un fil, utilise tant que l'utilisateur n'en a
 # pas choisi un autre pour ce fil (bouton « Choisir le logo… »).
-_THEME_DEFAULT_LOGOS = {"cinema": "branding/logo-cinema.png"}
+_THEME_DEFAULT_LOGOS = {"cinema": "branding/logo-cinema.png", "trailers": "branding/logo-cinema.png"}
 _POSITION_LABELS = {"auto": "Automatique", "top": "Haut", "center": "Centre", "bottom": "Bas"}
 _SIZE_LABELS = {0.8: "Petit", 1.0: "Normal", 1.3: "Grand"}
 
@@ -217,7 +217,7 @@ class StoryDialog(QDialog):
             self.template_combo.addItem(_TEMPLATE_DISPLAY_LABELS.get(spec.key, spec.label), spec.key)
         # Le fil cinema est fait pour alimenter un compte de posts 4:5 : ce
         # modele y est propose d'emblee ; les autres fils gardent la Story.
-        default_template = TEMPLATE_POST if theme == "cinema" else TEMPLATE_NEWS
+        default_template = TEMPLATE_POST if theme in ("cinema", "trailers") else TEMPLATE_NEWS
         self.template_combo.setCurrentIndex([t.key for t in TEMPLATES].index(default_template))
         self.template_combo.currentIndexChanged.connect(self._on_template_changed)
         options_panel.addWidget(self.template_combo)
@@ -227,7 +227,9 @@ class StoryDialog(QDialog):
         self.label_combo = QComboBox()
         self.label_combo.setEditable(True)
         self.label_combo.addItems(_POST_LABELS)
-        if is_rumor(article.title, article.summary):
+        if theme == "trailers":
+            self.label_combo.setCurrentText("BANDE-ANNONCE")
+        elif is_rumor(article.title, article.summary):
             self.label_combo.setCurrentText("RUMEUR")
         self.label_combo.currentTextChanged.connect(self._schedule_preview)
         options_panel.addWidget(self.label_combo)
@@ -373,11 +375,17 @@ class StoryDialog(QDialog):
         self._schedule_preview()
 
     # ------------------------------------------------------------ logo
+    @property
+    def _logo_theme(self) -> str:
+        # Les bandes-annonces alimentent le meme compte que le fil cinema :
+        # un logo choisi pour l'un vaut pour l'autre.
+        return "cinema" if self.theme == "trailers" else self.theme
+
     def _settings(self) -> QSettings:
         return QSettings(_SETTINGS_ORG, _SETTINGS_APP)
 
     def _saved_logo_path(self) -> str | None:
-        value = self._settings().value(f"logo/{self.theme}", "")
+        value = self._settings().value(f"logo/{self._logo_theme}", "")
         if value and Path(value).is_file():
             return value
         default = _THEME_DEFAULT_LOGOS.get(self.theme)
@@ -398,7 +406,7 @@ class StoryDialog(QDialog):
         if not path:
             return
         self._logo_path = path
-        self._settings().setValue(f"logo/{self.theme}", path)
+        self._settings().setValue(f"logo/{self._logo_theme}", path)
         self.logo_label.setText(self._logo_description())
         self._schedule_preview()
 

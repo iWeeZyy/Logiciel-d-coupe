@@ -12,6 +12,9 @@ from gaming_news.models import NewsSource
 # PAS pu etre verifiees par un acces reseau reel depuis l'environnement de
 # developpement (voir config/gaming_news.json, _comment) -- a corriger dans le
 # fichier de config, jamais ici, si un site ne renvoie plus rien.
+_YT = "https://www.youtube.com/feeds/videos.xml?channel_id="
+TRAILER_FILTER = "bande[- ]?annonce|teaser|trailer"
+
 DEFAULT_SOURCES = (
     NewsSource(key="vgc", label="VGC",
               feed_url="https://www.videogameschronicle.com/feed/"),
@@ -34,12 +37,34 @@ DEFAULT_SOURCES = (
               feed_url="https://www.cinechronicle.com/feed/", theme="cinema"),
     NewsSource(key="numerama_cinema", label="Numerama Ciné",
               feed_url="https://www.numerama.com/pop-culture/cinema/feed/", theme="cinema"),
+    # Bandes-annonces : flux des chaines YouTube (verifies le 2026-10-08).
+    # FilmsActu ne publie que des bandes-annonces ; les studios publient
+    # aussi extraits et Shorts, d'ou le filtre sur le titre.
+    NewsSource(key="yt_filmsactu", label="FilmsActu",
+              feed_url=_YT + "UC_i8X3p8oZNaik8X513Zn1Q", theme="trailers"),
+    NewsSource(key="yt_allocine", label="AlloCiné (YouTube)",
+              feed_url=_YT + "UCwXc5G-RAKu9oC2yO4cXmuw", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_netflix_fr", label="Netflix France",
+              feed_url=_YT + "UCroNr00O68n25IqSNapMK8w", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_prime_video_fr", label="Prime Video France",
+              feed_url=_YT + "UC4YtyYW5RpGBgQqChMyjfIg", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_warner_fr", label="Warner Bros. France",
+              feed_url=_YT + "UCZ0o1IeuSSceEixZbSATWtw", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_universal_fr", label="Universal Pictures France",
+              feed_url=_YT + "UChbOoefuXz17nioY3sgvZxQ", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_sony_fr", label="Sony Pictures France",
+              feed_url=_YT + "UC2I1RkNIDzTCAWB8M7BbAQw", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_disney_fr", label="Disney FR",
+              feed_url=_YT + "UCakQLdwrxuo0KhJ49Sq2csA", theme="trailers", title_filter=TRAILER_FILTER),
+    NewsSource(key="yt_gaumont", label="Gaumont",
+              feed_url=_YT + "UCKnyzIyfL5Zj7cHhcC6bTyg", theme="trailers", title_filter=TRAILER_FILTER),
 )
 
 # Fils thematiques connus, dans l'ordre d'affichage du selecteur de l'onglet
 # News -- une valeur inconnue dans la config retombe sur "gaming".
-THEMES = ("gaming", "cinema")
-THEME_LABELS = {"gaming": "🎮 Gaming", "cinema": "🎬 Cinéma & séries"}
+THEMES = ("gaming", "cinema", "trailers")
+THEME_LABELS = {"gaming": "🎮 Gaming", "cinema": "🎬 Cinéma & séries",
+                "trailers": "🎞️ Bandes-annonces"}
 
 # Lecteurs connus (voir feed_fetcher.fetch_source) -- une valeur inconnue
 # dans la config retombe sur "rss" plutot que d'ecarter la source.
@@ -72,6 +97,8 @@ def load_sources(config: dict | None = None) -> list[NewsSource]:
         theme = str(entry.get("theme") or "gaming").strip().lower()
         if theme not in THEMES:
             theme = "gaming"
-        sources.append(NewsSource(key=key, label=label, feed_url=feed_url, kind=kind, theme=theme))
+        title_filter = str(entry.get("title_filter") or "").strip()
+        sources.append(NewsSource(key=key, label=label, feed_url=feed_url, kind=kind, theme=theme,
+                                  title_filter=title_filter))
 
     return sources or list(DEFAULT_SOURCES)

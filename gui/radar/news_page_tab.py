@@ -59,6 +59,21 @@ def _card() -> tuple[QFrame, QVBoxLayout]:
     return frame, layout
 
 
+_CARD_SUMMARY_MAX_CHARS = 300
+
+
+def _card_summary(text: str) -> str:
+    """Resume affiche sur la carte : sans les lignes de liens/reseaux des
+    descriptions YouTube, sur une seule ligne logique, coupe sur un mot --
+    une description de chaine fait souvent plusieurs ecrans."""
+    from news_story.caption import drop_promo_lines
+
+    text = " ".join(drop_promo_lines(text or "").split())
+    if len(text) > _CARD_SUMMARY_MAX_CHARS:
+        text = text[:_CARD_SUMMARY_MAX_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    return text
+
+
 class GamingNewsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -209,14 +224,16 @@ class GamingNewsTab(QWidget):
         title.setStyleSheet("font-weight: 600;")
         layout.addWidget(title)
 
-        if article.summary:
-            summary = QLabel(article.summary)
+        summary_text = _card_summary(article.summary)
+        if summary_text:
+            summary = QLabel(summary_text)
             summary.setWordWrap(True)
             summary.setProperty("role", "muted")
             layout.addWidget(summary)
 
         actions = QHBoxLayout()
-        open_btn = QPushButton("📖 Lire l'article")
+        is_trailer = self._theme_of(article) == "trailers"
+        open_btn = QPushButton("▶ Voir la bande-annonce" if is_trailer else "📖 Lire l'article")
         open_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(article.url)))
         actions.addWidget(open_btn)
 

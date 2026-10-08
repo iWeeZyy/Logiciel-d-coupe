@@ -321,6 +321,19 @@ class TestPostDuFil:
             assert dialog.label_combo.isVisibleTo(dialog)
             dialog.cleanup()
 
+    def test_le_fil_bandes_annonces_propose_le_post_etiquete(self, app):
+        from news_story.story_templates import TEMPLATE_POST
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="DUNE 3 | Bande-annonce VF"), theme="trailers")
+            assert dialog.template_combo.currentData() == TEMPLATE_POST
+            assert dialog.label_combo.currentText() == "BANDE-ANNONCE"
+            assert dialog._logo_theme == "cinema"  # meme compte, meme logo
+            dialog.cleanup()
+
     def test_le_fil_gaming_garde_la_story_par_defaut(self, app):
         from news_story.story_templates import TEMPLATE_NEWS
 
