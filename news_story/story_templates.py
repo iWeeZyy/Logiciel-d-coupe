@@ -52,11 +52,11 @@ TEMPLATES: tuple[TemplateSpec, ...] = (
     TemplateSpec(key=TEMPLATE_NEWS, label="News", show_title=True, show_badge=False, title_max_chars=550),
     TemplateSpec(key=TEMPLATE_BREAKING, label="Breaking", show_title=True, show_badge=True, title_max_chars=400),
     TemplateSpec(key=TEMPLATE_POST, label="Post 4:5", show_title=True, show_badge=False,
-                 title_max_chars=160, canvas_size=(1080, 1350), title_uses_summary=False),
+                 title_max_chars=300, canvas_size=(1080, 1350), title_uses_summary=False),
     # Meme post en 9:16 pour TikTok (mode photo), Reels et Story : bloc de
     # texte remonte hors de l'interface de ces applications.
     TemplateSpec(key=TEMPLATE_POST_VERTICAL, label="Post 9:16", show_title=True, show_badge=False,
-                 title_max_chars=160, canvas_size=(1080, 1920), title_uses_summary=False),
+                 title_max_chars=300, canvas_size=(1080, 1920), title_uses_summary=False),
 )
 
 POST_TEMPLATES = frozenset({TEMPLATE_POST, TEMPLATE_POST_VERTICAL})

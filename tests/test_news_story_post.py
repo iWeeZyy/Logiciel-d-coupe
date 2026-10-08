@@ -95,6 +95,48 @@ class TestTailleDuTitre:
         assert top >= int(POST_H * 0.38)
 
 
+class TestTitreSurToutelImage:
+    """Un titre qui a besoin de beaucoup de lignes monte jusqu'en haut de
+    l'image au lieu de rapetisser (retour utilisateur)."""
+
+    _LONG = ("Zero Dark Thirty sur Arte : comment la CIA a secrètement appuyé le film de "
+             "Kathryn Bigelow, en fournissant des informations classifiées aux scénaristes "
+             "et en relisant le script avant le tournage, selon des documents publiés des "
+             "années plus tard")
+
+    @staticmethod
+    def _white_rows(path):
+        img = Image.open(path).convert("L")
+        return [y for y in range(img.height)
+                if img.crop((0, y, img.width, y + 1)).getextrema()[1] > 240]
+
+    def test_un_titre_tres_long_occupe_le_haut_de_l_image(self, tmp_path):
+        out = compose_post(_source(tmp_path, color=(0, 0, 0)), tmp_path / "p.png",
+                           title=self._LONG, label="ACTUALITÉ")
+        rows = self._white_rows(out)
+        assert min(rows) < POST_H * 0.25
+
+    def test_le_titre_tres_long_tient_en_entier_sans_etre_coupe(self):
+        from PIL import ImageDraw
+
+        from news_story.post_composer import _FULL_MAX_LINES, _fit_title
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        *_, fits = _fit_title(draw, self._LONG.upper(), 1.0, POST_W - 88, 1000, max_lines=_FULL_MAX_LINES)
+        assert fits
+
+    def test_un_titre_moyen_reste_dans_le_bas(self, tmp_path):
+        out = compose_post(_source(tmp_path, color=(0, 0, 0)), tmp_path / "p.png",
+                           title="Superman change déjà de costume dans la suite", label="ACTUALITÉ")
+        assert min(self._white_rows(out)) >= POST_H * 0.38
+
+    def test_l_image_est_assombrie_quand_le_titre_la_couvre(self, tmp_path):
+        src = _source(tmp_path, color=(220, 220, 220))
+        short = compose_post(src, tmp_path / "a.png", title="Court", label="")
+        full = compose_post(src, tmp_path / "b.png", title=self._LONG, label="")
+        assert Image.open(short).convert("RGB").getpixel((5, 5)) == (220, 220, 220)
+        assert sum(Image.open(full).convert("RGB").getpixel((5, 5))) < 3 * 180
+
+
 class TestPostVertical:
     """Le meme post en 9:16 pour TikTok / Reels / Story : le texte et le
     logo restent hors de la zone que l'interface de ces applications

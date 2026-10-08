@@ -38,8 +38,16 @@ _TITLE_MAX_WIDTH = POST_W - 2 * _MARGIN_X
 # de place possible sur l'image ») -- avec un plafond fixe de 78 px, le texte
 # restait petit alors que l'image avait la place (retour utilisateur).
 _TITLE_SIZES = (150, 44)         # taille max, taille min
-_TITLE_MAX_LINES = 8             # garde-fou contre un mur de texte
-_TITLE_TOP_FRAC = 0.40           # le titre ne monte jamais au-dessus (photo visible)
+_TITLE_MAX_LINES = 8             # garde-fou contre un mur de texte (zone basse)
+_TITLE_TOP_FRAC = 0.40           # zone basse : le titre reste sous la photo
+# Un titre qui a besoin de beaucoup de lignes ne rapetisse pas en dessous de
+# cette taille dans la zone basse : il monte plutot jusqu'en haut de l'image
+# (retour utilisateur : « le texte doit prendre toute l'image s'il a besoin
+# de beaucoup de lignes »). L'image est alors assombrie pour rester lisible.
+_TITLE_COMFORT_SIZE = 76
+_FULL_TITLE_TOP_FRAC = 0.05
+_FULL_MAX_LINES = 16
+_FULL_DIM_ALPHA = 120            # voile sombre sur toute l'image dans ce cas
 _TITLE_LINE_HEIGHT = 1.08
 _LABEL_SIZE = 46
 _LABEL_GAP = 26                  # espace entre l'etiquette et chaque filet
@@ -64,6 +72,7 @@ _VERTICAL_MARGIN_RIGHT = 140
 _VERTICAL_BOTTOM_MARGIN = 440
 _VERTICAL_GRADIENT_START_FRAC = 0.26
 _VERTICAL_TITLE_TOP_FRAC = 0.30
+_VERTICAL_FULL_TITLE_TOP_FRAC = 0.10   # sous les onglets du haut de TikTok
 
 DEFAULT_LABEL = "ACTUALITÉ"
 
@@ -155,28 +164,31 @@ def _apply_gradient(canvas, start_frac: float = _GRADIENT_START_FRAC) -> None:
 
 
 def _fit_title(draw, text: str, scale: float, max_width: int = _TITLE_MAX_WIDTH,
-               max_height: int | None = None):
+               max_height: int | None = None, min_size: int | None = None,
+               max_lines: int = _TITLE_MAX_LINES):
     """Plus grande taille ou le titre tient en largeur ET en hauteur.
-    `title_scale` (menu Taille du dialogue) reste un multiplicateur."""
+    `title_scale` (menu Taille du dialogue) reste un multiplicateur.
+    Renvoie (police, lignes, taille, tient) : `tient` est faux quand meme la
+    taille minimale ne suffit pas (le texte est alors coupé par « … »)."""
     wrap_text = _wrap
     max_size = int(_TITLE_SIZES[0] * scale)
-    min_size = int(_TITLE_SIZES[1] * scale)
+    min_size = int((min_size if min_size is not None else _TITLE_SIZES[1]) * scale)
     size = max_size
     while size >= min_size:
         font = _font(size)
         lines = wrap_text(draw, text, font, max_width)
         fits_height = max_height is None or len(lines) * int(size * _TITLE_LINE_HEIGHT) <= max_height
-        if len(lines) <= _TITLE_MAX_LINES and fits_height and all(
+        if len(lines) <= max_lines and fits_height and all(
                 draw.textlength(line, font=font) <= max_width for line in lines):
-            return font, lines, size
+            return font, lines, size, True
         size -= 2
     font = _font(min_size)
     lines = wrap_text(draw, text, font, max_width)
-    if len(lines) > _TITLE_MAX_LINES:
-        kept = lines[:_TITLE_MAX_LINES]
+    if len(lines) > max_lines:
+        kept = lines[:max_lines]
         kept[-1] = kept[-1].rstrip(" ,;:") + "…"
         lines = kept
-    return font, lines, min_size
+    return font, lines, min_size, False
 
 
 def _load_logo(path: Path | None):
@@ -207,26 +219,28 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
     out_path = Path(out_path)
     if vertical:
         width, height = VERTICAL_W, VERTICAL_H
-        margin_l, margin_r, bottom_margin, gradient_start, title_top = (
+        margin_l, margin_r, bottom_margin, gradient_start, title_top, full_top = (
             _VERTICAL_MARGIN_LEFT, _VERTICAL_MARGIN_RIGHT, _VERTICAL_BOTTOM_MARGIN,
-            _VERTICAL_GRADIENT_START_FRAC, _VERTICAL_TITLE_TOP_FRAC)
+            _VERTICAL_GRADIENT_START_FRAC, _VERTICAL_TITLE_TOP_FRAC, _VERTICAL_FULL_TITLE_TOP_FRAC)
     else:
         width, height = POST_W, POST_H
-        margin_l, margin_r, bottom_margin, gradient_start, title_top = (
-            _MARGIN_X, _MARGIN_X, _BOTTOM_MARGIN, _GRADIENT_START_FRAC, _TITLE_TOP_FRAC)
+        margin_l, margin_r, bottom_margin, gradient_start, title_top, full_top = (
+            _MARGIN_X, _MARGIN_X, _BOTTOM_MARGIN, _GRADIENT_START_FRAC, _TITLE_TOP_FRAC,
+            _FULL_TITLE_TOP_FRAC)
     center_x = (margin_l + width - margin_r) / 2
     with Image.open(image_path) as opened:
         canvas = _crop_to_aspect(opened.convert("RGB"), width / height).resize(
             (width, height), Image.LANCZOS)
 
-    _apply_gradient(canvas, gradient_start)
     draw = ImageDraw.Draw(canvas)
 
-    # Mise en page du bas vers le haut : logo, titre, etiquette.
+    # Mise en page du bas vers le haut : logo, titre, etiquette. Le titre est
+    # mesure AVANT de poser le degrade : c'est sa hauteur qui decide s'il
+    # reste dans la zone basse ou s'il prend toute l'image.
     bottom = height - bottom_margin
     logo = _load_logo(logo_path)
+    logo_y = bottom - logo.height if logo is not None else bottom
     if logo is not None:
-        canvas.paste(logo, (int(center_x - logo.width / 2), bottom - logo.height), logo)
         bottom -= logo.height + _GAP_TITLE_LOGO
 
     label = " ".join(label.split()).upper()
@@ -234,10 +248,29 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
     label_h = (sum(label_font.getmetrics()) + _GAP_LABEL_TITLE) if label else 0
 
     title = _french_spacing(" ".join(title.split()).upper())
+    scale = max(0.6, min(1.6, title_scale))
+    max_w = width - margin_l - margin_r
+    full_image = False
     if title:
         available_h = bottom - label_h - int(height * title_top)
-        font, lines, size = _fit_title(draw, title, max(0.6, min(1.6, title_scale)),
-                                       width - margin_l - margin_r, max(available_h, 0))
+        fitted = _fit_title(draw, title, scale, max_w, max(available_h, 0),
+                            min_size=_TITLE_COMFORT_SIZE)
+        if not fitted[3]:
+            full_image = True
+            fitted = _fit_title(draw, title, scale, max_w,
+                                max(bottom - label_h - int(height * full_top), 0),
+                                max_lines=_FULL_MAX_LINES)
+
+    if full_image:
+        veil = Image.new("RGB", (width, height), _GRADIENT_COLOR)
+        canvas = Image.blend(canvas, veil, _FULL_DIM_ALPHA / 255)
+        draw = ImageDraw.Draw(canvas)
+    _apply_gradient(canvas, gradient_start)
+    if logo is not None:
+        canvas.paste(logo, (int(center_x - logo.width / 2), logo_y), logo)
+
+    if title:
+        font, lines, size, _ = fitted
         line_h = int(size * _TITLE_LINE_HEIGHT)
         top = bottom - line_h * len(lines)
         for i, line in enumerate(lines):
