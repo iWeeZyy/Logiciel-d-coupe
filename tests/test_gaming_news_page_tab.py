@@ -148,16 +148,20 @@ class TestFiltreParTheme:
         monkeypatch.setattr(news_page_tab, "fetch_all_sources", lambda *a, **k: articles)
 
         tab = news_page_tab.GamingNewsTab()
-        themes = [tab.theme_combo.itemData(i) for i in range(tab.theme_combo.count())]
-        assert themes == ["gaming", "cinema", ""]
+        assert list(tab.theme_buttons) == ["gaming", "cinema", ""]
+        # Visibles d'emblee, pas caches dans une liste deroulante.
+        assert tab.theme_buttons["cinema"].text() == "🎬 Cinéma && séries"  # « & » affiche tel quel
+        assert tab.theme_buttons["gaming"].isChecked()
         tab.refresh()
         assert _process_until(app, lambda: tab.list_layout.count() == 1)  # fil gaming par defaut
 
-        tab.theme_combo.setCurrentIndex(themes.index("cinema"))
+        tab.theme_buttons["cinema"].click()
         app.processEvents()
+        assert tab.current_theme == "cinema"
+        assert tab.theme_buttons["cinema"].isChecked() and not tab.theme_buttons["gaming"].isChecked()
         assert [a.title for a in tab._visible_articles()] == ["Un film"]
 
-        tab.theme_combo.setCurrentIndex(themes.index(""))
+        tab.theme_buttons[""].click()
         app.processEvents()
         assert len(tab._visible_articles()) == 2
         tab.cleanup()

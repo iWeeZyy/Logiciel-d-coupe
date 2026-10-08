@@ -13,7 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import QThread, QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QComboBox,
+    QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -82,13 +82,27 @@ class GamingNewsTab(QWidget):
         # Un fil par theme (un compte gaming, un compte cinema...) : le scan
         # recupere toutes les sources, le filtre ne fait que choisir quoi
         # afficher -- changer de fil est instantane, sans nouveau scan.
-        self.theme_combo = QComboBox()
-        for theme in THEMES:
-            if any(s.theme == theme for s in self.sources):
-                self.theme_combo.addItem(THEME_LABELS.get(theme, theme), theme)
-        self.theme_combo.addItem("Tout", "")
-        self.theme_combo.currentIndexChanged.connect(lambda _=0: self._render())
-        header.addWidget(self.theme_combo)
+        # Des boutons visibles cote a cote plutot qu'une liste deroulante : la
+        # liste n'affichait que « 🎮 Gaming », sans fleche, et le fil Cinema
+        # restait introuvable (retour utilisateur).
+        self._current_theme = ""
+        self.theme_buttons: dict[str, QPushButton] = {}
+        self._theme_group = QButtonGroup(self)
+        self._theme_group.setExclusive(True)
+        choices = [(t, THEME_LABELS.get(t, t)) for t in THEMES
+                   if any(s.theme == t for s in self.sources)]
+        choices.append(("", "Tout"))
+        for theme, label in choices:
+            # « && » : un « & » seul serait pris par Qt pour un raccourci
+            # clavier et affiche « Cinéma _séries ».
+            btn = QPushButton(label.replace("&", "&&"))
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, t=theme: self.set_theme(t))
+            self._theme_group.addButton(btn)
+            self.theme_buttons[theme] = btn
+            header.addWidget(btn)
+        self.set_theme(choices[0][0], render=False)
         header.addStretch(1)
         outer.addLayout(header)
 
@@ -145,8 +159,26 @@ class GamingNewsTab(QWidget):
     def _theme_of(self, article) -> str:
         return self._theme_by_source.get(article.source_key, "gaming")
 
+    def set_theme(self, theme: str, render: bool = True) -> None:
+        """Choisit le fil affiche ("" = tous). Le bouton actif passe en
+        style principal pour qu'on voie d'un coup d'oeil quel fil est ouvert."""
+        if theme not in self.theme_buttons:
+            return
+        self._current_theme = theme
+        for key, btn in self.theme_buttons.items():
+            btn.setChecked(key == theme)
+            btn.setProperty("variant", "primary" if key == theme else "")
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+        if render:
+            self._render()
+
+    @property
+    def current_theme(self) -> str:
+        return self._current_theme
+
     def _visible_articles(self) -> list:
-        theme = self.theme_combo.currentData()
+        theme = self._current_theme
         return [a for a in self._articles if not theme or self._theme_of(a) == theme]
 
     def _render(self) -> None:
