@@ -30,7 +30,7 @@ from pathlib import Path
 
 from core.logging_setup import get_logger
 from news_story.story_templates import (POST_TEMPLATES, TEMPLATE_BREAKING, TEMPLATE_NEWS,
-                                        TEMPLATE_POST_VERTICAL, get_template)
+                                        TEMPLATE_POST_VERTICAL, TEMPLATE_VIDEO, get_template)
 from news_story.title_shortener import build_display_title
 from video.cropper import TARGET_H, TARGET_W, CenterHint, compute_crop_rect
 from video.face_detector import detect_faces_in_image
@@ -130,6 +130,8 @@ class StoryOptions:
     # Logo a incruster ; None = le logo de l'appli (video/watermark.py).
     # Permet un logo par compte (un compte cinema n'a pas le logo gaming).
     branding_path: str | None = None
+    # Post video : opacite du texte pose sur la video (1.0 = opaque).
+    text_opacity: float = 0.6
 
 
 def _smart_crop_hint(image) -> CenterHint | None:
@@ -340,6 +342,16 @@ def compose_story(image_path: str | Path, out_path: str | Path,
 
     if template.key in POST_TEMPLATES:
         return _compose_post(image_path, out_path, options, template)
+    if template.key == TEMPLATE_VIDEO:
+        # Rendu image du post video (apercu) : la vignette tient lieu de video.
+        from news_story.video_composer import compose_still
+
+        title, label = post_text(options, template)
+        return compose_still(
+            image_path, out_path, title=title, label=label,
+            logo_path=_branding_path(options) if options.branding_enabled else None,
+            text_opacity=options.text_opacity, title_scale=options.title_scale,
+            output_format=options.output_format)
 
     with Image.open(image_path) as opened:
         canvas = _crop_and_resize(opened.convert("RGB"))
@@ -388,12 +400,12 @@ def compose_story(image_path: str | Path, out_path: str | Path,
 _RUMOR_PREFIX_RE = re.compile(r"^(\s*rumeurs?\s*:\s*)+", re.IGNORECASE)
 
 
-def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, template) -> Path:
-    """Gabarits POST (4:5 et 9:16) : voir news_story/post_composer.py. Titre seul,
-    jamais le resume (il va dans la legende) ; un titre que la source
-    marque deja comme rumeur passe son « RUMEUR : » dans l'etiquette plutot
-    que de le garder dans le titre."""
-    from news_story.post_composer import DEFAULT_LABEL, compose_post
+def post_text(options: StoryOptions, template) -> tuple[str, str]:
+    """(titre, etiquette) d'un post image ou video. Titre seul, jamais le
+    resume (il va dans la legende) ; un titre que la source marque deja comme
+    rumeur passe son « RUMEUR : » dans l'etiquette plutot que de le garder
+    dans le titre."""
+    from news_story.post_composer import DEFAULT_LABEL
 
     title = (options.title_override if options.title_override is not None
              else build_display_title(options.title, "", template.title_max_chars).text).strip()
@@ -405,6 +417,14 @@ def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, templ
         title = stripped
         if label.strip().upper() == DEFAULT_LABEL:
             label = "RUMEUR"
+    return title, label
+
+
+def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, template) -> Path:
+    """Gabarits POST (4:5 et 9:16) : voir news_story/post_composer.py."""
+    from news_story.post_composer import compose_post
+
+    title, label = post_text(options, template)
     return compose_post(
         image_path, out_path, title=title, label=label,
         logo_path=_branding_path(options) if options.branding_enabled else None,

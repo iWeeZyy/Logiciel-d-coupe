@@ -309,7 +309,7 @@ class TestPostDuFil:
     legende a copier."""
 
     def test_le_fil_cinema_propose_le_post_avec_le_titre_seul(self, app):
-        from news_story.story_templates import TEMPLATE_POST
+        from news_story.story_templates import TEMPLATE_POST_VERTICAL as TEMPLATE_POST
 
         p1, p2 = _patched_single_candidate()
         with p1, p2:
@@ -322,7 +322,7 @@ class TestPostDuFil:
             dialog.cleanup()
 
     def test_le_fil_bandes_annonces_propose_le_post_etiquete(self, app):
-        from news_story.story_templates import TEMPLATE_POST
+        from news_story.story_templates import TEMPLATE_POST_VERTICAL as TEMPLATE_POST
 
         p1, p2 = _patched_single_candidate()
         with p1, p2:
@@ -370,7 +370,7 @@ class TestPostDuFil:
             assert dialog.label_combo.currentText() == "RUMEUR"
             dialog.cleanup()
 
-    def test_l_export_du_post_est_en_4_5(self, app, tmp_path):
+    def test_l_export_du_post_est_en_9_16(self, app, tmp_path):
         from PIL import Image
 
         p1, p2 = _patched_single_candidate()
@@ -389,7 +389,66 @@ class TestPostDuFil:
                 # pour de vrai dans un test suivant et le bloquerait.
                 assert _process_until(app, lambda: dialog.export_btn.isEnabled())
             with Image.open(out_path) as im:
-                assert im.size == (1080, 1350)
+                assert im.size == (1080, 1920)
+            dialog.cleanup()
+
+    def test_le_4_5_n_est_plus_propose(self, app):
+        from news_story.story_templates import TEMPLATE_POST
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            assert dialog.template_combo.findData(TEMPLATE_POST) < 0
+            dialog.cleanup()
+
+
+class TestPostVideo:
+    """Article avec une video : le modele video est ajoute et choisi."""
+
+    def test_le_modele_video_apparait_quand_l_article_a_une_video(self, app):
+        from news_story.story_templates import TEMPLATE_VIDEO
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog.fetch_video_url",
+                           lambda url: "https://www.dailymotion.com/video/xb5ci0m"):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            assert dialog.template_combo.findData(TEMPLATE_VIDEO) < 0
+            assert _process_until(app, lambda: dialog.template_combo.currentData() == TEMPLATE_VIDEO)
+            assert dialog.opacity_combo.isVisibleTo(dialog)
+            assert dialog.opacity_combo.currentData() == 0.6
+            dialog.cleanup()
+
+    def test_sans_video_pas_de_modele_video(self, app):
+        from news_story.story_templates import TEMPLATE_VIDEO
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog.fetch_video_url", lambda url: ""):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            assert _process_until(app, lambda: dialog.export_btn.isEnabled())
+            app.processEvents()
+            assert dialog.template_combo.findData(TEMPLATE_VIDEO) < 0
+            assert not dialog.opacity_combo.isVisibleTo(dialog)
+            dialog.cleanup()
+
+    def test_un_choix_de_modele_de_l_utilisateur_n_est_pas_ecrase(self, app):
+        from news_story.story_templates import TEMPLATE_NEWS, TEMPLATE_VIDEO
+
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog.fetch_video_url", lambda url: ""):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            dialog.template_combo.setCurrentIndex(dialog.template_combo.findData(TEMPLATE_NEWS))
+            dialog._on_template_chosen_by_user(0)
+            dialog._on_video_found("https://www.youtube.com/watch?v=AAAAAAAAAAA")
+            assert dialog.template_combo.findData(TEMPLATE_VIDEO) >= 0
+            assert dialog.template_combo.currentData() == TEMPLATE_NEWS
             dialog.cleanup()
 
 

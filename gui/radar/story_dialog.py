@@ -46,15 +46,18 @@ from core.cancellation import CancelToken
 from gaming_news.models import Article
 from news_story.image_cache import ImageFetchError, download as cache_download
 from news_story.image_fetcher import candidates_for_article
+from news_story.video_source import fetch_video_url
 from news_story.story_composer import StoryOptions, compose_story
 from news_story.caption import build_caption
 from news_story.story_templates import (
     TEMPLATE_BREAKING,
     TEMPLATE_IMAGE,
     TEMPLATE_NEWS,
+    LABELLED_TEMPLATES,
     POST_TEMPLATES,
     TEMPLATE_POST,
     TEMPLATE_POST_VERTICAL,
+    TEMPLATE_VIDEO,
     TEMPLATES,
     get_template,
 )
@@ -69,6 +72,7 @@ _TEMPLATE_DISPLAY_LABELS = {
     TEMPLATE_BREAKING: "Alerte BREAKING",
     TEMPLATE_POST: "Post du fil 4:5 (titre + légende)",
     TEMPLATE_POST_VERTICAL: "Post 9:16 TikTok / Reels / Story (titre + légende)",
+    TEMPLATE_VIDEO: "🎬 Vidéo 9:16 de l'article (texte sur la vidéo)",
 }
 # Etiquettes proposees au-dessus du titre du post ; la liste est editable.
 _POST_LABELS = ("ACTUALITÉ", "BANDE-ANNONCE", "EXCLU", "RUMEUR", "CASTING", "BOX-OFFICE", "ANECDOTE")
@@ -80,6 +84,9 @@ _POSITION_LABELS = {"auto": "Automatique", "top": "Haut", "center": "Centre", "b
 _SIZE_LABELS = {0.8: "Petit", 1.0: "Normal", 1.3: "Grand"}
 
 _MAX_CANDIDATES = 4
+# 4:5 retire du menu (« que du 9:16 pour TikTok et Instagram ») ; le modele
+# video n'y entre que quand l'article a une video.
+_MENU_HIDDEN_TEMPLATES = frozenset({TEMPLATE_POST, TEMPLATE_VIDEO})
 _PREVIEW_DEBOUNCE_MS = 250
 _PREVIEW_DISPLAY_SIZE = QSize(270, 480)
 _PREVIEW_POST_SIZE = QSize(384, 480)
@@ -93,6 +100,7 @@ class _FetchImagesThread(QThread):
     candidate_ready = Signal(object, object)  # ImageCandidate, CachedImage
     candidate_failed = Signal(str, str)       # url, message
     finished_all = Signal(int)                # nombre d'images recuperees avec succes
+    video_found = Signal(str)                 # adresse de la video de l'article
 
     def __init__(self, article: Article, cancel_token: CancelToken):
         super().__init__()
@@ -119,6 +127,57 @@ class _FetchImagesThread(QThread):
             self.candidate_ready.emit(candidate, cached)
             succeeded += 1
         self.finished_all.emit(succeeded)
+        if self.cancel_token.is_cancelled:
+            return
+        video_url = fetch_video_url(self.article.url)
+        if video_url:
+            self.video_found.emit(video_url)
+
+
+class _VideoExportThread(QThread):
+    """Telecharge la video de l'article (yt-dlp, comme le reste de l'appli)
+    puis monte le post video 9:16 (news_story/video_composer.py)."""
+
+    status = Signal(str)
+    ready = Signal(str)
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, video_url: str, out_path: str, title: str, label: str,
+                 logo_path, text_opacity: float, title_scale: float, cancel_token: CancelToken):
+        super().__init__()
+        self.video_url, self.out_path = video_url, out_path
+        self.title, self.label, self.logo_path = title, label, logo_path
+        self.text_opacity, self.title_scale = text_opacity, title_scale
+        self.cancel_token = cancel_token
+
+    def run(self) -> None:
+        from news_story.video_composer import compose_video
+        from utils.errors import CancelledError
+        from youtube.downloader import download_video
+
+        try:
+            with tempfile.TemporaryDirectory(prefix="clipfarming_article_video_") as workdir:
+                self.status.emit("Téléchargement de la vidéo…")
+
+                def progress(fraction, done_mb, total_mb):
+                    if fraction is not None:
+                        self.status.emit(f"Téléchargement de la vidéo… {int(fraction * 100)} %")
+
+                source = download_video(self.video_url, workdir, consent_confirmed=True,
+                                        max_height=1080, on_progress=progress,
+                                        cancel_token=self.cancel_token)
+                self.status.emit("Montage de la vidéo 9:16… (cela peut prendre une minute)")
+                compose_video(source, self.out_path, title=self.title, label=self.label,
+                              logo_path=Path(self.logo_path) if self.logo_path else None,
+                              text_opacity=self.text_opacity, title_scale=self.title_scale,
+                              cancel_token=self.cancel_token)
+        except CancelledError:
+            self.cancelled.emit()
+        except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
+            self.failed.emit(str(error))
+        else:
+            self.ready.emit(str(self.out_path))
 
 
 class _ComposeThread(QThread):
@@ -239,6 +298,12 @@ class StoryDialog(QDialog):
         self.low_res_label.setVisible(False)
         outer.addWidget(self.low_res_label)
 
+        self.video_label = QLabel("")
+        self.video_label.setWordWrap(True)
+        self.video_label.setProperty("role", "muted")
+        self.video_label.setVisible(False)
+        outer.addWidget(self.video_label)
+
         body = QHBoxLayout()
         body.setSpacing(20)
 
@@ -255,14 +320,31 @@ class StoryDialog(QDialog):
 
         options_panel.addWidget(QLabel("Modèle"))
         self.template_combo = QComboBox()
+        # Pas de 4:5 (« que du 9:16 pour TikTok et Instagram ») ; le modele
+        # video n'apparait que si l'article a une video (voir _on_video_found).
         for spec in TEMPLATES:
+            if spec.key in _MENU_HIDDEN_TEMPLATES:
+                continue
             self.template_combo.addItem(_TEMPLATE_DISPLAY_LABELS.get(spec.key, spec.label), spec.key)
-        # Le fil cinema est fait pour alimenter un compte de posts 4:5 : ce
-        # modele y est propose d'emblee ; les autres fils gardent la Story.
-        default_template = TEMPLATE_POST if theme in ("cinema", "trailers") else TEMPLATE_NEWS
-        self.template_combo.setCurrentIndex([t.key for t in TEMPLATES].index(default_template))
+        # Les fils cinema / bandes-annonces alimentent un compte de posts 9:16 :
+        # ce modele y est propose d'emblee ; le fil gaming garde la Story.
+        self._video_url = ""
+        default_template = (TEMPLATE_POST_VERTICAL if theme in ("cinema", "trailers")
+                            else TEMPLATE_NEWS)
+        self.template_combo.setCurrentIndex(self.template_combo.findData(default_template))
+        self._template_touched = False
         self.template_combo.currentIndexChanged.connect(self._on_template_changed)
+        self.template_combo.activated.connect(self._on_template_chosen_by_user)
         options_panel.addWidget(self.template_combo)
+
+        self.opacity_caption = QLabel("Opacité du texte sur la vidéo")
+        options_panel.addWidget(self.opacity_caption)
+        self.opacity_combo = QComboBox()
+        for value in (1.0, 0.8, 0.6, 0.45, 0.3):
+            self.opacity_combo.addItem(f"{int(value * 100)} %", value)
+        self.opacity_combo.setCurrentIndex(self.opacity_combo.findData(0.6))
+        self.opacity_combo.currentIndexChanged.connect(self._schedule_preview)
+        options_panel.addWidget(self.opacity_combo)
 
         self.label_caption = QLabel("Étiquette")
         options_panel.addWidget(self.label_caption)
@@ -360,7 +442,25 @@ class StoryDialog(QDialog):
         self._fetch_thread.candidate_ready.connect(self._on_candidate_ready)
         self._fetch_thread.candidate_failed.connect(self._on_candidate_failed)
         self._fetch_thread.finished_all.connect(self._on_fetch_finished)
+        self._fetch_thread.video_found.connect(self._on_video_found)
         self._fetch_thread.start()
+
+    def _on_template_chosen_by_user(self, _index: int) -> None:
+        self._template_touched = True
+
+    def _on_video_found(self, url: str) -> None:
+        """L'article a une video : le modele video est ajoute au menu, et
+        choisi d'office sauf si l'utilisateur a deja choisi un modele."""
+        self._video_url = url
+        if self.template_combo.findData(TEMPLATE_VIDEO) < 0:
+            self.template_combo.addItem(_TEMPLATE_DISPLAY_LABELS[TEMPLATE_VIDEO], TEMPLATE_VIDEO)
+        if not self._template_touched:
+            self.template_combo.setCurrentIndex(self.template_combo.findData(TEMPLATE_VIDEO))
+        self.video_label.setText("🎬 Vidéo trouvée dans l'article : le post sera la vidéo "
+                                 "(l'aperçu utilise l'image, la vidéo est téléchargée à l'export).")
+        self.video_label.setVisible(True)
+        # Exportable meme si aucune image n'a pu etre recuperee pour l'apercu.
+        self.export_btn.setEnabled(True)
 
     def _on_candidate_ready(self, candidate, cached) -> None:
         self._candidates.append((candidate, cached))
@@ -416,10 +516,13 @@ class StoryDialog(QDialog):
     # --------------------------------------------------------- edition
     def _on_template_changed(self) -> None:
         template = get_template(self.template_combo.currentData())
-        is_post = template.key in POST_TEMPLATES
+        is_post = template.key in LABELLED_TEMPLATES
+        is_video = template.key == TEMPLATE_VIDEO
         self.title_edit.setEnabled(template.show_title)
         self.label_caption.setVisible(is_post)
         self.label_combo.setVisible(is_post)
+        self.opacity_caption.setVisible(is_video)
+        self.opacity_combo.setVisible(is_video)
         # Le post a une mise en page fixe (titre en bas) : pas de position.
         self.position_combo.setEnabled(not is_post)
         self.preview_label.set_frame_size(
@@ -492,6 +595,7 @@ class StoryDialog(QDialog):
             output_format="PNG",
             label=self.label_combo.currentText(),
             branding_path=self._logo_path,
+            text_opacity=self.opacity_combo.currentData() or 0.6,
         )
 
     # ------------------------------------------------------------ apercu
@@ -523,6 +627,9 @@ class StoryDialog(QDialog):
 
     # ------------------------------------------------------------ export
     def _export(self) -> None:
+        if self.template_combo.currentData() == TEMPLATE_VIDEO and self._video_url:
+            self._export_video()
+            return
         if self._selected_index is None:
             return
         prefix = "post" if self.template_combo.currentData() in POST_TEMPLATES else "story"
@@ -542,6 +649,31 @@ class StoryDialog(QDialog):
         self._export_thread = _ComposeThread(cached.path, path, options)
         self._export_thread.ready.connect(self._on_export_ready)
         self._export_thread.failed.connect(self._on_export_failed)
+        self._export_thread.start()
+
+    def _export_video(self) -> None:
+        from news_story.story_composer import post_text
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exporter la vidéo", f"video_{self.article.article_id}.mp4", "Vidéo MP4 (*.mp4)")
+        if not path:
+            return
+        if not path.lower().endswith(".mp4"):
+            path += ".mp4"
+        options = self._current_options()
+        title, label = post_text(options, get_template(TEMPLATE_VIDEO))
+        logo = self._logo_path if self.branding_check.isChecked() else None
+        if self.branding_check.isChecked() and not logo:
+            from news_story.story_composer import _branding_path
+            logo = str(_branding_path(options))
+        self.export_btn.setEnabled(False)
+        self._export_thread = _VideoExportThread(
+            self._video_url, path, title, label, logo, options.text_opacity,
+            options.title_scale, self._cancel_token)
+        self._export_thread.status.connect(self.status_label.setText)
+        self._export_thread.ready.connect(self._on_export_ready)
+        self._export_thread.failed.connect(self._on_export_failed)
+        self._export_thread.cancelled.connect(lambda: self.export_btn.setEnabled(True))
         self._export_thread.start()
 
     def _on_export_ready(self, path: str) -> None:

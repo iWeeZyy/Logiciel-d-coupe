@@ -13,6 +13,7 @@ TEMPLATE_NEWS = "news"
 TEMPLATE_BREAKING = "breaking"
 TEMPLATE_POST = "post"
 TEMPLATE_POST_VERTICAL = "post_vertical"
+TEMPLATE_VIDEO = "video"
 
 
 @dataclass(frozen=True)
@@ -57,9 +58,16 @@ TEMPLATES: tuple[TemplateSpec, ...] = (
     # texte remonte hors de l'interface de ces applications.
     TemplateSpec(key=TEMPLATE_POST_VERTICAL, label="Post 9:16", show_title=True, show_badge=False,
                  title_max_chars=300, canvas_size=(1080, 1920), title_uses_summary=False),
+    # La video de l'article en 9:16 (16:9 centree sur fond flou), l'info
+    # par-dessus en transparence -- news_story/video_composer.py. Dans un
+    # rendu d'image (apercu), la vignette de l'article tient lieu de video.
+    TemplateSpec(key=TEMPLATE_VIDEO, label="Vidéo 9:16", show_title=True, show_badge=False,
+                 title_max_chars=300, canvas_size=(1080, 1920), title_uses_summary=False),
 )
 
 POST_TEMPLATES = frozenset({TEMPLATE_POST, TEMPLATE_POST_VERTICAL})
+# Gabarits qui portent une etiquette (ACTUALITÉ, BANDE-ANNONCE...).
+LABELLED_TEMPLATES = POST_TEMPLATES | {TEMPLATE_VIDEO}
 
 _BY_KEY = {t.key: t for t in TEMPLATES}
 

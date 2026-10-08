@@ -7,16 +7,17 @@ from news_story.story_templates import (
     POST_TEMPLATES,
     TEMPLATE_POST,
     TEMPLATE_POST_VERTICAL,
+    TEMPLATE_VIDEO,
     TEMPLATES,
     get_template,
 )
 
 
 class TestTemplateCatalogue:
-    def test_exactly_five_templates_are_defined(self):
-        assert len(TEMPLATES) == 5
+    def test_exactly_six_templates_are_defined(self):
+        assert len(TEMPLATES) == 6
         assert {t.key for t in TEMPLATES} == {TEMPLATE_IMAGE, TEMPLATE_NEWS, TEMPLATE_BREAKING,
-                                              TEMPLATE_POST, TEMPLATE_POST_VERTICAL}
+                                              TEMPLATE_POST, TEMPLATE_POST_VERTICAL, TEMPLATE_VIDEO}
 
     def test_the_vertical_post_is_9_16_with_the_title_only(self):
         spec = get_template(TEMPLATE_POST_VERTICAL)
