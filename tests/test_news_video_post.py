@@ -41,51 +41,99 @@ class TestTrouverLaVideo:
 
 
 class TestCalque:
-    def test_le_texte_est_transparent_a_l_opacite_demandee(self):
-        overlay = build_overlay(title="Un film", label="", text_opacity=0.5)
-        assert overlay.size == (W, H)
+    def test_le_texte_est_au_dessus_de_la_video_jamais_dessus(self):
+        overlay, (x, y, w, h) = build_overlay(
+            title="Leïla Bekhti vient de tourner un film avec cet acteur américain",
+            subtitle="Attendue dans Changer l'eau des fleurs, Leïla Bekhti vient de tourner "
+                     "avec Jeremy Allen White.", label="ACTUALITÉ", source_size=(1920, 1080))
+        assert (w, h) == (1080, 608)                         # 16:9 pleine largeur, format garde
+        alpha = overlay.getchannel("A")
+        assert alpha.crop((x, y, x + w, y + h)).getextrema()[1] == 0   # rien sur la video
+        assert alpha.crop((0, 0, W, y)).getextrema()[1] == 255         # le texte est au-dessus
+
+    def test_opacite_reglable(self):
+        overlay, _ = build_overlay(title="Un film", text_opacity=0.5)
         assert 100 <= overlay.getchannel("A").getextrema()[1] <= 135  # ~50 % de 255
 
-    def test_opaque_a_100(self):
-        overlay = build_overlay(title="Un film", label="", text_opacity=1.0)
+    def test_opaque_par_defaut(self):
+        overlay, _ = build_overlay(title="Un film")
         assert overlay.getchannel("A").getextrema()[1] == 255
 
     def test_rien_dans_les_zones_recouvertes_par_tiktok(self):
-        overlay = build_overlay(title=" ".join(["Un titre assez long"] * 8), label="ACTUALITÉ",
-                                text_opacity=1.0)
+        overlay, _ = build_overlay(title=" ".join(["Un titre assez long"] * 8), label="ACTUALITÉ",
+                                   subtitle="Un chapo. " * 10)
         alpha = overlay.getchannel("A")
         assert alpha.crop((0, H - 430, W, H)).getextrema()[1] == 0
         assert alpha.crop((W - 130, 0, W, H)).getextrema()[1] == 0
 
-    def test_apercu_16_9_centre_sur_fond(self, tmp_path):
+    def test_apercu_video_en_bas_texte_en_haut(self, tmp_path):
         src = tmp_path / "src.png"
         Image.new("RGB", (1600, 900), (200, 30, 30)).save(src)
         out = compose_still(src, tmp_path / "p.png", title="", label="")
         img = Image.open(out).convert("RGB")
         assert img.size == (W, H)
-        r, g, b = img.getpixel((W // 2, H // 2))
-        assert r > 150 and g < 80   # la video (rouge) au centre, entiere
-        assert sum(img.getpixel((W // 2, 40))) < sum(img.getpixel((W // 2, H // 2)))  # fond assombri
+        _, (x, y, w, h) = build_overlay(title="", source_size=(1600, 900))
+        r, g, b = img.getpixel((W // 2, y + h // 2))
+        assert r > 150 and g < 80                          # la video (rouge), entiere
+        assert y > H // 2 - 200                            # posee bas, la bande du haut reste au texte
 
 
 class TestFfmpeg:
-    def test_la_16_9_garde_son_format_et_le_son_est_conserve(self):
-        args = ffmpeg_args("in.mp4", "overlay.png", "out.mp4")
+    def test_la_video_est_posee_a_sa_place_et_le_son_conserve(self):
+        args = ffmpeg_args("in.mp4", "overlay.png", "out.mp4", (0, 738, 1080, 608))
         graph = args[args.index("-filter_complex") + 1]
-        assert "force_original_aspect_ratio=decrease" in graph   # video entiere, pas recadree
+        assert "scale=1080:608" in graph and "overlay=0:738" in graph
         assert "boxblur" in graph                                 # fond flou
         assert args[args.index("-map", args.index("-map") + 1) + 1] == "0:a?"
         assert args[-1] == "out.mp4"
 
-    @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent")
+    @pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+                        reason="ffmpeg absent")
     def test_vrai_rendu_9_16(self, tmp_path):
         src = tmp_path / "src.mp4"
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
                         "testsrc=size=640x360:rate=25:duration=2", "-f", "lavfi", "-i",
                         "sine=frequency=440:duration=2", "-shortest", "-c:v", "libx264",
                         "-c:a", "aac", str(src)], check=True)
-        out = compose_video(src, tmp_path / "out.mp4", title="Un film", label="ACTUALITÉ")
+        out = compose_video(src, tmp_path / "out.mp4", title="Un film", label="ACTUALITÉ",
+                            subtitle="Avec Jeremy Allen White.")
         probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
                                 "-of", "csv=p=0", str(out)], capture_output=True, text=True, check=True)
         assert "video,1080,1920" in probe.stdout
         assert "audio" in probe.stdout
+
+
+class TestChapo:
+    def test_le_chapo_est_tire_du_resume(self):
+        from news_story.story_composer import default_subtitle
+
+        title = '"Elle est incroyable" : Leïla Bekhti vient de tourner un film avec cet acteur américain'
+        summary = ("Attendue dans \"Changer l'eau des fleurs\" le 9 décembre prochain, Leïla Bekhti "
+                   "vient de tourner avec Jeremy Allen White qui ne tarit pas d'éloges.")
+        assert "Jeremy Allen White" in default_subtitle(title, summary)
+
+    def test_un_resume_qui_repete_le_titre_n_est_pas_repris(self):
+        from news_story.story_composer import default_subtitle
+
+        assert default_subtitle("Un film annoncé", "Un film annoncé") == ""
+
+    def test_un_long_resume_est_coupe_sur_une_phrase(self):
+        from news_story.post_composer import clean_subtitle
+
+        text = "Première phrase utile. " + "Encore du texte " * 40
+        assert clean_subtitle(text, 50) == "Première phrase utile."
+
+    def test_le_post_image_affiche_le_chapo(self, tmp_path):
+        from news_story.post_composer import compose_post
+
+        src = tmp_path / "s.png"
+        Image.new("RGB", (1080, 1920), (0, 0, 0)).save(src)
+        without = compose_post(src, tmp_path / "a.png", title="Un film", label="", vertical=True)
+        with_sub = compose_post(src, tmp_path / "b.png", title="Un film", label="", vertical=True,
+                                subtitle="Avec Jeremy Allen White, au cinéma le 9 décembre.")
+
+        def white_rows(path):
+            img = Image.open(path).convert("L")
+            return sum(1 for y in range(img.height)
+                       if img.crop((0, y, img.width, y + 1)).getextrema()[1] > 240)
+        assert white_rows(with_sub) > white_rows(without)

@@ -130,8 +130,11 @@ class StoryOptions:
     # Logo a incruster ; None = le logo de l'appli (video/watermark.py).
     # Permet un logo par compte (un compte cinema n'a pas le logo gaming).
     branding_path: str | None = None
-    # Post video : opacite du texte pose sur la video (1.0 = opaque).
-    text_opacity: float = 0.6
+    # Post video : opacite du texte (1.0 = opaque).
+    text_opacity: float = 1.0
+    # Chapo affiche sous le titre des posts (image et video). None = tire du
+    # resume de l'article (default_subtitle) ; "" = aucun.
+    subtitle: str | None = None
 
 
 def _smart_crop_hint(image) -> CenterHint | None:
@@ -351,7 +354,7 @@ def compose_story(image_path: str | Path, out_path: str | Path,
             image_path, out_path, title=title, label=label,
             logo_path=_branding_path(options) if options.branding_enabled else None,
             text_opacity=options.text_opacity, title_scale=options.title_scale,
-            output_format=options.output_format)
+            output_format=options.output_format, subtitle=post_subtitle(options))
 
     with Image.open(image_path) as opened:
         canvas = _crop_and_resize(opened.convert("RGB"))
@@ -420,13 +423,32 @@ def post_text(options: StoryOptions, template) -> tuple[str, str]:
     return title, label
 
 
+def default_subtitle(title: str, summary: str) -> str:
+    """Le chapo de l'article (resume du flux), nettoye -- sauf s'il ne fait
+    que repeter le titre."""
+    from news_story.post_composer import clean_subtitle
+    from news_story.title_shortener import _normalize
+
+    text = clean_subtitle(summary or "")
+    norm_text, norm_title = _normalize(text), _normalize(title or "")
+    if not norm_text or norm_text in norm_title or norm_title.startswith(norm_text):
+        return ""
+    return text
+
+
+def post_subtitle(options: StoryOptions) -> str:
+    if options.subtitle is not None:
+        return " ".join(options.subtitle.split())
+    return default_subtitle(options.title, options.summary)
+
+
 def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, template) -> Path:
     """Gabarits POST (4:5 et 9:16) : voir news_story/post_composer.py."""
     from news_story.post_composer import compose_post
 
     title, label = post_text(options, template)
     return compose_post(
-        image_path, out_path, title=title, label=label,
+        image_path, out_path, title=title, label=label, subtitle=post_subtitle(options),
         logo_path=_branding_path(options) if options.branding_enabled else None,
         title_scale=options.title_scale, output_format=options.output_format,
         vertical=template.key == TEMPLATE_POST_VERTICAL)

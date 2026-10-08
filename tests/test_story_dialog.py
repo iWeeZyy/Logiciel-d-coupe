@@ -419,7 +419,7 @@ class TestPostVideo:
             assert dialog.template_combo.findData(TEMPLATE_VIDEO) < 0
             assert _process_until(app, lambda: dialog.template_combo.currentData() == TEMPLATE_VIDEO)
             assert dialog.opacity_combo.isVisibleTo(dialog)
-            assert dialog.opacity_combo.currentData() == 0.6
+            assert dialog.opacity_combo.currentData() == 1.0
             dialog.cleanup()
 
     def test_sans_video_pas_de_modele_video(self, app):

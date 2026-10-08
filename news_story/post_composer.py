@@ -112,6 +112,117 @@ def _title_font_path() -> Path:
     return app_base_dir() / "assets" / "fonts" / "BarlowCondensed-ExtraBoldItalic.ttf"
 
 
+def _subtitle_font_path() -> Path:
+    from core.paths import app_base_dir
+
+    return app_base_dir() / "assets" / "fonts" / "BarlowCondensed-SemiBold.ttf"
+
+
+def _subtitle_font(size: int):
+    """Police du chapo : meme famille que le titre, droite et moins grasse,
+    en minuscules -- il se lit comme une phrase, pas comme une accroche."""
+    from PIL import ImageFont
+
+    path = _subtitle_font_path()
+    try:
+        if path.is_file():
+            return ImageFont.truetype(str(path), size)
+    except OSError:
+        pass
+    return _font(size)
+
+
+# Le chapo (texte sous le titre de l'article) porte souvent l'info que le
+# titre tait pour faire cliquer (« cet acteur americain » -> Jeremy Allen
+# White) : il est pose sous le titre, plus petit (retour utilisateur).
+_SUBTITLE_RATIO = 0.52
+_SUBTITLE_MIN = 30
+_SUBTITLE_LINE_HEIGHT = 1.18
+_GAP_TITLE_SUBTITLE = 18
+
+
+def _subtitle_size(title_size: int) -> int:
+    return max(_SUBTITLE_MIN, int(title_size * _SUBTITLE_RATIO))
+
+
+def _fit_block(draw, title: str, subtitle: str, scale: float, max_width: int,
+               max_height: int, *, min_size: int, max_size: int, max_lines: int):
+    """Comme _fit_title, pour le bloc titre + chapo : plus grande taille de
+    titre (le chapo suit, a ~52 %) ou tout tient en largeur et en hauteur.
+    Renvoie (police, lignes, taille, police_chapo, lignes_chapo, taille_chapo,
+    hauteur, tient)."""
+    max_px, min_px = int(max_size * scale), int(min_size * scale)
+
+    def measure(size):
+        font = _font(size)
+        lines = _wrap(draw, title, font, max_width) if title else []
+        sub_size = _subtitle_size(size)
+        sub_font = _subtitle_font(sub_size)
+        sub_lines = _wrap(draw, subtitle, sub_font, max_width) if subtitle else []
+        height = len(lines) * int(size * _TITLE_LINE_HEIGHT)
+        if sub_lines:
+            height += (_GAP_TITLE_SUBTITLE if lines else 0) + len(sub_lines) * int(
+                sub_size * _SUBTITLE_LINE_HEIGHT)
+        return font, lines, size, sub_font, sub_lines, sub_size, height
+
+    size = max_px
+    while size >= min_px:
+        block = measure(size)
+        if len(block[1]) + len(block[4]) <= max_lines and block[6] <= max_height:
+            return (*block, True)
+        size -= 2
+    font, lines, size, sub_font, sub_lines, sub_size, height = measure(min_px)
+    if len(lines) + len(sub_lines) > max_lines and sub_lines:
+        keep = max(1, max_lines - len(lines))
+        sub_lines = sub_lines[:keep]
+        sub_lines[-1] = sub_lines[-1].rstrip(" ,;:") + "…"
+    return font, lines, size, sub_font, sub_lines, sub_size, height, False
+
+
+def draw_block(draw, top: int, center_x: float, block, fill=(255, 255, 255, 255),
+               shadow_fill=(0, 0, 0, 255), shadow_draw=None) -> int:
+    """Dessine titre puis chapo a partir de `top`, centres sur center_x.
+    Renvoie le bas du bloc."""
+    font, lines, size, sub_font, sub_lines, sub_size = block[:6]
+    shadow_draw = shadow_draw or draw
+    y = top
+    line_h = int(size * _TITLE_LINE_HEIGHT)
+    offset = max(2, size // 28)
+    for line in lines:
+        x = center_x - draw.textlength(line, font=font) / 2
+        shadow_draw.text((x + offset, y + offset), line, font=font, fill=shadow_fill)
+        draw.text((x, y), line, font=font, fill=fill)
+        y += line_h
+    if sub_lines:
+        y += _GAP_TITLE_SUBTITLE if lines else 0
+        sub_h = int(sub_size * _SUBTITLE_LINE_HEIGHT)
+        sub_offset = max(1, sub_size // 24)
+        for line in sub_lines:
+            x = center_x - draw.textlength(line, font=sub_font) / 2
+            shadow_draw.text((x + sub_offset, y + sub_offset), line, font=sub_font, fill=shadow_fill)
+            draw.text((x, y), line, font=sub_font, fill=fill)
+            y += sub_h
+    return y
+
+
+def clean_subtitle(text: str, max_chars: int = 260) -> str:
+    """Chapo a afficher : sans balisage ni lignes de liens (descriptions
+    YouTube), sur une ligne, coupe sur une fin de phrase (ou un mot) au-dela
+    de `max_chars`. Jamais reformule."""
+    from news_story.caption import drop_promo_lines
+    from news_story.title_shortener import _strip_html
+
+    text = _strip_html(drop_promo_lines(text or ""))
+    text = " ".join(text.split())
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+    if end >= max_chars // 3:
+        return cut[:end + 1]
+    return cut.rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+
+
 def _font(size: int):
     from PIL import ImageFont
 
@@ -209,7 +320,7 @@ def _load_logo(path: Path | None):
 def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
                  label: str = DEFAULT_LABEL, logo_path: Path | None = None,
                  title_scale: float = 1.0, output_format: str = "PNG",
-                 vertical: bool = False) -> Path:
+                 vertical: bool = False, subtitle: str = "") -> Path:
     """Compose le post et l'ecrit a `out_path` : 4:5 pour le fil Instagram,
     ou 9:16 (`vertical`) pour TikTok, Reels et Story -- meme mise en page,
     bloc de texte remonte hors de l'interface de ces applications. Propage
@@ -248,18 +359,21 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
     label_h = (sum(label_font.getmetrics()) + _GAP_LABEL_TITLE) if label else 0
 
     title = _french_spacing(" ".join(title.split()).upper())
+    subtitle = _french_spacing(" ".join((subtitle or "").split()))
     scale = max(0.6, min(1.6, title_scale))
     max_w = width - margin_l - margin_r
     full_image = False
-    if title:
+    if title or subtitle:
         available_h = bottom - label_h - int(height * title_top)
-        fitted = _fit_title(draw, title, scale, max_w, max(available_h, 0),
-                            min_size=_TITLE_COMFORT_SIZE)
-        if not fitted[3]:
+        fitted = _fit_block(draw, title, subtitle, scale, max_w, max(available_h, 0),
+                            min_size=_TITLE_COMFORT_SIZE, max_size=_TITLE_SIZES[0],
+                            max_lines=_TITLE_MAX_LINES + (4 if subtitle else 0))
+        if not fitted[7]:
             full_image = True
-            fitted = _fit_title(draw, title, scale, max_w,
+            fitted = _fit_block(draw, title, subtitle, scale, max_w,
                                 max(bottom - label_h - int(height * full_top), 0),
-                                max_lines=_FULL_MAX_LINES, max_size=_FULL_TITLE_MAX_SIZE)
+                                min_size=_TITLE_SIZES[1], max_size=_FULL_TITLE_MAX_SIZE,
+                                max_lines=_FULL_MAX_LINES + (6 if subtitle else 0))
 
     if full_image:
         veil = Image.new("RGB", (width, height), _GRADIENT_COLOR)
@@ -269,16 +383,9 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
     if logo is not None:
         canvas.paste(logo, (int(center_x - logo.width / 2), logo_y), logo)
 
-    if title:
-        font, lines, size, _ = fitted
-        line_h = int(size * _TITLE_LINE_HEIGHT)
-        top = bottom - line_h * len(lines)
-        for i, line in enumerate(lines):
-            line_w = draw.textlength(line, font=font)
-            x, y = center_x - line_w / 2, top + i * line_h
-            shadow = max(2, size // 28)
-            draw.text((x + shadow, y + shadow), line, font=font, fill=(0, 0, 0))  # ombre portee discrete
-            draw.text((x, y), line, font=font, fill=(255, 255, 255))
+    if title or subtitle:
+        top = bottom - fitted[6]
+        draw_block(draw, top, center_x, fitted, fill=(255, 255, 255), shadow_fill=(0, 0, 0))
         bottom = top - _GAP_LABEL_TITLE
 
     if label:

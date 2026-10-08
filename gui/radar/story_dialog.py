@@ -47,7 +47,7 @@ from gaming_news.models import Article
 from news_story.image_cache import ImageFetchError, download as cache_download
 from news_story.image_fetcher import candidates_for_article
 from news_story.video_source import fetch_video_url
-from news_story.story_composer import StoryOptions, compose_story
+from news_story.story_composer import StoryOptions, compose_story, default_subtitle
 from news_story.caption import build_caption
 from news_story.story_templates import (
     TEMPLATE_BREAKING,
@@ -144,8 +144,10 @@ class _VideoExportThread(QThread):
     cancelled = Signal()
 
     def __init__(self, video_url: str, out_path: str, title: str, label: str,
-                 logo_path, text_opacity: float, title_scale: float, cancel_token: CancelToken):
+                 logo_path, text_opacity: float, title_scale: float, cancel_token: CancelToken,
+                 subtitle: str = ""):
         super().__init__()
+        self.subtitle = subtitle
         self.video_url, self.out_path = video_url, out_path
         self.title, self.label, self.logo_path = title, label, logo_path
         self.text_opacity, self.title_scale = text_opacity, title_scale
@@ -171,7 +173,7 @@ class _VideoExportThread(QThread):
                 compose_video(source, self.out_path, title=self.title, label=self.label,
                               logo_path=Path(self.logo_path) if self.logo_path else None,
                               text_opacity=self.text_opacity, title_scale=self.title_scale,
-                              cancel_token=self.cancel_token)
+                              subtitle=self.subtitle, cancel_token=self.cancel_token)
         except CancelledError:
             self.cancelled.emit()
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -337,12 +339,12 @@ class StoryDialog(QDialog):
         self.template_combo.activated.connect(self._on_template_chosen_by_user)
         options_panel.addWidget(self.template_combo)
 
-        self.opacity_caption = QLabel("Opacité du texte sur la vidéo")
+        self.opacity_caption = QLabel("Opacité du texte")
         options_panel.addWidget(self.opacity_caption)
         self.opacity_combo = QComboBox()
         for value in (1.0, 0.8, 0.6, 0.45, 0.3):
             self.opacity_combo.addItem(f"{int(value * 100)} %", value)
-        self.opacity_combo.setCurrentIndex(self.opacity_combo.findData(0.6))
+        self.opacity_combo.setCurrentIndex(self.opacity_combo.findData(1.0))
         self.opacity_combo.currentIndexChanged.connect(self._schedule_preview)
         options_panel.addWidget(self.opacity_combo)
 
@@ -362,6 +364,16 @@ class StoryDialog(QDialog):
         self.title_edit = QLineEdit()
         self.title_edit.textEdited.connect(self._schedule_preview)
         options_panel.addWidget(self.title_edit)
+
+        # Le chapo porte souvent l'info que le titre tait (« cet acteur » ->
+        # Jeremy Allen White) : affiche sous le titre, pre-rempli, retouchable.
+        self.subtitle_caption = QLabel("Info sous le titre (chapô de l'article)")
+        options_panel.addWidget(self.subtitle_caption)
+        self.subtitle_edit = QPlainTextEdit(default_subtitle(article.title, article.summary))
+        self.subtitle_edit.setMinimumHeight(70)
+        self.subtitle_edit.setMaximumHeight(110)
+        self.subtitle_edit.textChanged.connect(self._schedule_preview)
+        options_panel.addWidget(self.subtitle_edit)
 
         options_panel.addWidget(QLabel("Source"))
         self.source_edit = QLineEdit(article.source_label)
@@ -456,8 +468,9 @@ class StoryDialog(QDialog):
             self.template_combo.addItem(_TEMPLATE_DISPLAY_LABELS[TEMPLATE_VIDEO], TEMPLATE_VIDEO)
         if not self._template_touched:
             self.template_combo.setCurrentIndex(self.template_combo.findData(TEMPLATE_VIDEO))
-        self.video_label.setText("🎬 Vidéo trouvée dans l'article : le post sera la vidéo "
-                                 "(l'aperçu utilise l'image, la vidéo est téléchargée à l'export).")
+        self.video_label.setText("🎬 Vidéo trouvée dans l'article : le post sera la vidéo, le texte "
+                                 "au-dessus (l'aperçu utilise l'image, la vidéo est téléchargée "
+                                 "à l'export).")
         self.video_label.setVisible(True)
         # Exportable meme si aucune image n'a pu etre recuperee pour l'apercu.
         self.export_btn.setEnabled(True)
@@ -523,6 +536,8 @@ class StoryDialog(QDialog):
         self.label_combo.setVisible(is_post)
         self.opacity_caption.setVisible(is_video)
         self.opacity_combo.setVisible(is_video)
+        self.subtitle_caption.setVisible(is_post)
+        self.subtitle_edit.setVisible(is_post)
         # Le post a une mise en page fixe (titre en bas) : pas de position.
         self.position_combo.setEnabled(not is_post)
         self.preview_label.set_frame_size(
@@ -595,7 +610,8 @@ class StoryDialog(QDialog):
             output_format="PNG",
             label=self.label_combo.currentText(),
             branding_path=self._logo_path,
-            text_opacity=self.opacity_combo.currentData() or 0.6,
+            text_opacity=self.opacity_combo.currentData() or 1.0,
+            subtitle=self.subtitle_edit.toPlainText(),
         )
 
     # ------------------------------------------------------------ apercu
@@ -652,7 +668,7 @@ class StoryDialog(QDialog):
         self._export_thread.start()
 
     def _export_video(self) -> None:
-        from news_story.story_composer import post_text
+        from news_story.story_composer import post_subtitle, post_text
 
         path, _ = QFileDialog.getSaveFileName(
             self, "Exporter la vidéo", f"video_{self.article.article_id}.mp4", "Vidéo MP4 (*.mp4)")
@@ -669,7 +685,7 @@ class StoryDialog(QDialog):
         self.export_btn.setEnabled(False)
         self._export_thread = _VideoExportThread(
             self._video_url, path, title, label, logo, options.text_opacity,
-            options.title_scale, self._cancel_token)
+            options.title_scale, self._cancel_token, subtitle=post_subtitle(options))
         self._export_thread.status.connect(self.status_label.setText)
         self._export_thread.ready.connect(self._on_export_ready)
         self._export_thread.failed.connect(self._on_export_failed)
