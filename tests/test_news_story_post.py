@@ -71,28 +71,26 @@ class TestPost:
 
 
 class TestTailleDuTitre:
-    """Le titre prend toute la place disponible en bas de l'image (retour
-    utilisateur : avec un plafond de 78 px, il restait petit)."""
+    """News courte : titre dans le bas, 78 px max (rendu valide par
+    l'utilisateur pour les « petites news »)."""
 
-    @staticmethod
-    def _text_rows(path):
-        img = Image.open(path).convert("L")
+    def test_une_news_courte_garde_le_rendu_valide(self, tmp_path):
+        from PIL import ImageDraw
+
+        from news_story.post_composer import _TITLE_COMFORT_SIZE, _fit_title
+        draw = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+        title = "GREEN LANTERNS : DES IMAGES INÉDITES DE LA SÉRIE ABANDONNÉE DU ARROWVERSE"
+        _, lines, size, fits = _fit_title(draw, title, 1.0, POST_W - 88, 600,
+                                          min_size=_TITLE_COMFORT_SIZE)
+        assert fits and size == 78 and len(lines) == 3
+
+    def test_un_titre_court_reste_sous_la_photo(self, tmp_path):
+        src = _source(tmp_path, color=(0, 0, 0))
+        out = compose_post(src, tmp_path / "p.png", title="Superman revient", label="ACTUALITÉ")
+        img = Image.open(out).convert("L")
         rows = [y for y in range(img.height)
                 if img.crop((0, y, img.width, y + 1)).getextrema()[1] > 240]
-        return min(rows), max(rows)
-
-    def test_un_titre_court_est_dessine_en_tres_gros(self, tmp_path):
-        src = _source(tmp_path, color=(0, 0, 0))
-        out = compose_post(src, tmp_path / "p.png", title="Superman revient", label="")
-        top, bottom = self._text_rows(out)
-        assert bottom - top > 110  # une ligne en ~78 px avant ; bien plus grand desormais
-
-    def test_un_titre_long_reste_sous_la_photo(self, tmp_path):
-        src = _source(tmp_path, color=(0, 0, 0))
-        long_title = " ".join(["Une phrase de titre assez longue"] * 6)
-        out = compose_post(src, tmp_path / "p.png", title=long_title, label="ACTUALITÉ")
-        top, _ = self._text_rows(out)
-        assert top >= int(POST_H * 0.38)
+        assert min(rows) >= int(POST_H * 0.38)
 
 
 class TestTitreSurToutelImage:

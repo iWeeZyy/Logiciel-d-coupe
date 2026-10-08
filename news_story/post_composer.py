@@ -32,19 +32,19 @@ VERTICAL_W, VERTICAL_H = 1080, 1920
 
 _MARGIN_X = 44
 _TITLE_MAX_WIDTH = POST_W - 2 * _MARGIN_X
-# Le titre prend la plus grande taille qui tient dans la zone basse (voir
-# _fit_title) : un titre court s'affiche en tres gros, un long descend
-# jusqu'a la taille min. Meme regle que les Stories News (« prendre le plus
-# de place possible sur l'image ») -- avec un plafond fixe de 78 px, le texte
-# restait petit alors que l'image avait la place (retour utilisateur).
-_TITLE_SIZES = (150, 44)         # taille max, taille min
-_TITLE_MAX_LINES = 8             # garde-fou contre un mur de texte (zone basse)
+# Deux mises en page, choisies selon la longueur du titre :
+# - news courte : titre dans le bas de l'image, 78 px max (rendu valide par
+#   l'utilisateur : « parfait pour les petites news ») ; il peut descendre
+#   jusqu'a _TITLE_COMFORT_SIZE, jamais plus petit ;
+# - titre trop long pour ca : il prend toute l'image (« le texte doit prendre
+#   toute l'image s'il a besoin de beaucoup de lignes ») au lieu de
+#   rapetisser dans la bande du bas -- l'ecueil des premieres Stories gaming.
+#   L'image est alors assombrie pour rester lisible.
+_TITLE_SIZES = (78, 44)          # zone basse : taille max ; taille min absolue
+_TITLE_MAX_LINES = 5             # zone basse
 _TITLE_TOP_FRAC = 0.40           # zone basse : le titre reste sous la photo
-# Un titre qui a besoin de beaucoup de lignes ne rapetisse pas en dessous de
-# cette taille dans la zone basse : il monte plutot jusqu'en haut de l'image
-# (retour utilisateur : « le texte doit prendre toute l'image s'il a besoin
-# de beaucoup de lignes »). L'image est alors assombrie pour rester lisible.
-_TITLE_COMFORT_SIZE = 76
+_TITLE_COMFORT_SIZE = 64
+_FULL_TITLE_MAX_SIZE = 110       # pleine image : plus grand si la place le permet
 _FULL_TITLE_TOP_FRAC = 0.05
 _FULL_MAX_LINES = 16
 _FULL_DIM_ALPHA = 120            # voile sombre sur toute l'image dans ce cas
@@ -165,13 +165,13 @@ def _apply_gradient(canvas, start_frac: float = _GRADIENT_START_FRAC) -> None:
 
 def _fit_title(draw, text: str, scale: float, max_width: int = _TITLE_MAX_WIDTH,
                max_height: int | None = None, min_size: int | None = None,
-               max_lines: int = _TITLE_MAX_LINES):
+               max_lines: int = _TITLE_MAX_LINES, max_size: int | None = None):
     """Plus grande taille ou le titre tient en largeur ET en hauteur.
     `title_scale` (menu Taille du dialogue) reste un multiplicateur.
     Renvoie (police, lignes, taille, tient) : `tient` est faux quand meme la
     taille minimale ne suffit pas (le texte est alors coupé par « … »)."""
     wrap_text = _wrap
-    max_size = int(_TITLE_SIZES[0] * scale)
+    max_size = int((max_size if max_size is not None else _TITLE_SIZES[0]) * scale)
     min_size = int((min_size if min_size is not None else _TITLE_SIZES[1]) * scale)
     size = max_size
     while size >= min_size:
@@ -259,7 +259,7 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
             full_image = True
             fitted = _fit_title(draw, title, scale, max_w,
                                 max(bottom - label_h - int(height * full_top), 0),
-                                max_lines=_FULL_MAX_LINES)
+                                max_lines=_FULL_MAX_LINES, max_size=_FULL_TITLE_MAX_SIZE)
 
     if full_image:
         veil = Image.new("RGB", (width, height), _GRADIENT_COLOR)
