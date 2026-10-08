@@ -8,9 +8,10 @@ PIL = pytest.importorskip("PIL")
 from PIL import Image  # noqa: E402
 
 from news_story.caption import build_caption  # noqa: E402
-from news_story.post_composer import POST_H, POST_W, compose_post  # noqa: E402
+from news_story.post_composer import (  # noqa: E402
+    POST_H, POST_W, VERTICAL_H, VERTICAL_W, compose_post)
 from news_story.story_composer import StoryOptions, compose_story  # noqa: E402
-from news_story.story_templates import TEMPLATE_POST  # noqa: E402
+from news_story.story_templates import TEMPLATE_POST, TEMPLATE_POST_VERTICAL  # noqa: E402
 
 
 def _source(tmp_path: Path, size=(1600, 900), color=(70, 110, 160)) -> Path:
@@ -67,6 +68,32 @@ class TestPost:
     def test_export_jpeg(self, tmp_path):
         out = compose_post(_source(tmp_path), tmp_path / "post.jpg", title="Titre", output_format="JPEG")
         assert Image.open(out).format == "JPEG"
+
+
+class TestPostVertical:
+    """Le meme post en 9:16 pour TikTok / Reels / Story : le texte et le
+    logo restent hors de la zone que l'interface de ces applications
+    recouvre (bas de l'ecran, colonne de boutons a droite)."""
+
+    def test_toujours_1080x1920(self, tmp_path):
+        for size in ((1600, 900), (800, 1600)):
+            out = compose_post(_source(tmp_path, size), tmp_path / "v.png", title="Un titre", vertical=True)
+            assert Image.open(out).size == (VERTICAL_W, VERTICAL_H)
+
+    def test_rien_dans_la_zone_recouverte_par_tiktok(self, tmp_path):
+        src = _source(tmp_path, color=(0, 0, 0))
+        out = compose_post(src, tmp_path / "v.png", vertical=True, logo_path=_logo(tmp_path),
+                           title="Un titre assez long pour occuper toute la largeur disponible du bloc")
+        img = Image.open(out).convert("L")
+        assert img.crop((0, VERTICAL_H - 420, VERTICAL_W, VERTICAL_H)).getextrema()[1] < 40
+        assert img.crop((VERTICAL_W - 120, 0, VERTICAL_W, VERTICAL_H)).getextrema()[1] < 40
+        assert img.crop((0, VERTICAL_H // 2, VERTICAL_W, VERTICAL_H - 420)).getextrema()[1] > 240
+
+    def test_le_gabarit_9_16_passe_par_compose_post(self, tmp_path):
+        out = compose_story(_source(tmp_path), tmp_path / "v.png",
+                            StoryOptions(template=TEMPLATE_POST_VERTICAL, title="Un film annonce",
+                                         summary="Le resume va dans la legende."))
+        assert Image.open(out).size == (1080, 1920)
 
 
 class TestPostViaComposeStory:

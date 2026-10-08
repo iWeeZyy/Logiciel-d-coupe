@@ -28,6 +28,7 @@ from core.logging_setup import get_logger
 logger = get_logger()
 
 POST_W, POST_H = 1080, 1350
+VERTICAL_W, VERTICAL_H = 1080, 1920
 
 _MARGIN_X = 44
 _TITLE_MAX_WIDTH = POST_W - 2 * _MARGIN_X
@@ -45,6 +46,15 @@ _GAP_LABEL_TITLE = 26
 _GRADIENT_START_FRAC = 0.40      # le degrade commence a 40 % de la hauteur
 _GRADIENT_MAX_ALPHA = 240
 _GRADIENT_COLOR = (10, 10, 14)
+
+# Format 9:16 (TikTok, Reels, Story) : l'interface de l'application recouvre
+# le bas de l'image (pseudo, description, musique : ~420 px sur TikTok et
+# Reels) et la colonne de boutons a droite (~130 px). Le bloc de texte est
+# donc remonte au-dessus de cette zone et resserre symetriquement, pour que
+# rien d'important ne passe sous un bouton.
+_VERTICAL_MARGIN_X = 130
+_VERTICAL_BOTTOM_MARGIN = 440
+_VERTICAL_GRADIENT_START_FRAC = 0.42
 
 DEFAULT_LABEL = "ACTUALITÉ"
 
@@ -120,34 +130,35 @@ def _crop_to_aspect(image, aspect: float):
     return image.crop((0, y, crop_w, y + crop_h))
 
 
-def _apply_gradient(canvas) -> None:
+def _apply_gradient(canvas, start_frac: float = _GRADIENT_START_FRAC) -> None:
     from PIL import Image
 
-    start = int(POST_H * _GRADIENT_START_FRAC)
-    height = POST_H - start
+    width, full_h = canvas.size
+    start = int(full_h * start_frac)
+    height = full_h - start
     mask = Image.linear_gradient("L").resize((1, height))  # 0 en haut -> 255 en bas
     # Courbe adoucie : le degrade reste discret haut et fonce vite pres du
     # texte, comme sur les posts de reference.
     mask = mask.point(lambda v: int(_GRADIENT_MAX_ALPHA * (v / 255) ** 1.35))
-    mask = mask.resize((POST_W, height))
-    shade = Image.new("RGB", (POST_W, height), _GRADIENT_COLOR)
+    mask = mask.resize((width, height))
+    shade = Image.new("RGB", (width, height), _GRADIENT_COLOR)
     canvas.paste(shade, (0, start), mask)
 
 
-def _fit_title(draw, text: str, scale: float):
+def _fit_title(draw, text: str, scale: float, max_width: int = _TITLE_MAX_WIDTH):
     wrap_text = _wrap
     max_size = int(_TITLE_SIZES[0] * scale)
     min_size = int(_TITLE_SIZES[1] * scale)
     size = max_size
     while size >= min_size:
         font = _font(size)
-        lines = wrap_text(draw, text, font, _TITLE_MAX_WIDTH)
+        lines = wrap_text(draw, text, font, max_width)
         if len(lines) <= _TITLE_MAX_LINES and all(
-                draw.textlength(line, font=font) <= _TITLE_MAX_WIDTH for line in lines):
+                draw.textlength(line, font=font) <= max_width for line in lines):
             return font, lines, size
         size -= 4
     font = _font(min_size)
-    lines = wrap_text(draw, text, font, _TITLE_MAX_WIDTH)
+    lines = wrap_text(draw, text, font, max_width)
     if len(lines) > _TITLE_MAX_LINES:
         kept = lines[:_TITLE_MAX_LINES]
         kept[-1] = kept[-1].rstrip(" ,;:") + "…"
@@ -172,34 +183,45 @@ def _load_logo(path: Path | None):
 
 def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
                  label: str = DEFAULT_LABEL, logo_path: Path | None = None,
-                 title_scale: float = 1.0, output_format: str = "PNG") -> Path:
-    """Compose le post 4:5 et l'ecrit a `out_path`. Propage une erreur de
-    lecture de l'image source, comme compose_story."""
+                 title_scale: float = 1.0, output_format: str = "PNG",
+                 vertical: bool = False) -> Path:
+    """Compose le post et l'ecrit a `out_path` : 4:5 pour le fil Instagram,
+    ou 9:16 (`vertical`) pour TikTok, Reels et Story -- meme mise en page,
+    bloc de texte remonte hors de l'interface de ces applications. Propage
+    une erreur de lecture de l'image source, comme compose_story."""
     from PIL import Image, ImageDraw
 
     out_path = Path(out_path)
+    if vertical:
+        width, height = VERTICAL_W, VERTICAL_H
+        margin_x, bottom_margin, gradient_start = (
+            _VERTICAL_MARGIN_X, _VERTICAL_BOTTOM_MARGIN, _VERTICAL_GRADIENT_START_FRAC)
+    else:
+        width, height = POST_W, POST_H
+        margin_x, bottom_margin, gradient_start = _MARGIN_X, _BOTTOM_MARGIN, _GRADIENT_START_FRAC
     with Image.open(image_path) as opened:
-        canvas = _crop_to_aspect(opened.convert("RGB"), POST_W / POST_H).resize(
-            (POST_W, POST_H), Image.LANCZOS)
+        canvas = _crop_to_aspect(opened.convert("RGB"), width / height).resize(
+            (width, height), Image.LANCZOS)
 
-    _apply_gradient(canvas)
+    _apply_gradient(canvas, gradient_start)
     draw = ImageDraw.Draw(canvas)
 
     # Mise en page du bas vers le haut : logo, titre, etiquette.
-    bottom = POST_H - _BOTTOM_MARGIN
+    bottom = height - bottom_margin
     logo = _load_logo(logo_path)
     if logo is not None:
-        canvas.paste(logo, ((POST_W - logo.width) // 2, bottom - logo.height), logo)
+        canvas.paste(logo, ((width - logo.width) // 2, bottom - logo.height), logo)
         bottom -= logo.height + _GAP_TITLE_LOGO
 
     title = _french_spacing(" ".join(title.split()).upper())
     if title:
-        font, lines, size = _fit_title(draw, title, max(0.6, min(1.6, title_scale)))
+        font, lines, size = _fit_title(draw, title, max(0.6, min(1.6, title_scale)),
+                                       width - 2 * margin_x)
         line_h = int(size * _TITLE_LINE_HEIGHT)
         top = bottom - line_h * len(lines)
         for i, line in enumerate(lines):
-            width = draw.textlength(line, font=font)
-            x, y = (POST_W - width) / 2, top + i * line_h
+            line_w = draw.textlength(line, font=font)
+            x, y = (width - line_w) / 2, top + i * line_h
             draw.text((x + 2, y + 3), line, font=font, fill=(0, 0, 0))  # ombre portee discrete
             draw.text((x, y), line, font=font, fill=(255, 255, 255))
         bottom = top - _GAP_LABEL_TITLE
@@ -211,14 +233,14 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
         ascent, descent = font.getmetrics()
         y_text = bottom - ascent - descent
         y_rule = y_text + (ascent + descent) // 2 + 2
-        x_text = (POST_W - text_w) / 2
+        x_text = (width - text_w) / 2
         draw.text((x_text, y_text), label, font=font, fill=(255, 255, 255))
         left_end = x_text - _LABEL_GAP
         right_start = x_text + text_w + _LABEL_GAP
-        if left_end > _MARGIN_X:
-            draw.rectangle([_MARGIN_X, y_rule, left_end, y_rule + _RULE_THICKNESS - 1], fill=(235, 235, 235))
-        if right_start < POST_W - _MARGIN_X:
-            draw.rectangle([right_start, y_rule, POST_W - _MARGIN_X, y_rule + _RULE_THICKNESS - 1],
+        if left_end > margin_x:
+            draw.rectangle([margin_x, y_rule, left_end, y_rule + _RULE_THICKNESS - 1], fill=(235, 235, 235))
+        if right_start < width - margin_x:
+            draw.rectangle([right_start, y_rule, width - margin_x, y_rule + _RULE_THICKNESS - 1],
                            fill=(235, 235, 235))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)

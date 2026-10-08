@@ -49,7 +49,9 @@ from news_story.story_templates import (
     TEMPLATE_BREAKING,
     TEMPLATE_IMAGE,
     TEMPLATE_NEWS,
+    POST_TEMPLATES,
     TEMPLATE_POST,
+    TEMPLATE_POST_VERTICAL,
     TEMPLATES,
     get_template,
 )
@@ -63,6 +65,7 @@ _TEMPLATE_DISPLAY_LABELS = {
     TEMPLATE_NEWS: "Actualité (titre + source)",
     TEMPLATE_BREAKING: "Alerte BREAKING",
     TEMPLATE_POST: "Post du fil 4:5 (titre + légende)",
+    TEMPLATE_POST_VERTICAL: "Post 9:16 TikTok / Reels / Story (titre + légende)",
 }
 # Etiquettes proposees au-dessus du titre du post ; la liste est editable.
 _POST_LABELS = ("ACTUALITÉ", "BANDE-ANNONCE", "EXCLU", "RUMEUR", "CASTING", "BOX-OFFICE", "ANECDOTE")
@@ -350,13 +353,14 @@ class StoryDialog(QDialog):
     # --------------------------------------------------------- edition
     def _on_template_changed(self) -> None:
         template = get_template(self.template_combo.currentData())
-        is_post = template.key == TEMPLATE_POST
+        is_post = template.key in POST_TEMPLATES
         self.title_edit.setEnabled(template.show_title)
         self.label_caption.setVisible(is_post)
         self.label_combo.setVisible(is_post)
         # Le post a une mise en page fixe (titre en bas) : pas de position.
         self.position_combo.setEnabled(not is_post)
-        self.preview_label.setFixedSize(_PREVIEW_POST_SIZE if is_post else _PREVIEW_DISPLAY_SIZE)
+        self.preview_label.setFixedSize(
+            _PREVIEW_POST_SIZE if template.key == TEMPLATE_POST else _PREVIEW_DISPLAY_SIZE)
         if template.show_title:
             # Ne remplace le titre que s'il vaut encore la valeur auto-generee
             # precedente -- une modification manuelle de l'utilisateur ne doit
@@ -454,7 +458,7 @@ class StoryDialog(QDialog):
     def _export(self) -> None:
         if self._selected_index is None:
             return
-        prefix = "post" if self.template_combo.currentData() == TEMPLATE_POST else "story"
+        prefix = "post" if self.template_combo.currentData() in POST_TEMPLATES else "story"
         default_name = f"{prefix}_{self.article.article_id}.png"
         path, _ = QFileDialog.getSaveFileName(
             self, "Exporter le visuel", default_name,

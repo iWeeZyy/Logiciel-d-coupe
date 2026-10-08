@@ -29,7 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.logging_setup import get_logger
-from news_story.story_templates import TEMPLATE_BREAKING, TEMPLATE_NEWS, TEMPLATE_POST, get_template
+from news_story.story_templates import (POST_TEMPLATES, TEMPLATE_BREAKING, TEMPLATE_NEWS,
+                                        TEMPLATE_POST_VERTICAL, get_template)
 from news_story.title_shortener import build_display_title
 from video.cropper import TARGET_H, TARGET_W, CenterHint, compute_crop_rect
 from video.face_detector import detect_faces_in_image
@@ -337,7 +338,7 @@ def compose_story(image_path: str | Path, out_path: str | Path,
     image_path, out_path = Path(image_path), Path(out_path)
     template = get_template(options.template)
 
-    if template.key == TEMPLATE_POST:
+    if template.key in POST_TEMPLATES:
         return _compose_post(image_path, out_path, options, template)
 
     with Image.open(image_path) as opened:
@@ -388,7 +389,7 @@ _RUMOR_PREFIX_RE = re.compile(r"^(\s*rumeurs?\s*:\s*)+", re.IGNORECASE)
 
 
 def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, template) -> Path:
-    """Gabarit POST (4:5) : voir news_story/post_composer.py. Titre seul,
+    """Gabarits POST (4:5 et 9:16) : voir news_story/post_composer.py. Titre seul,
     jamais le resume (il va dans la legende) ; un titre que la source
     marque deja comme rumeur passe son « RUMEUR : » dans l'etiquette plutot
     que de le garder dans le titre."""
@@ -407,4 +408,5 @@ def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, templ
     return compose_post(
         image_path, out_path, title=title, label=label,
         logo_path=_branding_path(options) if options.branding_enabled else None,
-        title_scale=options.title_scale, output_format=options.output_format)
+        title_scale=options.title_scale, output_format=options.output_format,
+        vertical=template.key == TEMPLATE_POST_VERTICAL)

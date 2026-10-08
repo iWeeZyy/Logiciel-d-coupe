@@ -1,19 +1,31 @@
-"""Les gabarits (Stories IMAGE/NEWS/BREAKING, post 4:5 POST) : declaration pure, pas
+"""Les gabarits (Stories IMAGE/NEWS/BREAKING, posts POST 4:5 et POST_VERTICAL 9:16) : declaration pure, pas
 de logique de dessin -- verifie seulement CE que chaque gabarit annonce."""
 from news_story.story_templates import (
     TEMPLATE_BREAKING,
     TEMPLATE_IMAGE,
     TEMPLATE_NEWS,
+    POST_TEMPLATES,
     TEMPLATE_POST,
+    TEMPLATE_POST_VERTICAL,
     TEMPLATES,
     get_template,
 )
 
 
 class TestTemplateCatalogue:
-    def test_exactly_four_templates_are_defined(self):
-        assert len(TEMPLATES) == 4
-        assert {t.key for t in TEMPLATES} == {TEMPLATE_IMAGE, TEMPLATE_NEWS, TEMPLATE_BREAKING, TEMPLATE_POST}
+    def test_exactly_five_templates_are_defined(self):
+        assert len(TEMPLATES) == 5
+        assert {t.key for t in TEMPLATES} == {TEMPLATE_IMAGE, TEMPLATE_NEWS, TEMPLATE_BREAKING,
+                                              TEMPLATE_POST, TEMPLATE_POST_VERTICAL}
+
+    def test_the_vertical_post_is_9_16_with_the_title_only(self):
+        spec = get_template(TEMPLATE_POST_VERTICAL)
+        assert spec.canvas_size == (1080, 1920)
+        assert spec.show_title is True
+        assert spec.title_uses_summary is False
+
+    def test_both_posts_are_post_templates(self):
+        assert POST_TEMPLATES == {TEMPLATE_POST, TEMPLATE_POST_VERTICAL}
 
     def test_the_post_template_is_a_4_5_feed_post_with_the_title_only(self):
         spec = get_template(TEMPLATE_POST)
