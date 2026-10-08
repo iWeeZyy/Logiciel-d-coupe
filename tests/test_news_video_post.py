@@ -75,7 +75,25 @@ class TestCalque:
         _, (x, y, w, h) = build_overlay(title="", source_size=(1600, 900))
         r, g, b = img.getpixel((W // 2, y + h // 2))
         assert r > 150 and g < 80                          # la video (rouge), entiere
-        assert y > H // 2 - 200                            # posee bas, la bande du haut reste au texte
+        assert y == (H - h) // 2                           # centree comme un clip quand le texte est court
+
+    def test_titre_en_haut_phrase_et_logo_en_bas(self, tmp_path):
+        logo = tmp_path / "logo.png"
+        Image.new("RGBA", (200, 200), (255, 0, 255, 255)).save(logo)
+        overlay, (x, y, w, h) = build_overlay(
+            title="Tempête", label="BANDE-ANNONCE", logo_path=logo, source_size=(1920, 1080),
+            cta="N'hésitez pas à me suivre pour plus de contenu cinéma")
+        alpha = overlay.getchannel("A")
+        assert alpha.crop((x, y, x + w, y + h)).getextrema()[1] == 0          # rien sur la video
+        assert alpha.crop((0, 0, W, y)).getextrema()[1] == 255                # titre en haut
+        below = overlay.crop((0, y + h, W, H)).convert("RGB")
+        colors = below.getcolors(maxcolors=1 << 20)
+        assert any(c == (255, 0, 255) for _, c in colors)                     # logo en bas
+        # La phrase est au-dessus du logo : du blanc entre la video et le logo.
+        bands = overlay.crop((0, y + h, W, H))
+        logo_top = min(yy for yy in range(bands.height)
+                       if (255, 0, 255, 255) in [bands.getpixel((xx, yy)) for xx in range(380, 700, 20)])
+        assert bands.crop((0, 0, W, logo_top)).getchannel("A").getextrema()[1] == 255
 
 
 class TestFfmpeg:
@@ -137,3 +155,20 @@ class TestChapo:
             return sum(1 for y in range(img.height)
                        if img.crop((0, y, img.width, y + 1)).getextrema()[1] > 240)
         assert white_rows(with_sub) > white_rows(without)
+
+
+class TestTitreDuFilm:
+    def test_le_nom_du_film_est_tire_du_titre_de_la_video(self):
+        from news_story.trailer_title import film_title
+
+        cases = {
+            "TEMPÊTE Bande Annonce VF Teaser (2026)": "TEMPÊTE",
+            "MALFAISANTE | Nouvelle bande-annonce officielle VOST [Au cinéma le 14 octobre]": "MALFAISANTE",
+            "Tempête - Teaser Officiel | Prime Video": "Tempête",
+            "GAME MASTER - Official trailer": "GAME MASTER",
+            "IL FAUT BRÛLER MAMAN Bande Annonce (2026) Artus": "IL FAUT BRÛLER MAMAN",
+            "Spider-Man: Brand New Day - Bande-annonce VF": "Spider-Man: Brand New Day",
+            "Bande-annonce": "Bande-annonce",          # rien a garder : titre d'origine
+        }
+        for video_title, expected in cases.items():
+            assert film_title(video_title) == expected, video_title

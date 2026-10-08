@@ -44,28 +44,49 @@ _FFMPEG_BG_BRIGHTNESS = -0.15    # meme intention cote ffmpeg (filtre eq)
 # utilisateur : « le titre ne doit pas etre SUR la video ») : plus besoin de
 # transparence par defaut. Le reglage reste disponible.
 DEFAULT_TEXT_OPACITY = 1.0
-_MIN_TEXT_ZONE = 380             # hauteur minimale reservee au texte au-dessus
+_MIN_TEXT_ZONE = 300             # hauteur minimale reservee au texte du haut
+_CTA_SIZE = 42
+_CTA_LINE_HEIGHT = 1.2
+_GAP_CTA_LOGO = 16
+
+# Phrase posee au-dessus du logo, dans la bande floue du bas (demande
+# explicite) ; modifiable dans la fenetre, memorisee par fil.
+DEFAULT_CTA = {
+    "cinema": "N'hésitez pas à me suivre pour plus de contenu cinéma",
+    "trailers": "N'hésitez pas à me suivre pour plus de contenu cinéma",
+    "gaming": "N'hésitez pas à me suivre pour plus de contenu gaming",
+}
 
 
-def video_box(source_size: tuple[int, int], has_logo: bool = True,
-              logo_h: int = 0) -> tuple[int, int, int, int]:
-    """(x, y, largeur, hauteur) de la video dans le 9:16 : pleine largeur
-    pour une 16:9, posee en bas de la zone visible (au-dessus du logo et de
-    l'interface TikTok) pour laisser la bande floue du haut au texte."""
+def _cta_block(draw, cta: str, max_w: int):
+    """(police, lignes, hauteur) de la phrase d'appel, ou une hauteur nulle."""
+    from news_story.post_composer import _subtitle_font, _wrap
+
+    cta = " ".join((cta or "").split())
+    if not cta:
+        return None, [], 0
+    font = _subtitle_font(_CTA_SIZE)
+    lines = _wrap(draw, cta, font, max_w)
+    return font, lines, len(lines) * int(_CTA_SIZE * _CTA_LINE_HEIGHT)
+
+
+def video_size(source_size: tuple[int, int], max_h: int) -> tuple[int, int]:
+    """Taille de la video dans le 9:16 : pleine largeur pour une 16:9 (format
+    garde, jamais recadree), bornee en hauteur pour laisser la place au texte."""
     src_w, src_h = source_size
-    bottom = _SAFE_BOTTOM - ((logo_h + _GAP) if has_logo else 0)
-    max_h = bottom - _SAFE_TOP - _MIN_TEXT_ZONE
     scale = min(W / src_w, max_h / src_h)
     w = min(W, max(2, round(src_w * scale / 2) * 2))
     h = min(max_h, max(2, round(src_h * scale / 2) * 2))
-    return (W - w) // 2, bottom - h, w, h
+    return w, h
 
 
 def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
                   text_opacity: float = DEFAULT_TEXT_OPACITY, title_scale: float = 1.0,
-                  subtitle: str = "", source_size: tuple[int, int] = (16, 9)):
-    """Calque RGBA 1080x1920 et position de la video : etiquette, titre et
-    chapo dans la bande floue AU-DESSUS de la video ; logo sous la video.
+                  subtitle: str = "", source_size: tuple[int, int] = (16, 9), cta: str = ""):
+    """Calque RGBA 1080x1920 et position de la video, mise en page des clips :
+    video au centre sur le fond flou ; dans la bande floue du HAUT,
+    etiquette + titre (+ chapo) ; dans celle du BAS, la phrase d'appel puis
+    le logo. Rien n'est jamais pose sur la video.
     Renvoie (image Pillow, (x, y, w, h) de la video)."""
     from PIL import Image, ImageDraw
 
@@ -78,32 +99,41 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     draw, shadow_draw = ImageDraw.Draw(text_layer), ImageDraw.Draw(shadow_layer)
     center_x = (_MARGIN_LEFT + W - _MARGIN_RIGHT) / 2
     max_w = W - _MARGIN_LEFT - _MARGIN_RIGHT
+    white, black = (255, 255, 255, 255), (0, 0, 0, 255)
 
+    # Bas : phrase d'appel + logo.
     logo = _load_logo(logo_path)
-    box = video_box(source_size, has_logo=logo is not None, logo_h=logo.height if logo else 0)
-    vx, vy, vw, vh = box
-    if logo is not None:
-        overlay.paste(logo, (int(center_x - logo.width / 2), vy + vh + _GAP), logo)
+    cta_font, cta_lines, cta_h = _cta_block(draw, _french_spacing(cta or ""), max_w)
+    bottom_h = cta_h + (logo.height if logo else 0) + (_GAP_CTA_LOGO if cta_h and logo else 0)
 
+    # Haut : etiquette + titre + chapo, ajustes a la place laissee par la video.
     label = " ".join((label or "").split()).upper()
     label_font = _font(_LABEL_SIZE)
     label_h = (sum(label_font.getmetrics()) + _GAP_LABEL_TITLE) if label else 0
     title = _french_spacing(" ".join((title or "").split()).upper())
     subtitle = _french_spacing(" ".join((subtitle or "").split()))
 
-    zone_top, zone_bottom = _SAFE_TOP, vy - _GAP
+    room = _SAFE_BOTTOM - _SAFE_TOP - bottom_h - (2 * _GAP if bottom_h else _GAP)
+    vw, vh = video_size(source_size, max(2, room - _MIN_TEXT_ZONE))
     block, block_h = None, 0
     if title or subtitle:
         block = _fit_block(draw, title, subtitle, max(0.6, min(1.6, title_scale)), max_w,
-                           max(zone_bottom - zone_top - label_h, 0),
-                           min_size=_TITLE_SIZES[1], max_size=_TITLE_SIZES[0],
-                           max_lines=_MAX_LINES)
+                           max(room - vh - label_h, 0), min_size=_TITLE_SIZES[1],
+                           max_size=_TITLE_SIZES[0], max_lines=_MAX_LINES)
         block_h = block[6]
-    total_h = label_h + block_h
-    # Bloc centre dans la bande du haut, jamais sur la video.
-    top = int(max(zone_top, zone_top + (zone_bottom - zone_top - total_h) / 2))
+    top_h = label_h + block_h
 
-    white = (255, 255, 255, 255)
+    # La video est centree dans l'espace libre entre les deux bandes de texte
+    # (au centre de l'ecran quand le texte est court, comme un clip).
+    free_top = _SAFE_TOP + top_h + (_GAP if top_h else 0)
+    free_bottom = _SAFE_BOTTOM - bottom_h - (_GAP if bottom_h else 0)
+    centered = (H - vh) // 2
+    vy = int(min(max(centered, free_top), free_bottom - vh))
+    vx = (W - vw) // 2
+    box = (vx, vy, vw, vh)
+
+    # Texte du haut centre dans sa bande, bloc du bas centre dans la sienne.
+    top = int(_SAFE_TOP + max(0, (vy - _GAP - _SAFE_TOP - top_h) / 2))
     if label:
         ascent, descent = label_font.getmetrics()
         text_w = draw.textlength(label, font=label_font)
@@ -117,8 +147,20 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
             draw.rectangle([right_start, y_rule, W - _MARGIN_RIGHT, y_rule + _RULE_THICKNESS - 1],
                            fill=white)
     if block is not None:
-        draw_block(draw, top + label_h, center_x, block, fill=white,
-                   shadow_fill=(0, 0, 0, 255), shadow_draw=shadow_draw)
+        draw_block(draw, top + label_h, center_x, block, fill=white, shadow_fill=black,
+                   shadow_draw=shadow_draw)
+
+    zone_top = vy + vh + _GAP
+    y = int(zone_top + max(0, (_SAFE_BOTTOM - zone_top - bottom_h) / 2))
+    line_h = int(_CTA_SIZE * _CTA_LINE_HEIGHT)
+    for line in cta_lines:
+        x = center_x - draw.textlength(line, font=cta_font) / 2
+        shadow_draw.text((x + 2, y + 2), line, font=cta_font, fill=black)
+        draw.text((x, y), line, font=cta_font, fill=white)
+        y += line_h
+    if logo is not None:
+        y += _GAP_CTA_LOGO if cta_lines else 0
+        overlay.paste(logo, (int(center_x - logo.width / 2), y), logo)
 
     alpha = max(0.1, min(1.0, float(text_opacity)))
     text_block = Image.alpha_composite(shadow_layer, text_layer)
@@ -147,7 +189,7 @@ def _background_and_frame(still, box):
 def compose_still(image_path, out_path, *, title: str, label: str = "",
                   logo_path: Path | None = None, text_opacity: float = DEFAULT_TEXT_OPACITY,
                   title_scale: float = 1.0, output_format: str = "PNG",
-                  subtitle: str = "") -> Path:
+                  subtitle: str = "", cta: str = "") -> Path:
     """Apercu du post video a partir d'une image (vignette de l'article)."""
     from PIL import Image
 
@@ -156,7 +198,7 @@ def compose_still(image_path, out_path, *, title: str, label: str = "",
         still = opened.convert("RGB")
     overlay, box = build_overlay(title=title, label=label, logo_path=logo_path,
                                  text_opacity=text_opacity, title_scale=title_scale,
-                                 subtitle=subtitle, source_size=still.size)
+                                 subtitle=subtitle, source_size=still.size, cta=cta)
     frame = _background_and_frame(still, box)
     frame = Image.alpha_composite(frame.convert("RGBA"), overlay).convert("RGB")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -190,7 +232,8 @@ def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
 
 def compose_video(video_path, out_path, *, title: str, label: str = "",
                   logo_path: Path | None = None, text_opacity: float = DEFAULT_TEXT_OPACITY,
-                  title_scale: float = 1.0, subtitle: str = "", cancel_token=None) -> Path:
+                  title_scale: float = 1.0, subtitle: str = "", cta: str = "",
+                  cancel_token=None) -> Path:
     """Rend le post video MP4 9:16. Leve FfmpegError / CancelledError."""
     import tempfile
 
@@ -200,7 +243,8 @@ def compose_video(video_path, out_path, *, title: str, label: str = "",
     out_path.parent.mkdir(parents=True, exist_ok=True)
     overlay, box = build_overlay(title=title, label=label, logo_path=logo_path,
                                  text_opacity=text_opacity, title_scale=title_scale,
-                                 subtitle=subtitle, source_size=video_resolution(str(video_path)))
+                                 subtitle=subtitle, source_size=video_resolution(str(video_path)),
+                                 cta=cta)
     with tempfile.TemporaryDirectory(prefix="clipfarming_video_post_") as workdir:
         overlay_path = Path(workdir) / "overlay.png"
         overlay.save(overlay_path)

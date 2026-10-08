@@ -334,6 +334,18 @@ class TestPostDuFil:
             assert dialog._logo_theme == "cinema"  # meme compte, meme logo
             dialog.cleanup()
 
+    def test_bande_annonce_nom_du_film_et_phrase_d_appel(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2:
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="TEMPÊTE Bande Annonce VF Teaser (2026)",
+                                               summary="Une description YouTube."), theme="trailers")
+            assert dialog.title_edit.text() == "TEMPÊTE"
+            assert dialog.subtitle_edit.toPlainText() == ""
+            assert "plus de contenu cinéma" in dialog.cta_edit.text()
+            dialog.cleanup()
+
     def test_le_fil_gaming_garde_la_story_par_defaut(self, app):
         from news_story.story_templates import TEMPLATE_NEWS
 

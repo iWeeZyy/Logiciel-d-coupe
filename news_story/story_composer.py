@@ -135,6 +135,8 @@ class StoryOptions:
     # Chapo affiche sous le titre des posts (image et video). None = tire du
     # resume de l'article (default_subtitle) ; "" = aucun.
     subtitle: str | None = None
+    # Post video : phrase posee au-dessus du logo, dans la bande floue du bas.
+    cta: str = ""
 
 
 def _smart_crop_hint(image) -> CenterHint | None:
@@ -354,7 +356,8 @@ def compose_story(image_path: str | Path, out_path: str | Path,
             image_path, out_path, title=title, label=label,
             logo_path=_branding_path(options) if options.branding_enabled else None,
             text_opacity=options.text_opacity, title_scale=options.title_scale,
-            output_format=options.output_format, subtitle=post_subtitle(options))
+            output_format=options.output_format, subtitle=post_subtitle(options),
+            cta=options.cta)
 
     with Image.open(image_path) as opened:
         canvas = _crop_and_resize(opened.convert("RGB"))

@@ -46,6 +46,7 @@ from core.cancellation import CancelToken
 from gaming_news.models import Article
 from news_story.image_cache import ImageFetchError, download as cache_download
 from news_story.image_fetcher import candidates_for_article
+from news_story.trailer_title import film_title
 from news_story.video_source import fetch_video_url
 from news_story.story_composer import StoryOptions, compose_story, default_subtitle
 from news_story.caption import build_caption
@@ -145,9 +146,9 @@ class _VideoExportThread(QThread):
 
     def __init__(self, video_url: str, out_path: str, title: str, label: str,
                  logo_path, text_opacity: float, title_scale: float, cancel_token: CancelToken,
-                 subtitle: str = ""):
+                 subtitle: str = "", cta: str = ""):
         super().__init__()
-        self.subtitle = subtitle
+        self.subtitle, self.cta = subtitle, cta
         self.video_url, self.out_path = video_url, out_path
         self.title, self.label, self.logo_path = title, label, logo_path
         self.text_opacity, self.title_scale = text_opacity, title_scale
@@ -173,7 +174,8 @@ class _VideoExportThread(QThread):
                 compose_video(source, self.out_path, title=self.title, label=self.label,
                               logo_path=Path(self.logo_path) if self.logo_path else None,
                               text_opacity=self.text_opacity, title_scale=self.title_scale,
-                              subtitle=self.subtitle, cancel_token=self.cancel_token)
+                              subtitle=self.subtitle, cta=self.cta,
+                              cancel_token=self.cancel_token)
         except CancelledError:
             self.cancelled.emit()
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -348,6 +350,14 @@ class StoryDialog(QDialog):
         self.opacity_combo.currentIndexChanged.connect(self._schedule_preview)
         options_panel.addWidget(self.opacity_combo)
 
+        # Phrase au-dessus du logo, dans la bande floue du bas de la video ;
+        # memorisee par compte (meme cle que le logo).
+        self.cta_caption = QLabel("Texte au-dessus du logo")
+        options_panel.addWidget(self.cta_caption)
+        self.cta_edit = QLineEdit(self._saved_cta())
+        self.cta_edit.textEdited.connect(self._on_cta_edited)
+        options_panel.addWidget(self.cta_edit)
+
         self.label_caption = QLabel("Étiquette")
         options_panel.addWidget(self.label_caption)
         self.label_combo = QComboBox()
@@ -369,7 +379,10 @@ class StoryDialog(QDialog):
         # Jeremy Allen White) : affiche sous le titre, pre-rempli, retouchable.
         self.subtitle_caption = QLabel("Info sous le titre (chapô de l'article)")
         options_panel.addWidget(self.subtitle_caption)
-        self.subtitle_edit = QPlainTextEdit(default_subtitle(article.title, article.summary))
+        # Bande-annonce : le nom du film suffit (la description YouTube n'est
+        # pas un chapo) ; le champ reste disponible pour en ajouter un.
+        self.subtitle_edit = QPlainTextEdit(
+            "" if theme == "trailers" else default_subtitle(article.title, article.summary))
         self.subtitle_edit.setMinimumHeight(70)
         self.subtitle_edit.setMaximumHeight(110)
         self.subtitle_edit.textChanged.connect(self._schedule_preview)
@@ -536,6 +549,8 @@ class StoryDialog(QDialog):
         self.label_combo.setVisible(is_post)
         self.opacity_caption.setVisible(is_video)
         self.opacity_combo.setVisible(is_video)
+        self.cta_caption.setVisible(is_video)
+        self.cta_edit.setVisible(is_video)
         self.subtitle_caption.setVisible(is_post)
         self.subtitle_edit.setVisible(is_post)
         # Le post a une mise en page fixe (titre en bas) : pas de position.
@@ -548,8 +563,12 @@ class StoryDialog(QDialog):
             # jamais etre effacee par un simple changement de modele.
             if self.title_edit.text() in ("", self._auto_title):
                 summary = self.article.summary if template.title_uses_summary else ""
+                source_title = self.article.title
+                if self.theme == "trailers":
+                    # Le nom du film, pas le titre de la video YouTube.
+                    source_title, summary = film_title(source_title), ""
                 self._auto_title = build_display_title(
-                    self.article.title, summary, template.title_max_chars).text
+                    source_title, summary, template.title_max_chars).text
                 self.title_edit.setText(self._auto_title)
         self._schedule_preview()
 
@@ -575,6 +594,16 @@ class StoryDialog(QDialog):
             if path.is_file():
                 return str(path)
         return None
+
+    def _saved_cta(self) -> str:
+        from news_story.video_composer import DEFAULT_CTA
+
+        value = self._settings().value(f"cta/{self._logo_theme}", None)
+        return str(value) if value is not None else DEFAULT_CTA.get(self.theme, "")
+
+    def _on_cta_edited(self, text: str) -> None:
+        self._settings().setValue(f"cta/{self._logo_theme}", text)
+        self._schedule_preview()
 
     def _logo_description(self) -> str:
         return f"Logo : {Path(self._logo_path).name}" if self._logo_path else "Logo : celui de l'application"
@@ -612,6 +641,7 @@ class StoryDialog(QDialog):
             branding_path=self._logo_path,
             text_opacity=self.opacity_combo.currentData() or 1.0,
             subtitle=self.subtitle_edit.toPlainText(),
+            cta=self.cta_edit.text(),
         )
 
     # ------------------------------------------------------------ apercu
@@ -685,7 +715,8 @@ class StoryDialog(QDialog):
         self.export_btn.setEnabled(False)
         self._export_thread = _VideoExportThread(
             self._video_url, path, title, label, logo, options.text_opacity,
-            options.title_scale, self._cancel_token, subtitle=post_subtitle(options))
+            options.title_scale, self._cancel_token, subtitle=post_subtitle(options),
+            cta=options.cta)
         self._export_thread.status.connect(self.status_label.setText)
         self._export_thread.ready.connect(self._on_export_ready)
         self._export_thread.failed.connect(self._on_export_failed)
