@@ -52,21 +52,100 @@ _GAP_CTA_LOGO = 16
 # Phrase posee au-dessus du logo, dans la bande floue du bas (demande
 # explicite) ; modifiable dans la fenetre, memorisee par fil.
 DEFAULT_CTA = {
-    "cinema": "N'hésitez pas à me suivre pour plus de contenu cinéma",
-    "trailers": "N'hésitez pas à me suivre pour plus de contenu cinéma",
+    "cinema": "N'hésitez pas à me suivre pour plus de contenu cinéma 🎬",
+    "trailers": "N'hésitez pas à me suivre pour plus de contenu cinéma 🎬",
     "gaming": "N'hésitez pas à me suivre pour plus de contenu gaming",
 }
+
+# Emojis dessines en image : les polices de l'appli n'ont pas de glyphe
+# emoji (un carre vide s'afficherait). Clap = emoji Noto de Google
+# (assets/emoji, licence dans NotoEmoji-LICENSE.txt).
+_EMOJI_ICONS = {"🎬": "clapper.png"}
+_VARIATION_SELECTOR = "\ufe0f"
+
+
+def _emoji_image(char: str, size: int):
+    from PIL import Image
+
+    from core.paths import app_base_dir
+
+    path = app_base_dir() / "assets" / "emoji" / _EMOJI_ICONS[char]
+    try:
+        with Image.open(path) as raw:
+            return raw.convert("RGBA").resize((size, size), Image.LANCZOS)
+    except OSError:
+        return None
+
+
+def _segments(text: str) -> list[tuple[bool, str]]:
+    """[(est_emoji, texte)] : decoupe le texte autour des emojis connus."""
+    out: list[tuple[bool, str]] = []
+    buffer = ""
+    for char in text.replace(_VARIATION_SELECTOR, ""):
+        if char in _EMOJI_ICONS:
+            if buffer:
+                out.append((False, buffer))
+                buffer = ""
+            out.append((True, char))
+        else:
+            buffer += char
+    if buffer:
+        out.append((False, buffer))
+    return out
+
+
+def _emoji_size(font_size: int) -> int:
+    return int(font_size * 1.05)
+
+
+def _rich_width(draw, text: str, font, font_size: int) -> float:
+    return sum(_emoji_size(font_size) if is_emoji else draw.textlength(part, font=font)
+               for is_emoji, part in _segments(text))
+
+
+def _rich_wrap(draw, text: str, font, font_size: int, max_w: int) -> list[str]:
+    lines, current = [], ""
+    for word in text.split(" "):
+        if not word:
+            continue
+        candidate = f"{current} {word}" if current else word
+        if current and _rich_width(draw, candidate, font, font_size) > max_w:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _draw_rich(layer, draw, shadow_draw, xy, text: str, font, font_size: int,
+               fill, shadow_fill) -> None:
+    """Texte avec emojis en image, l'emoji aligne sur la hauteur du texte."""
+    x, y = xy
+    ascent, _ = font.getmetrics()
+    for is_emoji, part in _segments(text):
+        if is_emoji:
+            size = _emoji_size(font_size)
+            icon = _emoji_image(part, size)
+            if icon is not None:
+                layer.alpha_composite(icon, (int(x), int(y + ascent - size * 0.92)))
+            x += size
+        else:
+            shadow_draw.text((x + 2, y + 2), part, font=font, fill=shadow_fill)
+            draw.text((x, y), part, font=font, fill=fill)
+            x += draw.textlength(part, font=font)
 
 
 def _cta_block(draw, cta: str, max_w: int):
     """(police, lignes, hauteur) de la phrase d'appel, ou une hauteur nulle."""
-    from news_story.post_composer import _subtitle_font, _wrap
+    from news_story.post_composer import _subtitle_font
 
     cta = " ".join((cta or "").split())
     if not cta:
         return None, [], 0
     font = _subtitle_font(_CTA_SIZE)
-    lines = _wrap(draw, cta, font, max_w)
+    lines = _rich_wrap(draw, cta, font, _CTA_SIZE, max_w)
     return font, lines, len(lines) * int(_CTA_SIZE * _CTA_LINE_HEIGHT)
 
 
@@ -154,9 +233,9 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     y = int(zone_top + max(0, (_SAFE_BOTTOM - zone_top - bottom_h) / 2))
     line_h = int(_CTA_SIZE * _CTA_LINE_HEIGHT)
     for line in cta_lines:
-        x = center_x - draw.textlength(line, font=cta_font) / 2
-        shadow_draw.text((x + 2, y + 2), line, font=cta_font, fill=black)
-        draw.text((x, y), line, font=cta_font, fill=white)
+        x = center_x - _rich_width(draw, line, cta_font, _CTA_SIZE) / 2
+        _draw_rich(text_layer, draw, shadow_draw, (x, y), line, cta_font, _CTA_SIZE,
+                   white, black)
         y += line_h
     if logo is not None:
         y += _GAP_CTA_LOGO if cta_lines else 0

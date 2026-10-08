@@ -172,3 +172,26 @@ class TestTitreDuFilm:
         }
         for video_title, expected in cases.items():
             assert film_title(video_title) == expected, video_title
+
+
+class TestClapDansLaPhrase:
+    def test_la_phrase_par_defaut_finit_par_un_clap(self):
+        from news_story.video_composer import DEFAULT_CTA
+
+        assert DEFAULT_CTA["cinema"].endswith("🎬")
+        assert DEFAULT_CTA["trailers"].endswith("🎬")
+
+    def test_le_clap_est_dessine_en_image_pas_en_carre_vide(self):
+        from news_story.video_composer import _emoji_image, _segments
+
+        assert _segments("Suivez-moi 🎬") == [(False, "Suivez-moi "), (True, "🎬")]
+        assert _segments("Suivez-moi 🎬️") == [(False, "Suivez-moi "), (True, "🎬")]
+        icon = _emoji_image("🎬", 44)
+        assert icon is not None and icon.size == (44, 44)
+
+    def test_le_clap_apparait_dans_le_calque(self):
+        with_clap, _ = build_overlay(title="", cta="Suivez-moi 🎬")
+        without, _ = build_overlay(title="", cta="Suivez-moi")
+        # Le clap ajoute des pixels opaques, et des pixels non blancs (couleurs de l'emoji).
+        assert sum(with_clap.getchannel("A").point(lambda a: 255 if a > 200 else 0).histogram()[255:]) > \
+            sum(without.getchannel("A").point(lambda a: 255 if a > 200 else 0).histogram()[255:])
