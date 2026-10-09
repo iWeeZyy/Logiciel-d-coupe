@@ -16,33 +16,34 @@ _PAGE = """<html><head><meta charset="utf-8"></head><body><article>
 _TITLE = "Superman changera déjà de costume dans la suite de 2027, et pour une bonne raison"
 
 
-class _Response:
-    def __init__(self, status, payload):
-        self.status_code, self._payload = status, payload
+def _message(text, found=True, stop="end_turn"):
+    import json as _json
 
-    def json(self):
-        return self._payload
-
-
-def _tool_payload(text, found=True):
-    return {"content": [{"type": "tool_use", "name": "texte_sous_titre",
-                         "input": {"texte": text, "reponse_trouvee": found}}]}
+    return {"id": "msg_test", "type": "message", "role": "assistant",
+            "model": "claude-sonnet-5-5", "stop_reason": stop, "stop_sequence": None,
+            "content": [{"type": "text",
+                         "text": _json.dumps({"texte": text, "reponse_trouvee": found})}],
+            "usage": {"input_tokens": 10, "output_tokens": 10}}
 
 
 @pytest.fixture
 def posted(monkeypatch):
-    import requests
+    """Faux serveur de l'API : les requetes passent par le vrai SDK
+    `anthropic` jusqu'a la couche HTTP. `response[0]` = (statut, corps)."""
+    import httpx2
 
     calls = []
-
-    def fake_post(url, json=None, timeout=None, headers=None):
-        calls.append({"url": url, "json": json, "headers": headers})
-        return calls_response[0]
-
-    calls_response = [_Response(200, _tool_payload(
+    response = [(200, _message(
         "Le costume a été réingéniéré pour être plus fonctionnel et adapté aux cascades."))]
-    monkeypatch.setattr(requests, "post", fake_post)
-    return calls, calls_response
+
+    def handler(request):
+        calls.append({"url": str(request.url), "headers": dict(request.headers),
+                      "json": json.loads(request.content)})
+        status, body = response[0]
+        return httpx2.Response(status, json=body)
+
+    monkeypatch.setattr(ai_summary, "_HTTP_CLIENT", httpx2.Client(transport=httpx2.MockTransport(handler)))
+    return calls, response
 
 
 class TestCle:
@@ -50,14 +51,23 @@ class TestCle:
         assert not ai_summary.is_configured()
         assert ai_summary.try_summarize(_TITLE, "", _PAGE) is None
 
-    def test_cle_enregistree_puis_supprimee(self):
-        ai_summary.save_api_key("  sk-ant-abcdefghijklmnop1234 \n")
+    def test_cle_rangee_dans_le_coffre_jamais_dans_un_fichier(self):
+        assert ai_summary.save_api_key("  sk-ant-abcdefghijklmnop1234 \n")
         assert ai_summary.load_api_key() == "sk-ant-abcdefghijklmnop1234"
+        assert not ai_summary.KEY_FILE.exists()
         ai_summary.save_api_key("")
         assert not ai_summary.is_configured()
 
+    def test_sans_coffre_la_cle_n_est_ecrite_nulle_part(self, monkeypatch):
+        from publishing import tokens
+
+        monkeypatch.setattr(tokens, "_keyring", lambda: None)
+        assert ai_summary.save_api_key("sk-ant-abcdefghijklmnop1234") is False
+        assert not ai_summary.KEY_FILE.exists()
+        assert not ai_summary.is_configured()
+
     def test_variable_d_environnement_prioritaire(self, monkeypatch):
-        ai_summary.save_api_key("sk-ant-fichier-xxxxxxxx")
+        ai_summary.save_api_key("sk-ant-coffre-xxxxxxxx")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-env-yyyyyyyyyy")
         assert ai_summary.load_api_key() == "sk-ant-env-yyyyyyyyyy"
 
@@ -74,22 +84,31 @@ class TestCle:
 
 
 class TestRequete:
-    def test_corps_envoye_sans_commentaires_et_avec_consignes(self, posted):
+    def test_requete_envoyee(self, posted):
         calls, _ = posted
         summary = ai_summary.summarize(_TITLE, "Un chapô.", _PAGE, url="https://x/1",
                                        api_key="sk-ant-test-1234567890")
         assert summary.text.startswith("Le costume a été réingéniéré")
         call = calls[0]
-        assert call["url"] == ai_summary.API_URL
+        assert call["url"].endswith("/v1/messages")
         assert call["headers"]["x-api-key"] == "sk-ant-test-1234567890"
         body = call["json"]
         assert body["model"] == ai_summary.DEFAULT_MODEL
-        assert body["tool_choice"] == {"type": "tool", "name": "texte_sous_titre"}
+        # Pas d'outil force : refuse (400) par Claude Sonnet 5.5.
+        assert "tool_choice" not in body and "tools" not in body
+        assert body["output_config"]["format"]["type"] == "json_schema"
+        assert body["output_config"]["format"]["schema"]["additionalProperties"] is False
         user = body["messages"][0]["content"]
         assert _TITLE in user and "## Un costume réingéniéré" in user
         assert "Commentaire d'un lecteur" not in user
         assert "N'invente rien" in body["system"]
         assert "réponse explicite" in body["system"]
+
+    def test_modele_choisi(self, posted):
+        calls, _ = posted
+        ai_summary.save_model("claude-haiku-5-5")
+        ai_summary.summarize(_TITLE, "", _PAGE, url="https://x/h", api_key="sk-ant-k-1234567890")
+        assert calls[0]["json"]["model"] == "claude-haiku-5-5"
 
     def test_cache_evite_un_second_appel(self, posted):
         calls, _ = posted
@@ -106,33 +125,40 @@ class TestRequete:
         assert calls == []
 
 
+def _error(kind, message):
+    return {"type": "error", "error": {"type": kind, "message": message}}
+
+
 class TestErreurs:
     @pytest.mark.parametrize("status, payload, expected", [
-        (401, {"error": {"message": "invalid x-api-key"}}, "refusée"),
-        (429, {}, "Limite"),
-        (400, {"error": {"message": "Your credit balance is too low"}}, "Crédit"),
-        (500, {"error": {"message": "boom"}}, "500"),
+        (401, _error("authentication_error", "invalid x-api-key"), "refusée"),
+        (404, _error("not_found_error", "model not found"), "indisponible"),
+        (400, _error("invalid_request_error", "Your credit balance is too low"), "Crédit"),
+        (400, _error("invalid_request_error", "bad"), "400"),
     ])
     def test_messages_lisibles(self, posted, status, payload, expected):
         _, response = posted
-        response[0] = _Response(status, payload)
+        response[0] = (status, payload)
         with pytest.raises(ai_summary.AiSummaryError, match=expected):
-            ai_summary.summarize(_TITLE, "", _PAGE, url=f"https://x/{status}",
+            ai_summary.summarize(_TITLE, "", _PAGE, url=f"https://x/{status}{expected}",
                                  api_key="sk-ant-k-1234567890")
 
-    def test_reponse_sans_texte(self, posted):
+    @pytest.mark.parametrize("stop", ["refusal", "max_tokens"])
+    def test_reponse_inutilisable(self, posted, stop):
         _, response = posted
-        response[0] = _Response(200, {"content": [{"type": "text", "text": "bonjour"}]})
+        response[0] = (200, _message("x", stop=stop))
         with pytest.raises(ai_summary.AiSummaryError):
-            ai_summary.summarize(_TITLE, "", _PAGE, url="https://x/t", api_key="sk-ant-k-1234567890")
+            ai_summary.summarize(_TITLE, "", _PAGE, url=f"https://x/{stop}",
+                                 api_key="sk-ant-k-1234567890")
 
     def test_reseau_coupe_sans_cle_dans_le_message(self, monkeypatch):
-        import requests
+        import httpx2
 
-        def boom(*a, **k):
-            raise requests.exceptions.ConnectionError("x-api-key: sk-ant-secret-0000")
+        def boom(request):
+            raise httpx2.ConnectError("x-api-key: sk-ant-secret-0000")
 
-        monkeypatch.setattr(requests, "post", boom)
+        monkeypatch.setattr(ai_summary, "_HTTP_CLIENT", httpx2.Client(transport=httpx2.MockTransport(boom)))
+        monkeypatch.setattr(ai_summary, "MAX_RETRIES", 0)
         with pytest.raises(ai_summary.AiSummaryError) as info:
             ai_summary.summarize(_TITLE, "", _PAGE, url="https://x/n", api_key="sk-ant-secret-0000")
         assert "sk-ant" not in str(info.value)
@@ -159,7 +185,7 @@ class TestTopDuJour:
         from news_story import daily_top
 
         _, response = posted
-        response[0] = _Response(401, {})
+        response[0] = (401, _error("authentication_error", "invalid x-api-key"))
         ai_summary.save_api_key("sk-ant-k-1234567890")
         monkeypatch.setattr("news_story.image_fetcher.fetch_article_html", lambda url: _PAGE)
         monkeypatch.setattr("news_story.image_fetcher.candidates_for_article", lambda *a: [])

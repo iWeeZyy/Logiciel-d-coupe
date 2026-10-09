@@ -737,10 +737,12 @@ Claude : uniquement les faits de l'article, rien d'inventé ; si l'article ne
 répond pas à la question du titre, il le dit. Le texte reste modifiable avant
 l'export.
 
-- **La clé** : variable d'environnement `ANTHROPIC_API_KEY`, sinon le fichier
-  `anthropic_api_key.txt` du dossier de données (voir « Où l'application range
-  ses fichiers »). Jamais dans le dépôt (`.gitignore`), ni dans le `.exe`, ni
-  dans les journaux. Fixer une limite de dépense dans la console Anthropic.
+- **La clé** : rangée dans le coffre de Windows (Gestionnaire
+  d'identifiants), comme les jetons de publication ; sinon variable
+  d'environnement `ANTHROPIC_API_KEY`. Jamais dans un fichier, le dépôt, le
+  `.exe` ni les journaux. Fixer une limite de dépense dans la console Anthropic.
+- **Facturation** : l'API est facturée à part, sur des crédits achetés dans la
+  console Anthropic ; elle ne se décompte pas d'un abonnement Claude (Pro/Max).
 - **Coût** : un appel par article (le résultat est mis en cache : rouvrir la
   même news ne refacture rien). Modèle Précis (Sonnet) par défaut, Économique
   (Haiku) au choix.

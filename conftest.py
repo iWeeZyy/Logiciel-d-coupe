@@ -15,6 +15,25 @@ def _pas_de_cle_claude(monkeypatch, tmp_path_factory):
         from news_story import ai_summary
     except Exception:  # noqa: BLE001
         return
+    # Coffre de mots de passe en memoire : jamais le vrai Gestionnaire
+    # d'identifiants du developpeur.
+    from publishing import tokens
+
+    class _Ring:
+        def __init__(self):
+            self.store = {}
+
+        def get_password(self, service, name):
+            return self.store.get((service, name))
+
+        def set_password(self, service, name, value):
+            self.store[(service, name)] = value
+
+        def delete_password(self, service, name):
+            self.store.pop((service, name), None)
+
+    ring = _Ring()
+    monkeypatch.setattr(tokens, "_keyring", lambda: ring)
     base = tmp_path_factory.mktemp("claude")
     monkeypatch.setattr(ai_summary, "KEY_FILE", base / "anthropic_api_key.txt")
     monkeypatch.setattr(ai_summary, "MODEL_FILE", base / "anthropic_model.txt")

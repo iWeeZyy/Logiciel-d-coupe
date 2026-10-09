@@ -2,9 +2,9 @@
 de lire les articles cine et d'en rediger l'info principale
 (news_story/ai_summary.py).
 
-La cle est enregistree dans le dossier de donnees de l'utilisateur (jamais
-dans le depot ni dans le .exe) et n'est jamais reaffichee en clair : seuls
-son debut et sa fin servent a la reconnaitre.
+La cle est rangee dans le coffre de Windows (Gestionnaire d'identifiants),
+jamais dans un fichier, le depot ou le .exe, et n'est jamais reaffichee en
+clair : seuls son debut et sa fin servent a la reconnaitre.
 """
 from __future__ import annotations
 
@@ -101,7 +101,11 @@ class ClaudeKeyDialog(QDialog):
     def _save(self) -> None:
         key = self.key_edit.text().strip()
         if key:
-            ai_summary.save_api_key(key)
+            if not ai_summary.save_api_key(key):
+                from publishing.tokens import UNAVAILABLE_MESSAGE
+
+                self.status_label.setText("Clé non enregistrée. " + UNAVAILABLE_MESSAGE)
+                return
             self.key_edit.clear()
             self.key_edit.setPlaceholderText(f"Clé enregistrée : {ai_summary.mask_key(key)}")
         ai_summary.save_model(self.model_combo.currentData())
@@ -114,7 +118,10 @@ class ClaudeKeyDialog(QDialog):
         self.key_edit.clear()
         self.key_edit.setPlaceholderText("sk-ant-…")
         self.delete_btn.setEnabled(False)
-        self.status_label.setText("Clé supprimée de ce PC. IA désactivée.")
+        self.status_label.setText("Clé supprimée de ce PC. IA désactivée." if not
+                                  ai_summary.is_configured() else
+                                  "Clé du coffre supprimée, mais la variable d'environnement "
+                                  "ANTHROPIC_API_KEY est encore définie.")
 
     def _test(self) -> None:
         key = self._typed_or_saved_key()
