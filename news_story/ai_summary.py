@@ -44,11 +44,13 @@ MODEL_FILE = user_data_dir() / "anthropic_model.txt"
 CACHE_FILE = user_data_dir() / ".cache" / "ai_summaries.json"
 _CACHE_MAX = 500
 
+# Economique par defaut (choix de l'utilisateur : le cout doit rester
+# negligeable tant que les comptes ne rapportent rien).
 MODELS = {
-    "claude-sonnet-5-5": "Précis (Claude Sonnet)",
     "claude-haiku-5-5": "Économique (Claude Haiku)",
+    "claude-sonnet-5-5": "Précis (Claude Sonnet)",
 }
-DEFAULT_MODEL = "claude-sonnet-5-5"
+DEFAULT_MODEL = "claude-haiku-5-5"
 MAX_ARTICLE_CHARS = 15000
 TIMEOUT_S = 60
 

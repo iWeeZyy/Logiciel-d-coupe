@@ -744,8 +744,8 @@ l'export.
 - **Facturation** : l'API est facturée à part, sur des crédits achetés dans la
   console Anthropic ; elle ne se décompte pas d'un abonnement Claude (Pro/Max).
 - **Coût** : un appel par article (le résultat est mis en cache : rouvrir la
-  même news ne refacture rien). Modèle Précis (Sonnet) par défaut, Économique
-  (Haiku) au choix.
+  même news ne refacture rien). Modèle Économique (Haiku) par défaut, Précis
+  (Sonnet) au choix.
 - **Sans clé, hors ligne ou en erreur** : retour à l'extraction de phrases de
   l'article (`news_story/article_text.py`), sans IA ; l'erreur est affichée
   dans la fenêtre.

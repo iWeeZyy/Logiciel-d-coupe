@@ -79,8 +79,8 @@ class TestCle:
     def test_modele_inconnu_ignore(self):
         ai_summary.MODEL_FILE.write_text("gpt-quelquechose", encoding="utf-8")
         assert ai_summary.load_model() == ai_summary.DEFAULT_MODEL
-        ai_summary.save_model("claude-haiku-5-5")
-        assert ai_summary.load_model() == "claude-haiku-5-5"
+        ai_summary.save_model("claude-sonnet-5-5")
+        assert ai_summary.load_model() == "claude-sonnet-5-5"
 
 
 class TestRequete:
@@ -106,9 +106,9 @@ class TestRequete:
 
     def test_modele_choisi(self, posted):
         calls, _ = posted
-        ai_summary.save_model("claude-haiku-5-5")
+        ai_summary.save_model("claude-sonnet-5-5")
         ai_summary.summarize(_TITLE, "", _PAGE, url="https://x/h", api_key="sk-ant-k-1234567890")
-        assert calls[0]["json"]["model"] == "claude-haiku-5-5"
+        assert calls[0]["json"]["model"] == "claude-sonnet-5-5"
 
     def test_cache_evite_un_second_appel(self, posted):
         calls, _ = posted

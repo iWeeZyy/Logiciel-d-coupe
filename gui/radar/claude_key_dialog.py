@@ -52,7 +52,7 @@ class ClaudeKeyDialog(QDialog):
             "titre l'information principale, et la réponse quand le titre pose une question "
             "ou cache l'info. Claude n'utilise que le contenu de l'article.\n\n"
             "Clé à créer sur console.anthropic.com (API Keys). Chaque article lu est facturé "
-            "sur ton compte Anthropic (coût faible, plus bas avec le modèle Économique). "
+            "sur ton compte Anthropic (Économique : environ 0,1 centime par article). "
             "Pense à fixer une limite de dépense dans la console.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
