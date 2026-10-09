@@ -134,7 +134,8 @@ class TestErreurs:
         (401, _error("authentication_error", "invalid x-api-key"), "refusée"),
         (404, _error("not_found_error", "model not found"), "indisponible"),
         (400, _error("invalid_request_error", "Your credit balance is too low"), "Crédit"),
-        (400, _error("invalid_request_error", "bad"), "400"),
+        (400, _error("invalid_request_error", "output_config.effort: invalid value"),
+         r"\(400\) : output_config\.effort: invalid value"),
     ])
     def test_messages_lisibles(self, posted, status, payload, expected):
         _, response = posted

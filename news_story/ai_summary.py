@@ -252,6 +252,19 @@ def parse_response(message) -> tuple[str, bool]:
     raise AiSummaryError("Réponse de Claude inattendue (aucun texte).")
 
 
+def _api_detail(error) -> str:
+    """Le message d'erreur renvoye par l'API (« error.message »), court."""
+    body = getattr(error, "body", None)
+    message = ""
+    if isinstance(body, dict):
+        inner = body.get("error")
+        message = inner.get("message", "") if isinstance(inner, dict) else ""
+    message = " ".join(str(message or getattr(error, "message", "") or "").split())
+    if "sk-ant" in message:          # par prudence : jamais une cle a l'ecran
+        message = "(message masqué)"
+    return message[:300] or "aucun détail"
+
+
 # Client HTTP injecte par les tests (faux serveur) ; None en vrai.
 _HTTP_CLIENT = None
 MAX_RETRIES = 2          # nouvelles tentatives du SDK (429, 5xx, reseau)
@@ -276,10 +289,14 @@ def call_api(request: dict, api_key: str, timeout_s: float = TIMEOUT_S):
         raise AiSummaryError("Limite d'utilisation de l'API Claude atteinte, réessaie "
                              "plus tard.") from None
     except anthropic.APIStatusError as e:
-        if e.status_code == 402 or "credit" in str(e.message).lower():
-            raise AiSummaryError("Crédit Anthropic épuisé (console.anthropic.com → "
-                                 "Billing).") from None
-        raise AiSummaryError(f"Erreur de l'API Claude ({e.status_code}).") from None
+        detail = _api_detail(e)
+        if e.status_code == 402 or "credit" in detail.lower():
+            raise AiSummaryError("Crédit Anthropic insuffisant (console.anthropic.com → "
+                                 f"Billing). Détail : {detail}") from None
+        # Le message de l'API dit ce qui ne va pas (parametre refuse, compte...) :
+        # sans lui, impossible de corriger. Il ne contient jamais la cle.
+        logger.warning(f"API Claude {e.status_code} : {detail}")
+        raise AiSummaryError(f"Erreur de l'API Claude ({e.status_code}) : {detail}") from None
     except anthropic.APIConnectionError as e:
         raise AiSummaryError(f"API Claude injoignable : {type(e).__name__}") from None
 
