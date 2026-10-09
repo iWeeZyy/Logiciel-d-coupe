@@ -162,8 +162,17 @@ class DailyTopDialog(QDialog):
         self._thread.failed.connect(self._on_failed)
         self._thread.start()
 
+    def _release_thread(self) -> None:
+        """Lache la tache de fond une fois VRAIMENT terminee. Le signal de fin
+        part de run() juste avant qu'elle se termine : liberer l'objet a ce
+        moment detruit un QThread encore actif, et Qt arrete toute
+        l'application (« QThread: Destroyed while thread is still running »)."""
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.wait()
+
     def _on_ready(self, folder: str, caption: str, note: str = "") -> None:
-        self._thread = None
+        self._release_thread()
         self._caption = caption
         self.copy_btn.setEnabled(True)
         self._update_count()
@@ -171,7 +180,7 @@ class DailyTopDialog(QDialog):
         QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def _on_failed(self, message: str) -> None:
-        self._thread = None
+        self._release_thread()
         self._update_count()
         QMessageBox.warning(self, "Top du jour impossible", message)
 

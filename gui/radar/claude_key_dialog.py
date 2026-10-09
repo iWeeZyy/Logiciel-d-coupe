@@ -137,7 +137,11 @@ class ClaudeKeyDialog(QDialog):
     def _on_tested(self, ok: bool, message: str) -> None:
         self.test_btn.setEnabled(True)
         self.status_label.setText(("✅ " if ok else "❌ ") + message)
-        self._thread = None
+        # Attendre la fin reelle de run() avant de lacher l'objet : un QThread
+        # detruit encore actif arrete toute l'application.
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.wait()
 
     def reject(self) -> None:
         if self._thread is not None and self._thread.isRunning():

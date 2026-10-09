@@ -564,7 +564,11 @@ class ClipAnalysisDialog(QDialog):
         self.progress_label.setVisible(False)
         self.full_button.setEnabled(True)
         self.start_button.setEnabled(True)
-        self._media_thread = None
+        # Attendre la fin reelle de run() : un QThread detruit encore actif
+        # arrete toute l'application.
+        media_thread, self._media_thread = self._media_thread, None
+        if media_thread is not None:
+            media_thread.wait()
         if message != "__cancelled__":
             QMessageBox.warning(self, "Production impossible", message)
 
@@ -573,7 +577,11 @@ class ClipAnalysisDialog(QDialog):
 
         opportunity = self.opportunities[0]
         self.media_paths[opportunity.key] = path
-        self._media_thread = None
+        # Attendre la fin reelle de run() : un QThread detruit encore actif
+        # arrete toute l'application.
+        media_thread, self._media_thread = self._media_thread, None
+        if media_thread is not None:
+            media_thread.wait()
         self.progress.setRange(0, 100)
         self.progress.setVisible(False)
         self.progress_label.setVisible(False)

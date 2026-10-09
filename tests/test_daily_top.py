@@ -86,3 +86,31 @@ class TestPhraseSousLeLogo:
         below = img.crop((0, max(logo_rows) + 1, img.width, img.height - 400)).convert("L")
         assert below.getextrema()[1] > 240          # du texte blanc sous le logo
         assert DEFAULT_CTA["cinema"].endswith("🎬")
+
+
+def test_la_tache_de_fond_est_attendue_avant_d_etre_lachee(monkeypatch):
+    """Le signal de fin part de run() juste avant sa fin : lacher le QThread a
+    ce moment le detruirait encore actif, et Qt arreterait toute l'appli."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])
+    from gui.radar import daily_top_dialog as dd
+
+    monkeypatch.setattr(dd.QDesktopServices, "openUrl", lambda *a: None)
+    monkeypatch.setattr(dd.QMessageBox, "warning", lambda *a: None)
+    waited = []
+
+    class _Thread:
+        def wait(self, *a):
+            waited.append(True)
+            return True
+
+    dialog = dd.DailyTopDialog([])
+    for finish in (lambda: dialog._on_ready("dossier", "légende"), lambda: dialog._on_failed("x")):
+        dialog._thread = _Thread()
+        finish()
+        assert dialog._thread is None
+    assert waited == [True, True]
