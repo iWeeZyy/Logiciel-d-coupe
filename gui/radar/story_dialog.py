@@ -62,7 +62,7 @@ from news_story.story_templates import (
     TEMPLATES,
     get_template,
 )
-from news_story.article_text import is_question
+from news_story.article_text import is_teaser
 from news_story.title_shortener import build_display_title, is_rumor
 
 RIGHTS_NOTICE = ("Image provenant de l'article source. Vérifiez les droits de "
@@ -139,15 +139,18 @@ class _FetchImagesThread(QThread):
             video_url = fetch_video_url(self.article.url)
             if video_url:
                 self.video_found.emit(video_url)
-        elif self.theme == "cinema" and is_question(self.article.title):
+        elif self.theme == "cinema" and is_teaser(self.article.title, self.article.summary):
+            # Titre-question, ou accroche (« une surprise attend les fans ») :
+            # l'info est dans le corps de l'article.
             answer = _article_answer(self.article)
             if answer:
                 self.answer_found.emit(answer)
 
 
 def _article_answer(article: Article) -> str:
-    """Reponse a la question du titre, extraite de l'article (phrases
-    entieres, jamais reformulees -- news_story/article_text.py)."""
+    """Reponse a la question du titre, ou ce que son accroche annonce,
+    extraite de l'article (phrases entieres, jamais reformulees --
+    news_story/article_text.py)."""
     from news_story.article_text import answer_from_article
     from news_story.image_fetcher import fetch_article_html
     from news_story.post_composer import clean_subtitle

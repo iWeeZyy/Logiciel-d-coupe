@@ -1,0 +1,207 @@
+"""« Top news ciné du jour » : plusieurs news cinema en un seul export.
+
+Demande explicite de l'utilisateur : chaque jour, plusieurs news cinema en un
+meme telechargement, a poster ensemble dans un seul TikTok (mode photo) ou
+carrousel Instagram. Que des images, que du cinema.
+
+Un export = un dossier :
+    00_couverture.png     « TOP NEWS CINÉ » + date, fond tire de la 1re news
+    01_….png … NN_….png   une image 9:16 par news (le post 9:16 habituel :
+                          titre + chapo, ou reponse a la question du titre),
+                          etiquette « NEWS 1/5 »
+    legende.txt           la legende du post, prete a copier : une ligne par
+                          news, puis les sources
+
+Rien de nouveau dans le rendu des news elles-memes : chaque image passe par
+story_composer.compose_story (gabarit post 9:16), exactement comme un visuel
+fait a la main -- seule la couverture est propre a ce module.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+from core.logging_setup import get_logger
+
+logger = get_logger()
+
+W, H = 1080, 1920
+_MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+           "septembre", "octobre", "novembre", "décembre")
+# Zones sures TikTok / Reels, comme le post 9:16 (post_composer).
+_MARGIN_LEFT, _MARGIN_RIGHT = 64, 140
+_SAFE_TOP, _SAFE_BOTTOM = int(H * 0.10), H - 440
+DEFAULT_COUNT = 5
+
+
+@dataclass
+class TopItem:
+    """Une news du top : l'article, son image (deja telechargee) et le texte
+    sous le titre (chapo, ou reponse a la question du titre)."""
+
+    article: object
+    image_path: Path | None
+    subtitle: str = ""
+
+
+def french_date(day: date) -> str:
+    return f"{day.day} {_MONTHS[day.month - 1]} {day.year}"
+
+
+def _slug(text: str, max_len: int = 40) -> str:
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    text = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-").lower()
+    return text[:max_len].rstrip("-") or "news"
+
+
+def folder_name(day: date) -> str:
+    return f"Top news ciné {day.isoformat()}"
+
+
+def build_daily_caption(items: list[TopItem], day: date) -> str:
+    """Legende du post : titre de la serie, une entree numerotee par news
+    (titre puis texte sous le titre), puis les sources. Rien d'invente."""
+    lines = [f"🎬 Top news ciné du {french_date(day)}", ""]
+    sources: list[str] = []
+    for i, item in enumerate(items, 1):
+        title = " ".join(item.article.title.split())
+        lines.append(f"{i}. {title}")
+        if item.subtitle:
+            lines.append(item.subtitle)
+        lines.append("")
+        label = item.article.source_label
+        if label and label not in sources:
+            sources.append(label)
+    if sources:
+        lines.append("Sources : " + ", ".join(sources))
+    return "\n".join(lines).strip() + "\n"
+
+
+def compose_cover(out_path, *, day: date, count: int, background: Path | None = None,
+                  logo_path: Path | None = None) -> Path:
+    """Couverture 9:16 : « TOP NEWS CINÉ », la date, le nombre de news, le
+    logo -- sur l'image de la premiere news floutee et assombrie (ou un fond
+    sombre uni si elle manque)."""
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+
+    from news_story.post_composer import _font, _load_logo, _subtitle_font
+
+    out_path = Path(out_path)
+    canvas = Image.new("RGB", (W, H), (14, 14, 18))
+    if background is not None and Path(background).is_file():
+        try:
+            with Image.open(background) as raw:
+                img = raw.convert("RGB")
+            scale = max(W / img.width, H / img.height)
+            img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))),
+                             Image.LANCZOS)
+            left, top = (img.width - W) // 2, (img.height - H) // 2
+            img = img.crop((left, top, left + W, top + H)).filter(ImageFilter.GaussianBlur(18))
+            canvas = ImageEnhance.Brightness(img).enhance(0.45)
+        except OSError as e:
+            logger.warning(f"Fond de couverture illisible : {e}")
+
+    draw = ImageDraw.Draw(canvas)
+    center_x = (_MARGIN_LEFT + W - _MARGIN_RIGHT) / 2
+    white, black, accent = (255, 255, 255), (0, 0, 0), (224, 162, 76)
+
+    def centered(text, font, y, fill=white, shadow=4):
+        x = center_x - draw.textlength(text, font=font) / 2
+        draw.text((x + shadow, y + shadow), text, font=font, fill=black)
+        draw.text((x, y), text, font=font, fill=fill)
+
+    big, mid = _font(230), _font(120)
+    date_font, info_font = _subtitle_font(64), _subtitle_font(52)
+    lines = [("TOP NEWS", big, white), ("CINÉ", mid, accent)]
+    heights = [sum(f.getmetrics()) for _, f, _ in lines]
+    block_h = sum(heights) + 40 + sum(date_font.getmetrics()) + 24 + sum(info_font.getmetrics())
+    y = int(_SAFE_TOP + (_SAFE_BOTTOM - _SAFE_TOP - block_h) / 2) - 60
+    for (text, font, fill), h in zip(lines, heights):
+        centered(text, font, y, fill)
+        y += h
+    y += 40
+    centered(french_date(day).upper(), date_font, y, shadow=2)
+    y += sum(date_font.getmetrics()) + 24
+    centered(f"{count} infos ciné à ne pas rater", info_font, y, shadow=2)
+
+    logo = _load_logo(logo_path)
+    if logo is not None:
+        canvas.paste(logo, (int(center_x - logo.width / 2), _SAFE_BOTTOM - logo.height), logo)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(out_path, format="PNG")
+    return out_path
+
+
+def compose_daily_top(items: list[TopItem], out_dir, *, day: date | None = None,
+                      logo_path: Path | None = None, on_progress=None) -> list[Path]:
+    """Ecrit la couverture, une image par news et legende.txt dans `out_dir`.
+    Une news sans image est ignoree (jamais une image vide). Renvoie les
+    images ecrites, dans l'ordre du carrousel."""
+    from news_story.story_composer import StoryOptions, compose_story
+    from news_story.story_templates import TEMPLATE_POST_VERTICAL
+
+    day = day or date.today()
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    usable = [item for item in items if item.image_path and Path(item.image_path).is_file()]
+    written: list[Path] = []
+    written.append(compose_cover(out_dir / "00_couverture.png", day=day, count=len(usable),
+                                 background=usable[0].image_path if usable else None,
+                                 logo_path=logo_path))
+    for i, item in enumerate(usable, 1):
+        if on_progress:
+            on_progress(i, len(usable))
+        options = StoryOptions(
+            template=TEMPLATE_POST_VERTICAL, title=item.article.title,
+            summary=getattr(item.article, "summary", ""),
+            source_label=item.article.source_label, label=f"NEWS {i}/{len(usable)}",
+            branding_enabled=logo_path is not None,
+            branding_path=str(logo_path) if logo_path else None,
+            subtitle=item.subtitle)
+        path = out_dir / f"{i:02d}_{_slug(item.article.title)}.png"
+        compose_story(item.image_path, path, options)
+        written.append(path)
+    (out_dir / "legende.txt").write_text(build_daily_caption(usable, day), encoding="utf-8")
+    return written
+
+
+def prepare_item(article) -> TopItem:
+    """Telecharge l'image de l'article et choisit le texte sous le titre :
+    la reponse a la question du titre quand c'en est une, sinon le chapo.
+    Reseau ; jamais d'exception (une news sans image sera simplement ignoree)."""
+    from news_story.article_text import answer_from_article, is_teaser, page_chapo
+    from news_story.image_cache import ImageFetchError, download
+    from news_story.image_fetcher import candidates_for_article, fetch_article_html
+    from news_story.post_composer import clean_subtitle
+    from news_story.story_composer import default_subtitle
+
+    image_path = None
+    try:
+        for candidate in candidates_for_article(article.url, article.feed_image_url)[:4]:
+            try:
+                image_path = Path(download(candidate.url).path)
+                break
+            except ImageFetchError:
+                continue
+    except Exception as e:  # noqa: BLE001 -- une news en echec ne bloque pas le top
+        logger.warning(f"Image introuvable pour « {article.title} » : {e}")
+
+    try:
+        page = fetch_article_html(article.url) or ""
+    except Exception:  # noqa: BLE001 -- sans page, le resume du flux suffit
+        page = ""
+    # Le chapo de la page quand elle en declare un assez long, sinon le
+    # resume du flux.
+    chapo = page_chapo(page)
+    chapo = chapo if len(chapo) >= 60 and not chapo.endswith("...") else article.summary
+    subtitle = default_subtitle(article.title, chapo)
+    if is_teaser(article.title, chapo) and page:
+        answer = answer_from_article(article.title, page, chapo=clean_subtitle(chapo))
+        if answer:
+            subtitle = answer
+    return TopItem(article=article, image_path=image_path, subtitle=subtitle)

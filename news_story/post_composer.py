@@ -205,7 +205,7 @@ def draw_block(draw, top: int, center_x: float, block, fill=(255, 255, 255, 255)
     return y
 
 
-def clean_subtitle(text: str, max_chars: int = 260) -> str:
+def clean_subtitle(text: str, max_chars: int = 450) -> str:
     """Chapo a afficher : sans balisage ni lignes de liens (descriptions
     YouTube), sur une ligne, coupe sur une fin de phrase (ou un mot) au-dela
     de `max_chars`. Jamais reformule."""

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -129,6 +130,13 @@ class GamingNewsTab(QWidget):
             self.theme_buttons[theme] = btn
             header.addWidget(btn)
         self.set_theme(choices[0][0], render=False)
+
+        # Plusieurs news cinema en un seul export (carrousel du jour).
+        self.daily_top_btn = QPushButton("🗂 Top news ciné du jour")
+        self.daily_top_btn.setToolTip("Plusieurs news ciné en un seul téléchargement : une "
+                                      "couverture + une image par news + la légende.")
+        self.daily_top_btn.clicked.connect(self._open_daily_top)
+        header.addWidget(self.daily_top_btn)
         header.addStretch(1)
         outer.addLayout(header)
 
@@ -259,6 +267,22 @@ class GamingNewsTab(QWidget):
         actions.addStretch(1)
         layout.addLayout(actions)
         return frame
+
+    def cinema_articles(self) -> list:
+        """News du fil Cine et series, dans l'ordre du fil (unes en tete)."""
+        return [a for a in self._articles if self._theme_of(a) == "cinema"]
+
+    def _open_daily_top(self) -> None:
+        from gui.radar.daily_top_dialog import DailyTopDialog
+
+        articles = self.cinema_articles()
+        if not articles:
+            QMessageBox.information(self, "Top news ciné du jour",
+                                    "Aucune news ciné récupérée pour l'instant : clique sur "
+                                    "« Actualiser » puis réessaie.")
+            return
+        dialog = DailyTopDialog(articles, parent=self)
+        dialog.exec()
 
     def _open_story_dialog(self, article) -> None:
         from gui.radar.story_dialog import StoryDialog

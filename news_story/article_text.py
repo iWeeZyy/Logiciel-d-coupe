@@ -23,9 +23,11 @@ import re
 import unicodedata
 from html.parser import HTMLParser
 
-_BLOCK_TAGS = {"p", "h2", "h3", "h4", "li", "blockquote"}
+_BLOCK_TAGS = {"p", "h2", "h3", "h4", "li"}
+# blockquote : les tweets / posts Instagram integres (souvent en anglais,
+# avec un lien) -- pas le texte de l'article.
 _SKIP_TAGS = {"script", "style", "nav", "header", "footer", "aside", "form", "noscript",
-              "figure", "figcaption", "button", "svg"}
+              "figure", "figcaption", "button", "svg", "blockquote"}
 # Paragraphes de page qui ne sont pas l'article.
 _NOISE_RE = re.compile(
     r"(abonne|newsletter|cookies?|publicit|partager|lire aussi|a lire|à lire|"
@@ -38,8 +40,9 @@ _CONCLUSION_RE = re.compile(
 # Mots qui introduisent une reponse ou une nuance (« Cependant, aucun des
 # haut-parleurs n'est dedie... ») : une phrase qui commence ainsi tranche.
 _ANSWER_MARKERS_RE = re.compile(
-    r"^(cependant|pourtant|toutefois|en revanche|malgre|malgré|or|mais|donc|ainsi|"
+    r"^(cependant|pourtant|toutefois|en revanche|malgre|malgré|or|mais|donc|ainsi|en effet|"
     r"resultat|résultat|concretement|concrètement|autrement dit|en clair)\b", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://|www\.|\bt\.co/|pic\.twitter", re.IGNORECASE)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[«\"A-ZÀ-ÖØ-Þ0-9])")
 _WORD_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = set("""
@@ -149,19 +152,65 @@ def is_question(title: str) -> bool:
     return "?" in (title or "")
 
 
+_CLAUSE_SPLIT_RE = re.compile(r"\s*(?:[,:;]|\bmais\b|\bet\b)\s*", re.IGNORECASE)
+
+
 def _question_part(title: str) -> str:
-    """La question elle-meme : apres le dernier « : » d'un titre « Sujet :
-    question ? » (« que vaut vraiment le Dolby Atmos sans barre de son ? »)."""
+    """Ce que le titre demande ou annonce sans le dire :
+    - « Sujet : question ? » -> la question (apres le dernier « : ») ;
+    - « La saison 3 sera la derniere, mais une surprise attend les fans » ->
+      la partie qui porte l'accroche (le reste est deja dit par le titre)."""
     if ":" in title and is_question(title):
         return title.rsplit(":", 1)[1]
+    if not is_question(title):
+        clauses = [c for c in _CLAUSE_SPLIT_RE.split(title) if c.strip()]
+        hooked = [c for c in clauses if _TEASER_RE.search(c)]
+        if hooked:
+            return " ".join(hooked)
     return title
 
 
+# Vocabulaire d'accroche : un titre ou un chapo qui l'emploie annonce une
+# info sans la donner (« une tres bonne surprise attend les fans », « cet
+# acteur americain », « voici pourquoi »). L'article la donne plus loin.
+_TEASER_RE = re.compile(
+    r"\b(surprises?|annonces?|révél\w*|revel\w*|découvr\w*|decouvr\w*|voici|voilà|voila|"
+    r"secrets?|raisons?|pourquoi|comment|cet(?:te)? (?:acteur|actrice|film|série|serie|star|"
+    r"réalisateur|realisateur|personnage)|ce (?:film|personnage|réalisateur|realisateur|détail|"
+    r"detail)|celui-ci|celle-ci|on vous (?:dit|explique)|réponse|reponse|ci-dessous|"
+    r"ravir|attend(?:ent)?)\b", re.IGNORECASE)
+_PROPER_NOUN_RE = re.compile(r"(?<![.!?«\"“]\s)(?<!^)\b([A-ZÀ-ÖØ-Þ][\wÀ-ÖØ-öø-ÿ'’-]+)")
+
+
+_NAME_QUESTION_RE = re.compile(
+    r"\b(qui|quel(?:le)?s? (?:acteur|actrice|film|série|serie|star|réalisateur|realisateur|"
+    r"personnage|studio|plateforme))\b", re.IGNORECASE)
+
+
+def is_teaser(title: str, chapo: str = "") -> bool:
+    """Le titre (ou le chapo) annonce-t-il une info sans la donner ?"""
+    return is_question(title) or bool(_TEASER_RE.search(title or "")) or \
+        bool(_TEASER_RE.search(chapo or "")) or "..." in (chapo or "") or "…" in (chapo or "")
+
+
+def _new_names(sentence: str, known: set[str]) -> int:
+    """Noms propres de la phrase absents du titre (acteurs, films...) : une
+    phrase qui en cite donne de l'info, une accroche n'en cite pas."""
+    names = {_fold(m) for m in _PROPER_NOUN_RE.findall(sentence) if len(m) > 2}
+    return len(names - known)
+
+
+# Budget large : l'utilisateur prefere que toute l'info pertinente soit sur
+# l'image, quitte a masquer la photo (le post passe alors en texte pleine
+# image, voir post_composer).
+DEFAULT_MAX_CHARS = 600
+
+
 def answer_from_article(title: str, page_html: str, *, chapo: str = "",
-                        max_chars: int = 320) -> str:
-    """Phrases de l'article qui repondent au titre, dans l'ordre, sans
-    depasser `max_chars` (au moins une phrase entiere). "" si la page ne
-    donne rien d'exploitable."""
+                        max_chars: int = DEFAULT_MAX_CHARS) -> str:
+    """Phrases de l'article qui repondent au titre (ou revelent ce que
+    l'accroche annonce), dans l'ordre, sans depasser `max_chars` (au moins
+    une phrase entiere). "" si la page ne donne rien d'exploitable."""
     paragraphs = extract_paragraphs(page_html)
     if not paragraphs:
         return ""
@@ -169,6 +218,13 @@ def answer_from_article(title: str, page_html: str, *, chapo: str = "",
     question_words = keywords(_question_part(title)) or title_words
     subject_words = title_words - question_words
     chapo_fold = _fold(" ".join((chapo or "").split()))
+    known_names = {_fold(w) for w in re.findall(r"[\wÀ-ÿ'’-]+", f"{title} {chapo}")}
+    hook_words = {_fold(m.group(0)) for m in _TEASER_RE.finditer(f"{title} {chapo}")}
+    # L'info cachee est un NOM (« cet acteur », « une surprise », « qui... ? ») :
+    # les phrases qui citent des noms absents du titre sont celles qui la
+    # donnent. Pour « que vaut... ? », la reponse n'est pas un nom : pas de bonus.
+    wants_names = bool(_NAME_QUESTION_RE.search(title or "")) or (
+        not is_question(title) and is_teaser(title, chapo))
 
     # Phrases de l'article, avec leur contexte (section de reponse, conclusion).
     sentences: list[tuple[int, str, bool, bool]] = []
@@ -194,21 +250,37 @@ def answer_from_article(title: str, page_html: str, *, chapo: str = "",
         df = sum(1 for ws in word_sets.values() if word in ws)
         return math.log((total + 1) / (df + 1)) + 0.3
 
+    # Phrase qui reprend l'accroche en question (« La grande surprise de cette
+    # soiree ? ») : la revelation suit immediatement.
+    reveal_after = {pos for pos, sentence, *_ in sentences
+                    if sentence.rstrip().endswith(("?", ":"))
+                    and any(h in _fold(sentence) for h in hook_words)}
+
     candidates: list[tuple[int, float, str]] = []
     for position, sentence, conclusion, answer_section in sentences:
-        if len(sentence) < 25 or _fold(sentence) in chapo_fold:
-            continue          # trop court, ou deja dit par le chapo
+        folded = _fold(sentence)
+        if len(sentence) < 25 or folded in chapo_fold or (chapo_fold and folded[:60] in chapo_fold):
+            continue          # trop court, ou deja dit par le chapo (meme tronque)
+        if _URL_RE.search(sentence):
+            continue          # tweet / post integre, lien : pas le texte de l'article
         words = word_sets[position]
-        score = sum(2.0 * idf(w) for w in words & question_words)
+        names = min(_new_names(sentence, known_names), 4) if wants_names else 0
+        teaser = bool(_TEASER_RE.search(sentence))
+        score = sum(2.0 * idf(w) for w in words & question_words if _fold(w) not in hook_words)
         score += sum(0.5 * idf(w) for w in words & subject_words)
+        score += 1.2 * names
         if conclusion or _CONCLUSION_RE.search(sentence[:60]):
             score += 3.0
         if answer_section:
             score += 2.0
         if _ANSWER_MARKERS_RE.search(sentence):
             score += 2.0
-        if is_question(title) and sentence.endswith("?"):
-            score -= 5.0      # une autre question n'est pas une reponse
+        if position - 1 in reveal_after or position - 2 in reveal_after:
+            score += 5.0      # juste apres « La grande surprise ? » : la reponse
+        if teaser and (names == 0 or not wants_names):
+            score -= 3.0      # encore une accroche, sans aucun nom : pas l'info
+        if sentence.rstrip().endswith("?"):
+            score -= 5.0      # une question n'est pas une reponse
         candidates.append((position, score, sentence))
     if not candidates:
         return ""
@@ -225,10 +297,46 @@ def answer_from_article(title: str, page_html: str, *, chapo: str = "",
         if _ANSWER_MARKERS_RE.search(best[2]):
             chosen += [c for c in candidates if c[0] == best[0] - 1]
         chosen += [c for c in candidates if c[0] == best[0] + 1]
-    text = ""
-    for _, _, sentence in sorted(chosen):
-        candidate = f"{text} {sentence}".strip()
-        if text and len(candidate) > max_chars:
-            break
-        text = candidate
+        # Puis la meilleure phrase d'ailleurs dans l'article (une deuxieme
+        # info : « les Defenders seront de retour »), si elle est pertinente.
+        taken = {c[0] for c in chosen}
+        others = [c for c in candidates if c[0] not in taken and c[1] >= best[1] * 0.5 and c[1] > 0]
+        if others:
+            chosen.append(max(others, key=lambda c: (c[1], -c[0])))
+    # Budget : la reponse d'abord (dans l'ordre de priorite de `chosen`), les
+    # ajouts seulement s'il reste de la place ; puis l'ordre de l'article.
+    kept: list[tuple[int, float, str]] = []
+    used = 0
+    for item in chosen:
+        if item in kept:
+            continue
+        if kept and used + 1 + len(item[2]) > max_chars:
+            continue
+        kept.append(item)
+        used += len(item[2]) + 1
+    return " ".join(sentence for _, _, sentence in sorted(kept))
+
+
+_META_DESCRIPTION_RE = re.compile(
+    r'<meta[^>]+(?:property|name)="(?:og:description|description)"[^>]+content="([^"]*)"',
+    re.IGNORECASE)
+
+
+def page_chapo(page_html: str) -> str:
+    """Le chapo tel que la page le declare (og:description / description) --
+    plus propre que le resume RSS de certains sites, qui enchaine le chapo et
+    le debut de l'article, intertitre compris. "" si absent."""
+    import html as html_lib
+
+    match = _META_DESCRIPTION_RE.search(page_html or "")
+    if not match:
+        return ""
+    text = " ".join(html_lib.unescape(match.group(1)).split())
+    # Page UTF-8 lue comme du Latin-1 (« AprÃ¨s ») : on repare.
+    if "Ã" in text:
+        try:
+            text = text.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            pass
     return text
+

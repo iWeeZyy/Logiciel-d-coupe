@@ -56,3 +56,32 @@ class TestReponse:
 
     def test_question(self):
         assert is_question(_TITLE) and not is_question("Un film sort au cinéma")
+
+
+_TEASER_PAGE = """<article>
+<p>À la Comic Con, Marvel a confirmé l’annulation de la série... mais a fait une annonce surprise qui devrait ravir les fans !</p>
+<p>New York accueille la Comic Con jusqu’à dimanche, avec de nombreux invités prestigieux venus du monde entier.</p>
+<h2>Mauvaise nouvelle pour les fans</h2>
+<p>La saison 3 de Born Again, bientôt diffusée, sera la dernière de la série phare de Marvel.</p>
+<p>Pour autant, Marvel Studios avait aussi une autre annonce, beaucoup plus positive, à faire aux fans réunis.</p>
+<h2>Une annonce qui met du baume au cœur</h2>
+<p>La grande surprise de cette soirée centrée sur la série ? Charlie Cox n’est pas apparu seul sur scène ! Il était accompagné des comédiens Krysten Ritter et Finn Jones, de retour avec les Defenders.</p>
+</article>"""
+
+
+class TestAccroche:
+    def test_l_accroche_est_reconnue(self):
+        from news_story.article_text import is_teaser
+
+        assert is_teaser("Daredevil : une très bonne surprise attend les fans !")
+        assert is_teaser("Un film sort", "Cet acteur américain ne tarit pas d'éloges...")
+        assert not is_teaser("Le film Dune 3 sortira le 18 décembre 2026")
+
+    def test_la_surprise_est_revelee(self):
+        answer = answer_from_article(
+            "Daredevil : la saison 3 de Born Again sera bien la dernière, mais une très bonne surprise attend les fans !",
+            _TEASER_PAGE,
+            chapo="À la Comic Con, Marvel a confirmé l’annulation de la série... mais a fait une annonce "
+                  "surprise qui devrait ravir les fans !")
+        assert "Krysten Ritter" in answer
+        assert "beaucoup plus positive" not in answer     # encore une accroche, pas l'info
