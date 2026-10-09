@@ -427,7 +427,7 @@ class TestPostVideo:
                            lambda url: "https://www.dailymotion.com/video/xb5ci0m"):
             from gui.radar.story_dialog import StoryDialog
 
-            dialog = StoryDialog(_fake_article(), theme="cinema")
+            dialog = StoryDialog(_fake_article(), theme="trailers")
             assert dialog.template_combo.findData(TEMPLATE_VIDEO) < 0
             assert _process_until(app, lambda: dialog.template_combo.currentData() == TEMPLATE_VIDEO)
             assert dialog.opacity_combo.isVisibleTo(dialog)
@@ -461,6 +461,53 @@ class TestPostVideo:
             dialog._on_video_found("https://www.youtube.com/watch?v=AAAAAAAAAAA")
             assert dialog.template_combo.findData(TEMPLATE_VIDEO) >= 0
             assert dialog.template_combo.currentData() == TEMPLATE_NEWS
+            dialog.cleanup()
+
+
+class TestCinemaSansVideo:
+    """Fil Cinema & series : jamais de video (l'article avec une image), et
+    un titre-question recoit la reponse tiree de l'article."""
+
+    def test_pas_de_video_dans_le_fil_cinema(self, app):
+        from news_story.story_templates import TEMPLATE_POST_VERTICAL, TEMPLATE_VIDEO
+
+        calls = []
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog.fetch_video_url",
+                           lambda url: calls.append(url) or "https://www.youtube.com/watch?v=AAAAAAAAAAA"), \
+                patch("gui.radar.story_dialog._article_answer", lambda article: ""):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Un film ?"), theme="cinema")
+            assert _process_until(app, lambda: dialog.export_btn.isEnabled())
+            dialog._fetch_thread.wait(3000)
+            app.processEvents()
+            assert calls == []
+            assert dialog.template_combo.findData(TEMPLATE_VIDEO) < 0
+            assert dialog.template_combo.currentData() == TEMPLATE_POST_VERTICAL
+            dialog.cleanup()
+
+    def test_la_reponse_remplace_le_chapo_et_rejoint_la_legende(self, app):
+        p1, p2 = _patched_single_candidate()
+        answer = "Cependant, aucun des 4 haut-parleurs n'est dédié aux effets verticaux."
+        with p1, p2, patch("gui.radar.story_dialog._article_answer", lambda article: answer):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Que vaut le Dolby Atmos ?",
+                                               summary="Un chapo qui ne repond pas."), theme="cinema")
+            assert _process_until(app, lambda: dialog.subtitle_edit.toPlainText() == answer)
+            assert answer in dialog.caption_edit.toPlainText()
+            dialog.cleanup()
+
+    def test_un_chapo_retouche_n_est_pas_ecrase(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog._article_answer", lambda article: ""):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(title="Que vaut le Dolby Atmos ?"), theme="cinema")
+            dialog.subtitle_edit.setPlainText("Mon texte")
+            dialog._on_answer_found("Une réponse.")
+            assert dialog.subtitle_edit.toPlainText() == "Mon texte"
             dialog.cleanup()
 
 

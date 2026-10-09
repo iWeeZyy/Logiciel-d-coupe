@@ -62,6 +62,7 @@ from news_story.story_templates import (
     TEMPLATES,
     get_template,
 )
+from news_story.article_text import is_question
 from news_story.title_shortener import build_display_title, is_rumor
 
 RIGHTS_NOTICE = ("Image provenant de l'article source. Vérifiez les droits de "
@@ -102,11 +103,13 @@ class _FetchImagesThread(QThread):
     candidate_failed = Signal(str, str)       # url, message
     finished_all = Signal(int)                # nombre d'images recuperees avec succes
     video_found = Signal(str)                 # adresse de la video de l'article
+    answer_found = Signal(str)                # reponse a la question du titre
 
-    def __init__(self, article: Article, cancel_token: CancelToken):
+    def __init__(self, article: Article, cancel_token: CancelToken, theme: str = "gaming"):
         super().__init__()
         self.article = article
         self.cancel_token = cancel_token
+        self.theme = theme
 
     def run(self) -> None:
         try:
@@ -130,9 +133,30 @@ class _FetchImagesThread(QThread):
         self.finished_all.emit(succeeded)
         if self.cancel_token.is_cancelled:
             return
-        video_url = fetch_video_url(self.article.url)
-        if video_url:
-            self.video_found.emit(video_url)
+        if self.theme == "trailers":
+            # La video n'est proposee que pour les bandes-annonces : le fil
+            # Cinema & series veut l'article avec une image (demande explicite).
+            video_url = fetch_video_url(self.article.url)
+            if video_url:
+                self.video_found.emit(video_url)
+        elif self.theme == "cinema" and is_question(self.article.title):
+            answer = _article_answer(self.article)
+            if answer:
+                self.answer_found.emit(answer)
+
+
+def _article_answer(article: Article) -> str:
+    """Reponse a la question du titre, extraite de l'article (phrases
+    entieres, jamais reformulees -- news_story/article_text.py)."""
+    from news_story.article_text import answer_from_article
+    from news_story.image_fetcher import fetch_article_html
+    from news_story.post_composer import clean_subtitle
+
+    try:
+        page = fetch_article_html(article.url)
+    except Exception:  # noqa: BLE001 -- sans page, on garde le chapo
+        return ""
+    return answer_from_article(article.title, page or "", chapo=clean_subtitle(article.summary))
 
 
 class _VideoExportThread(QThread):
@@ -377,12 +401,13 @@ class StoryDialog(QDialog):
 
         # Le chapo porte souvent l'info que le titre tait (« cet acteur » ->
         # Jeremy Allen White) : affiche sous le titre, pre-rempli, retouchable.
-        self.subtitle_caption = QLabel("Info sous le titre (chapô de l'article)")
+        self.subtitle_caption = QLabel("Info sous le titre (chapô, ou réponse à la question du titre)")
         options_panel.addWidget(self.subtitle_caption)
         # Bande-annonce : le nom du film suffit (la description YouTube n'est
         # pas un chapo) ; le champ reste disponible pour en ajouter un.
-        self.subtitle_edit = QPlainTextEdit(
-            "" if theme == "trailers" else default_subtitle(article.title, article.summary))
+        self._auto_subtitle = "" if theme == "trailers" else default_subtitle(article.title,
+                                                                              article.summary)
+        self.subtitle_edit = QPlainTextEdit(self._auto_subtitle)
         self.subtitle_edit.setMinimumHeight(70)
         self.subtitle_edit.setMaximumHeight(110)
         self.subtitle_edit.textChanged.connect(self._schedule_preview)
@@ -426,8 +451,8 @@ class StoryDialog(QDialog):
         # Legende du post : titre + resume + source, tels que fournis par le
         # flux (news_story/caption.py), retouchables avant de copier.
         options_panel.addWidget(QLabel("Légende (description du post)"))
-        self.caption_edit = QPlainTextEdit(build_caption(
-            article.title, article.summary, article.source_label, theme))
+        self._auto_caption = build_caption(article.title, article.summary, article.source_label, theme)
+        self.caption_edit = QPlainTextEdit(self._auto_caption)
         self.caption_edit.setMinimumHeight(110)
         options_panel.addWidget(self.caption_edit)
 
@@ -463,12 +488,25 @@ class StoryDialog(QDialog):
 
     # ------------------------------------------------------------ fetch
     def _start_fetch(self) -> None:
-        self._fetch_thread = _FetchImagesThread(self.article, self._cancel_token)
+        self._fetch_thread = _FetchImagesThread(self.article, self._cancel_token, self.theme)
         self._fetch_thread.candidate_ready.connect(self._on_candidate_ready)
         self._fetch_thread.candidate_failed.connect(self._on_candidate_failed)
         self._fetch_thread.finished_all.connect(self._on_fetch_finished)
         self._fetch_thread.video_found.connect(self._on_video_found)
+        self._fetch_thread.answer_found.connect(self._on_answer_found)
         self._fetch_thread.start()
+
+    def _on_answer_found(self, answer: str) -> None:
+        """Titre en forme de question : la reponse trouvee dans l'article
+        remplace le chapo sous le titre et rejoint la legende -- sauf si
+        l'utilisateur a deja retouche ces champs."""
+        if self.subtitle_edit.toPlainText() == self._auto_subtitle:
+            self._auto_subtitle = answer
+            self.subtitle_edit.setPlainText(answer)
+        if self.caption_edit.toPlainText() == self._auto_caption:
+            self._auto_caption = build_caption(self.article.title, self.article.summary,
+                                               self.article.source_label, self.theme, answer=answer)
+            self.caption_edit.setPlainText(self._auto_caption)
 
     def _on_template_chosen_by_user(self, _index: int) -> None:
         self._template_touched = True

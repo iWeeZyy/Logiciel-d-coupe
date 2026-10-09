@@ -37,7 +37,7 @@ _MAX_SUMMARY_CHARS = 1600  # Instagram coupe a 2200 caracteres au total
 
 
 def build_caption(title: str, summary: str = "", source_label: str = "",
-                  theme: str = "") -> str:
+                  theme: str = "", answer: str = "") -> str:
     title = " ".join((title or "").split())
     summary = _SPACE_BEFORE_PUNCT.sub(r"\1", _strip_html(drop_promo_lines(summary or "")))
     if len(summary) > _MAX_SUMMARY_CHARS:
@@ -50,6 +50,10 @@ def build_caption(title: str, summary: str = "", source_label: str = "",
     # Un resume qui ne fait que repeter le titre n'apporte rien.
     if summary and not (norm_summary.startswith(norm_title) and len(summary) <= len(title) + 3):
         parts.append(summary)
+    # Reponse a la question du titre, extraite de l'article (article_text.py).
+    answer = " ".join((answer or "").split())
+    if answer and answer not in summary:
+        parts.append(answer)
     if source_label.strip():
         parts.append(f"Source : {source_label.strip()}")
     return "\n\n".join(parts)
