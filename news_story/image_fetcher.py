@@ -161,8 +161,25 @@ def fetch_article_html(url: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> str:
         logger.warning(f"Page d'article injoignable ({url}) : {e}")
         return ""
 
-    response.encoding = response.encoding or "utf-8"
-    return response.text
+    return decode_html(response.content, response.headers.get("Content-Type", ""))
+
+
+_CHARSET_RE = re.compile(r"charset=[\"']?([A-Za-z0-9_.:-]+)", re.IGNORECASE)
+
+
+def decode_html(content: bytes, content_type: str = "") -> str:
+    """Decode une page HTML. Le jeu de caracteres vient de l'en-tete HTTP
+    s'il le precise, sinon de la balise <meta charset> de la page, sinon
+    UTF-8. Jamais le Latin-1 par defaut de requests pour un « text/html »
+    sans charset (Numerama, par exemple) : sinon « après » devient « aprÃ¨s »."""
+    match = _CHARSET_RE.search(content_type or "")
+    if not match:
+        match = _CHARSET_RE.search(content[:4096].decode("ascii", "ignore"))
+    charset = match.group(1) if match else "utf-8"
+    try:
+        return content.decode(charset, errors="replace")
+    except LookupError:          # charset inconnu
+        return content.decode("utf-8", errors="replace")
 
 
 _YOUTUBE_ID_RE = re.compile(

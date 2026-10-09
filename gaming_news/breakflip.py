@@ -124,7 +124,10 @@ def fetch(source: NewsSource, timeout_s: float, max_articles: int,
         logger.warning(f"Page « {source.label} » injoignable : {e}")
         return []
 
-    articles = parse_hub(response.text, source, max_articles=max_articles)
+    from news_story.image_fetcher import decode_html
+
+    page = decode_html(response.content, response.headers.get("Content-Type", ""))
+    articles = parse_hub(page, source, max_articles=max_articles)
     if not articles:
         logger.warning(f"Page « {source.label} » : aucun article reconnu (structure du site modifiee ?)")
         return []

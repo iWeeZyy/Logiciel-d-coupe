@@ -56,6 +56,14 @@ vaut fait faire avoir aussi encore deja bien mais donc car comme si
 MIN_PARAGRAPH_CHARS = 60
 
 
+# Blocs de page qui ne sont pas l'article : commentaires de lecteurs
+# (wpDiscuz...), articles lies, partage, newsletter.
+_SKIP_CLASS_RE = re.compile(
+    r"comment|wpdiscuz|wpd-|related|share|social|newsletter|recommend|read-also|lire-aussi"
+    r"|embedded-tag|tags|premium-promo|paywall|install-pwa",
+    re.IGNORECASE)
+
+
 class _BodyParser(HTMLParser):
     """Paragraphes de l'article : texte des <p>/<h2>/<li>... hors navigation,
     en-tetes, pieds de page et scripts ; dans <article> quand la page en a un."""
@@ -67,8 +75,22 @@ class _BodyParser(HTMLParser):
         self._article = 0
         self._current: list[str] | None = None
         self._tag = ""
+        self._container_tag = ""
+        self._container_depth = 0
+        self._link: list[str] | None = None     # texte du lien en cours, dans le bloc
+        self._link_text: list[str] = []
 
     def handle_starttag(self, tag, attrs):
+        if self._container_tag:
+            # Dans un bloc ecarte (commentaires de lecteurs...) : on suit
+            # seulement l'imbrication de sa balise pour savoir quand il finit.
+            if tag == self._container_tag:
+                self._container_depth += 1
+            return
+        classes = dict(attrs).get("class") or ""
+        if tag in ("div", "section", "ol", "ul", "aside") and _SKIP_CLASS_RE.search(classes):
+            self._container_tag, self._container_depth = tag, 1
+            return
         if tag in _SKIP_TAGS:
             self._skip += 1
         elif tag == "article":
@@ -77,21 +99,37 @@ class _BodyParser(HTMLParser):
             self._current, self._tag = [], tag
         elif tag == "br" and self._current is not None:
             self._current.append(" ")
+        elif tag == "a" and self._current is not None:
+            self._link = []
 
     def handle_endtag(self, tag):
+        if self._container_tag:
+            if tag == self._container_tag:
+                self._container_depth -= 1
+                if self._container_depth <= 0:
+                    self._container_tag = ""
+            return
         if tag in _SKIP_TAGS and self._skip:
             self._skip -= 1
         elif tag == "article" and self._article:
             self._article -= 1
+        elif tag == "a" and self._link is not None:
+            self._link_text.append("".join(self._link))
+            self._link = None
         elif tag == self._tag and self._current is not None:
             text = " ".join("".join(self._current).split())
-            if text:
+            links = " ".join(" ".join(self._link_text).split())
+            # Un element de liste qui n'est qu'un lien = liste d'articles lies
+            # ou de mots-cles, pas le texte de l'article.
+            if text and not (self._tag == "li" and links == text):
                 self.blocks.append((self._tag, text, self._article > 0))
-            self._current = None
+            self._current, self._link, self._link_text = None, None, []
 
     def handle_data(self, data):
-        if self._current is not None and not self._skip:
+        if self._current is not None and not self._skip and not self._container_tag:
             self._current.append(data)
+            if self._link is not None:
+                self._link.append(data)
 
 
 def extract_paragraphs(page_html: str) -> list[tuple[str, str]]:
@@ -105,9 +143,13 @@ def extract_paragraphs(page_html: str) -> list[tuple[str, str]]:
     if any(in_article for *_, in_article in blocks):
         blocks = [b for b in blocks if b[2]]
     out = []
+    seen: set[str] = set()
     for tag, text, _ in blocks:
         if tag == "p" and (len(text) < MIN_PARAGRAPH_CHARS or _NOISE_RE.search(text[:80])):
             continue
+        if text in seen:
+            continue          # bloc repete (resume affiche deux fois, version mobile...)
+        seen.add(text)
         out.append((tag, text))
     return out
 
@@ -187,9 +229,50 @@ _NAME_QUESTION_RE = re.compile(
     r"personnage|studio|plateforme))\b", re.IGNORECASE)
 
 
+_REVIEW_RE = re.compile(
+    r"\b(critique|on a vu|verdict|test|avis|review|faut-il (?:voir|regarder)|vaut-il|"
+    r"est-(?:il|elle) (?:un |une )?(?:bon|bonne|réussi|reussi))", re.IGNORECASE)
+_AVAILABILITY_RE = re.compile(
+    r"\b(est|sont|sera|seront) (?:disponibles?|visibles?)\b|\bdisponible (?:en intégralité|sur)\b|"
+    r"\bau cinéma (?:le|depuis|à partir)\b|\ben salles? (?:le|depuis)\b", re.IGNORECASE)
+
+
+def is_review(title: str) -> bool:
+    """Une critique (« Below : critique », « On a vu... ») : l'info, c'est le
+    verdict -- la conclusion de l'article."""
+    return bool(_REVIEW_RE.search(title or ""))
+
+
+def verdict_from_article(page_html: str, *, chapo: str = "", max_chars: int = 600) -> str:
+    """Conclusion d'une critique : les dernieres phrases du corps de l'article
+    (hors mention « disponible sur Netflix depuis... »), dans l'ordre, sans
+    depasser `max_chars`."""
+    paragraphs = [text for tag, text in extract_paragraphs(page_html) if tag == "p"]
+    chapo_fold = _fold(" ".join((chapo or "").split()))
+    sentences: list[str] = []
+    for paragraph in paragraphs:
+        for sentence in split_sentences(paragraph):
+            folded = _fold(sentence)
+            if len(sentence) < 25 or _URL_RE.search(sentence) or _AVAILABILITY_RE.search(sentence):
+                continue
+            if _quotes_open(sentence) or sentence.count("»") > sentence.count("«"):
+                continue      # morceau de citation (ouverte ou fermee ailleurs) : pas de sens seul
+            if folded in chapo_fold or (chapo_fold and folded[:60] in chapo_fold):
+                continue
+            sentences.append(sentence)
+    kept: list[str] = []
+    used = 0
+    for sentence in reversed(sentences):
+        if kept and used + 1 + len(sentence) > max_chars:
+            break
+        kept.insert(0, sentence)
+        used += len(sentence) + 1
+    return " ".join(kept)
+
+
 def is_teaser(title: str, chapo: str = "") -> bool:
     """Le titre (ou le chapo) annonce-t-il une info sans la donner ?"""
-    return is_question(title) or bool(_TEASER_RE.search(title or "")) or \
+    return is_question(title) or is_review(title) or bool(_TEASER_RE.search(title or "")) or \
         bool(_TEASER_RE.search(chapo or "")) or "..." in (chapo or "") or "…" in (chapo or "")
 
 
@@ -211,6 +294,10 @@ def answer_from_article(title: str, page_html: str, *, chapo: str = "",
     """Phrases de l'article qui repondent au titre (ou revelent ce que
     l'accroche annonce), dans l'ordre, sans depasser `max_chars` (au moins
     une phrase entiere). "" si la page ne donne rien d'exploitable."""
+    if is_review(title):
+        verdict = verdict_from_article(page_html, chapo=chapo, max_chars=max_chars)
+        if verdict:
+            return verdict
     paragraphs = extract_paragraphs(page_html)
     if not paragraphs:
         return ""
@@ -338,5 +425,11 @@ def page_chapo(page_html: str) -> str:
             text = text.encode("latin-1").decode("utf-8")
         except (UnicodeEncodeError, UnicodeDecodeError):
             pass
+    # Description coupee par le site au milieu d'une phrase (Numerama :
+    # « … un film Cyberpunk 2077. Confirmée simultanément ») : on retire le
+    # morceau final. Rien de complet -> "" (l'appelant prend le resume du flux).
+    if text and text[-1] not in ".!?…»\"')":
+        end = max(text.rfind(mark) for mark in (". ", "! ", "? ", "… ", "» "))
+        text = text[:end + 1] if end > 0 else ""
     return text
 

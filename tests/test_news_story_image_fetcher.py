@@ -123,14 +123,15 @@ class TestFetchArticleHtmlNetwork:
         import requests
 
         class _FakeResponse:
-            encoding = "utf-8"
-            text = "<html>ok</html>"
+            # « text/html » sans charset : requests lirait du Latin-1.
+            headers = {"Content-Type": "text/html"}
+            content = "<html>déjà ok</html>".encode("utf-8")
 
             def raise_for_status(self):
                 pass
 
         monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse())
-        assert fetch_article_html(_PAGE_URL) == "<html>ok</html>"
+        assert fetch_article_html(_PAGE_URL) == "<html>déjà ok</html>"
 
 
 class TestCandidatesForArticle:

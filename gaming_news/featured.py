@@ -102,7 +102,9 @@ def fetch_page(url: str, timeout_s: float) -> str:
     except requests.exceptions.RequestException as e:
         logger.warning(f"Page « a la une » injoignable ({url}) : {e}")
         return ""
-    return response.text
+    from news_story.image_fetcher import decode_html
+
+    return decode_html(response.content, response.headers.get("Content-Type", ""))
 
 
 # ------------------------------------------------- Top bandes-annonces AlloCine

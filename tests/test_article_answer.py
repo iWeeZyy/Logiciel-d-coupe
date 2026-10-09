@@ -86,3 +86,59 @@ class TestAccroche:
                   "surprise qui devrait ravir les fans !")
         assert "Krysten Ritter" in answer
         assert "beaucoup plus positive" not in answer     # encore une accroche, pas l'info
+
+
+class TestCritique:
+    _PAGE = """<article>
+<p>Notre critique de Below, la nouvelle mini-série horrifique de Netflix avec Josh Hartnett.</p>
+<h2>Balance ton port</h2>
+<p>Les premières séquences de Below sont pleines de promesses et le prologue intrigue beaucoup.</p>
+<h2>La barre est below</h2>
+<p>À défaut de réellement convaincre, Below conserve quelque chose d’assez charmant et irrésistible. On en ressort insatisfait mais tout de même avec le sourire aux lèvres.</p>
+<p><em>Below est disponible en intégralité sur Netflix depuis ce 8 octobre 2026</em></p>
+<div class="article--article-comments"><div class="wpd-comment-text"><p>Comme d’hab avec Netflix, c’est dilué à mort pour faire du temps de visionnage.</p></div></div>
+</article>"""
+
+    def test_le_verdict_est_la_conclusion_de_l_article(self):
+        from news_story.article_text import is_review
+
+        assert is_review("Below : critique d’une mise en abysse sur Netflix")
+        answer = answer_from_article("Below : critique d’une mise en abysse sur Netflix", self._PAGE,
+                                     chapo="Notre critique de Below, la nouvelle mini-série horrifique "
+                                           "de Netflix avec Josh Hartnett.")
+        assert answer.endswith("On en ressort insatisfait mais tout de même avec le sourire aux lèvres.")
+        assert "disponible" not in answer          # mention de diffusion ecartee
+        assert "dilué à mort" not in answer         # commentaire de lecteur ecarte
+
+
+class TestEncodageEtBruit:
+    def test_page_sans_charset_http_lue_en_utf8(self):
+        from news_story.image_fetcher import decode_html
+
+        raw = '<html><head><meta charset="UTF-8" /></head><p>Après, déjà, où</p>'.encode("utf-8")
+        assert "Après, déjà, où" in decode_html(raw, "text/html")       # pas de « AprÃ¨s »
+        assert "Après" in decode_html(raw, "")
+        latin = "<p>Après</p>".encode("latin-1")
+        assert "Après" in decode_html(latin, "text/html; charset=ISO-8859-1")
+
+    def test_liens_d_articles_lies_et_encarts_ecartes(self):
+        page = """<article>
+<ul><li>Le costume a été réingéniéré pour être plus fonctionnel.</li></ul>
+<ul><li>Le costume a été réingéniéré pour être plus fonctionnel.</li></ul>
+<p>Ce changement de look répond directement aux enjeux scénaristiques de cette suite.</p>
+<div class="premium-promo-alert"><p>Tout le monde n'a pas les moyens de payer pour l'information.</p></div>
+<div class="card-install-pwa"><p>Ajoutez Numerama à votre écran d'accueil et restez connectés !</p></div>
+<div class="embedded-tag-container"><ul><li class="link"><a href="/x">Avengers Doomsday : on sait enfin où est Nick Fury</a></li></ul></div>
+<ul><li><a href="/y">Spider-Man va avoir une nouvelle série live-action</a></li></ul>
+</article>"""
+        texts = [text for _, text in extract_paragraphs(page)]
+        assert texts == ["Le costume a été réingéniéré pour être plus fonctionnel.",
+                         "Ce changement de look répond directement aux enjeux scénaristiques de cette suite."]
+
+    def test_description_coupee_au_milieu_d_une_phrase(self):
+        from news_story.article_text import page_chapo
+
+        page = ('<meta property="og:description" content="Paramount va produire un film '
+                'Cyberpunk 2077. Confirmée simultanément">')
+        assert page_chapo(page) == "Paramount va produire un film Cyberpunk 2077."
+        assert page_chapo('<meta name="description" content="Un début sans fin">') == ""
