@@ -5,9 +5,10 @@ le Dolby Atmos sans barre de son ? ») ne donne pas l'info ; le post doit
 porter la REPONSE, avec l'explication qui va avec, et la phrase doit avoir du
 sens -- raccourcir l'article si besoin.
 
-Comme tout news_story/ : AUCUNE IA generative, rien d'invente ni de
-reformule. On EXTRAIT des phrases entieres de l'article (une phrase entiere a
-toujours du sens), choisies parce qu'elles repondent au titre :
+Methode de secours : quand une cle API Claude est configuree, c'est Claude qui
+lit l'article et redige le texte (news_story/ai_summary.py). Ici, rien
+d'invente ni de reformule : on EXTRAIT des phrases entieres de l'article (une
+phrase entiere a toujours du sens), choisies parce qu'elles repondent au titre :
 
 - elles reprennent les mots importants du titre ;
 - elles sont dans un passage de conclusion (« Verdict », « Au final »,
@@ -132,6 +133,62 @@ class _BodyParser(HTMLParser):
                 self._link.append(data)
 
 
+# Resume en points cles publie par le site lui-meme (Numerama : « Résumé de
+# l'article », class="ia-abstract" ; ailleurs « L'essentiel », « À retenir »).
+_SUMMARY_CLASS_RE = re.compile(r"abstract|key-?points|essentiel|a-retenir|tl-?dr", re.IGNORECASE)
+
+
+class _SummaryParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.points: list[str] = []
+        self._tag = ""
+        self._depth = 0
+        self._current: list[str] | None = None
+
+    def handle_starttag(self, tag, attrs):
+        if self._tag:
+            if tag == self._tag:
+                self._depth += 1
+            elif tag == "li":
+                self._current = []
+            return
+        classes = dict(attrs).get("class") or ""
+        if tag in ("div", "section", "aside", "ul") and _SUMMARY_CLASS_RE.search(classes) \
+                and not self.points:
+            self._tag, self._depth = tag, 1
+            if tag == "ul":
+                self._depth = 1
+
+    def handle_endtag(self, tag):
+        if not self._tag:
+            return
+        if tag == "li" and self._current is not None:
+            text = " ".join("".join(self._current).split())
+            if text and text not in self.points:
+                self.points.append(text)
+            self._current = None
+        elif tag == self._tag:
+            self._depth -= 1
+            if self._depth <= 0:
+                self._tag = ""
+
+    def handle_data(self, data):
+        if self._current is not None:
+            self._current.append(data)
+
+
+def summary_points(page_html: str) -> list[str]:
+    """Les points cles du resume que le site publie en tete d'article (le
+    premier trouve), dans l'ordre. [] si la page n'en a pas."""
+    parser = _SummaryParser()
+    try:
+        parser.feed(page_html or "")
+    except Exception:  # noqa: BLE001
+        pass
+    return [p for p in parser.points if len(p) >= 25 and not _URL_RE.search(p)]
+
+
 def extract_paragraphs(page_html: str) -> list[tuple[str, str]]:
     """[(balise, texte)] du corps de l'article, dans l'ordre de la page."""
     parser = _BodyParser()
@@ -220,7 +277,8 @@ _TEASER_RE = re.compile(
     r"secrets?|raisons?|pourquoi|comment|cet(?:te)? (?:acteur|actrice|film|série|serie|star|"
     r"réalisateur|realisateur|personnage)|ce (?:film|personnage|réalisateur|realisateur|détail|"
     r"detail)|celui-ci|celle-ci|on vous (?:dit|explique)|réponse|reponse|ci-dessous|"
-    r"ravir|attend(?:ent)?)\b", re.IGNORECASE)
+    r"ravir|attend(?:ent)?|points? (?:positifs?|négatifs?|negatifs?|forts?|faibles?)|"
+    r"bonnes? nouvelles?|mauvaises? nouvelles?|ce qu'on sait|ce qu’on sait)\b", re.IGNORECASE)
 _PROPER_NOUN_RE = re.compile(r"(?<![.!?«\"“]\s)(?<!^)\b([A-ZÀ-ÖØ-Þ][\wÀ-ÖØ-öø-ÿ'’-]+)")
 
 
@@ -298,6 +356,24 @@ def answer_from_article(title: str, page_html: str, *, chapo: str = "",
         verdict = verdict_from_article(page_html, chapo=chapo, max_chars=max_chars)
         if verdict:
             return verdict
+    # Accroche (« pour une bonne raison », « un gros point positif ») et le
+    # site resume lui-meme l'article en points cles : c'est l'info, deja
+    # condensee par la redaction (phrases du site, prises telles quelles).
+    # Pour un titre-question, la phrase de l'article qui y repond est plus
+    # directe : extraction ci-dessous.
+    points = [] if is_question(title) else summary_points(page_html)
+    if points:
+        chapo_fold = _fold(" ".join((chapo or "").split()))
+        kept, used = [], 0
+        for point in points:
+            if _fold(point) in chapo_fold:
+                continue
+            if kept and used + 1 + len(point) > max_chars:
+                break
+            kept.append(point if point[-1] in ".!?…»" else point + ".")
+            used += len(point) + 1
+        if kept:
+            return " ".join(kept)
     paragraphs = extract_paragraphs(page_html)
     if not paragraphs:
         return ""

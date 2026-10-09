@@ -104,6 +104,7 @@ class _FetchImagesThread(QThread):
     finished_all = Signal(int)                # nombre d'images recuperees avec succes
     video_found = Signal(str)                 # adresse de la video de l'article
     answer_found = Signal(str)                # reponse a la question du titre
+    ai_status = Signal(str)                   # texte redige par Claude, ou son erreur
 
     def __init__(self, article: Article, cancel_token: CancelToken, theme: str = "gaming"):
         super().__init__()
@@ -139,27 +140,46 @@ class _FetchImagesThread(QThread):
             video_url = fetch_video_url(self.article.url)
             if video_url:
                 self.video_found.emit(video_url)
-        elif self.theme == "cinema" and is_teaser(self.article.title, self.article.summary):
-            # Titre-question, ou accroche (« une surprise attend les fans ») :
-            # l'info est dans le corps de l'article.
-            answer = _article_answer(self.article)
-            if answer:
+        elif self.theme == "cinema":
+            # Toutes les news cine : l'info principale (et la reponse au
+            # titre) sous le titre -- par Claude si une cle est configuree.
+            answer = _article_answer(self.article, self.ai_status.emit)
+            if answer and not self.cancel_token.is_cancelled:
                 self.answer_found.emit(answer)
 
 
-def _article_answer(article: Article) -> str:
-    """Reponse a la question du titre, ou ce que son accroche annonce,
-    extraite de l'article (phrases entieres, jamais reformulees --
-    news_story/article_text.py)."""
+def _article_answer(article: Article, on_status=lambda message: None) -> str:
+    """Texte sous le titre d'une news cine. Avec une cle API Claude : Claude
+    lit l'article et redige l'info principale, et la reponse a la question
+    du titre (news_story/ai_summary.py). Sans cle ou en erreur : pour un
+    titre-question ou une accroche, les phrases de l'article qui y repondent
+    (news_story/article_text.py) ; sinon "" (le chapo reste)."""
+    from news_story import ai_summary
     from news_story.article_text import answer_from_article
     from news_story.image_fetcher import fetch_article_html
     from news_story.post_composer import clean_subtitle
 
     try:
-        page = fetch_article_html(article.url)
+        page = fetch_article_html(article.url) or ""
     except Exception:  # noqa: BLE001 -- sans page, on garde le chapo
         return ""
-    return answer_from_article(article.title, page or "", chapo=clean_subtitle(article.summary))
+    if not page:
+        return ""
+    chapo = clean_subtitle(article.summary)
+    if ai_summary.is_configured():
+        on_status("Claude lit l'article…")
+        try:
+            summary = ai_summary.summarize(article.title, chapo, page, url=article.url)
+        except ai_summary.AiSummaryError as error:
+            on_status(f"IA Claude : {error} Texte tiré de l'article à la place.")
+        else:
+            note = "" if summary.answer_found else " (l'article ne donne pas la réponse au titre)"
+            on_status(f"Texte rédigé par Claude à partir de l'article{note} — relis-le avant "
+                      "d'exporter.")
+            return summary.text
+    if is_teaser(article.title, article.summary):
+        return answer_from_article(article.title, page, chapo=chapo)
+    return ""
 
 
 class _VideoExportThread(QThread):
@@ -497,6 +517,7 @@ class StoryDialog(QDialog):
         self._fetch_thread.finished_all.connect(self._on_fetch_finished)
         self._fetch_thread.video_found.connect(self._on_video_found)
         self._fetch_thread.answer_found.connect(self._on_answer_found)
+        self._fetch_thread.ai_status.connect(self.status_label.setText)
         self._fetch_thread.start()
 
     def _on_answer_found(self, answer: str) -> None:

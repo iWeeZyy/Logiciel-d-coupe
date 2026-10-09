@@ -725,6 +725,29 @@ Les clips telecharges sont gardes dans `%LOCALAPPDATA%\ClipFarming\clips` : un
 clip deja recupere n'est jamais retelecharge, ni pour une reanalyse, ni pour un
 envoi au Content Factory.
 
+### News ciné : texte rédigé par Claude (optionnel)
+
+Dans l'onglet News, le bouton **🔑 IA Claude** enregistre une clé API Anthropic
+(à créer sur console.anthropic.com, rubrique API Keys). Avec une clé, chaque
+news ciné (« Créer un visuel » et « Top news ciné du jour ») passe par Claude :
+il lit l'article et écrit sous le titre l'information principale, et la
+réponse quand le titre pose une question ou cache l'info (« et pour une bonne
+raison »). Une critique reçoit le verdict de l'auteur. Consigne donnée à
+Claude : uniquement les faits de l'article, rien d'inventé ; si l'article ne
+répond pas à la question du titre, il le dit. Le texte reste modifiable avant
+l'export.
+
+- **La clé** : variable d'environnement `ANTHROPIC_API_KEY`, sinon le fichier
+  `anthropic_api_key.txt` du dossier de données (voir « Où l'application range
+  ses fichiers »). Jamais dans le dépôt (`.gitignore`), ni dans le `.exe`, ni
+  dans les journaux. Fixer une limite de dépense dans la console Anthropic.
+- **Coût** : un appel par article (le résultat est mis en cache : rouvrir la
+  même news ne refacture rien). Modèle Précis (Sonnet) par défaut, Économique
+  (Haiku) au choix.
+- **Sans clé, hors ligne ou en erreur** : retour à l'extraction de phrases de
+  l'article (`news_story/article_text.py`), sans IA ; l'erreur est affichée
+  dans la fenêtre.
+
 ### Analyse de contenu d'un clip
 
 Depuis une carte du Radar, "🔊 Analyser le contenu" ecoute le clip localement et

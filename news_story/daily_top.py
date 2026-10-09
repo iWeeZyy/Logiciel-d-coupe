@@ -44,6 +44,7 @@ class TopItem:
     article: object
     image_path: Path | None
     subtitle: str = ""
+    ai_error: str = ""        # resume Claude impossible (cle refusee...) : message
 
 
 def french_date(day: date) -> str:
@@ -220,8 +221,21 @@ def prepare_item(article) -> TopItem:
     chapo = page_chapo(page)
     chapo = chapo if len(chapo) >= 60 and not chapo.endswith("...") else article.summary
     subtitle = default_subtitle(article.title, chapo)
+    # Claude lit l'article et redige l'info principale (et la reponse au
+    # titre) ; sans cle ou en erreur, extraction de phrases de l'article.
+    from news_story import ai_summary
+
+    ai_error = ""
+    if page and ai_summary.is_configured():
+        try:
+            summary = ai_summary.summarize(article.title, clean_subtitle(chapo), page,
+                                           url=article.url)
+        except ai_summary.AiSummaryError as error:
+            ai_error = str(error)
+        else:
+            return TopItem(article=article, image_path=image_path, subtitle=summary.text)
     if is_teaser(article.title, chapo) and page:
         answer = answer_from_article(article.title, page, chapo=clean_subtitle(chapo))
         if answer:
             subtitle = answer
-    return TopItem(article=article, image_path=image_path, subtitle=subtitle)
+    return TopItem(article=article, image_path=image_path, subtitle=subtitle, ai_error=ai_error)

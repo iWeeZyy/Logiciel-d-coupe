@@ -475,7 +475,7 @@ class TestCinemaSansVideo:
         p1, p2 = _patched_single_candidate()
         with p1, p2, patch("gui.radar.story_dialog.fetch_video_url",
                            lambda url: calls.append(url) or "https://www.youtube.com/watch?v=AAAAAAAAAAA"), \
-                patch("gui.radar.story_dialog._article_answer", lambda article: ""):
+                patch("gui.radar.story_dialog._article_answer", lambda article, *a: ""):
             from gui.radar.story_dialog import StoryDialog
 
             dialog = StoryDialog(_fake_article(title="Un film ?"), theme="cinema")
@@ -490,7 +490,7 @@ class TestCinemaSansVideo:
     def test_la_reponse_remplace_le_chapo_et_rejoint_la_legende(self, app):
         p1, p2 = _patched_single_candidate()
         answer = "Cependant, aucun des 4 haut-parleurs n'est dédié aux effets verticaux."
-        with p1, p2, patch("gui.radar.story_dialog._article_answer", lambda article: answer):
+        with p1, p2, patch("gui.radar.story_dialog._article_answer", lambda article, *a: answer):
             from gui.radar.story_dialog import StoryDialog
 
             dialog = StoryDialog(_fake_article(title="Que vaut le Dolby Atmos ?",
@@ -501,7 +501,7 @@ class TestCinemaSansVideo:
 
     def test_un_chapo_retouche_n_est_pas_ecrase(self, app):
         p1, p2 = _patched_single_candidate()
-        with p1, p2, patch("gui.radar.story_dialog._article_answer", lambda article: ""):
+        with p1, p2, patch("gui.radar.story_dialog._article_answer", lambda article, *a: ""):
             from gui.radar.story_dialog import StoryDialog
 
             dialog = StoryDialog(_fake_article(title="Que vaut le Dolby Atmos ?"), theme="cinema")

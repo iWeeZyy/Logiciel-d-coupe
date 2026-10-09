@@ -14,6 +14,9 @@ config/gui_settings.json
 
 # Cle API YouTube -- jamais commitee (voir README, section recherche YouTube).
 youtube_api_key.txt
+# Cle API Claude (news cine, news_story/ai_summary.py) -- jamais commitee.
+anthropic_api_key.txt
+anthropic_model.txt
 
 # Sorties du build .exe (voir .github/workflows/build-windows-exe.yml et
 # build-windows-gui.yml).

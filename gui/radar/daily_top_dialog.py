@@ -29,7 +29,7 @@ MAX_ITEMS = 10          # au-dela, un carrousel se lit mal
 
 class _TopThread(QThread):
     progress = Signal(str)
-    ready = Signal(str, str)      # dossier, legende
+    ready = Signal(str, str, str)  # dossier, legende, avertissement IA
     failed = Signal(str)
 
     def __init__(self, articles, out_dir: Path, logo_path, cancel_token: CancelToken):
@@ -45,7 +45,7 @@ class _TopThread(QThread):
             for i, article in enumerate(self.articles, 1):
                 if self.cancel_token.is_cancelled:
                     return
-                self.progress.emit(f"Récupération des news… {i}/{len(self.articles)}")
+                self.progress.emit(f"Lecture des articles… {i}/{len(self.articles)}")
                 items.append(prepare_item(article))
             if not any(item.image_path for item in items):
                 self.failed.emit("Aucune image n'a pu être récupérée pour ces news "
@@ -59,7 +59,9 @@ class _TopThread(QThread):
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
             self.failed.emit(str(error))
         else:
-            self.ready.emit(str(self.out_dir), caption)
+            errors = [item.ai_error for item in items if item.ai_error]
+            note = f"⚠ IA Claude : {errors[0]} Texte tiré des articles à la place." if errors else ""
+            self.ready.emit(str(self.out_dir), caption, note)
 
 
 def _cinema_cta() -> str:
@@ -160,12 +162,12 @@ class DailyTopDialog(QDialog):
         self._thread.failed.connect(self._on_failed)
         self._thread.start()
 
-    def _on_ready(self, folder: str, caption: str) -> None:
+    def _on_ready(self, folder: str, caption: str, note: str = "") -> None:
         self._thread = None
         self._caption = caption
         self.copy_btn.setEnabled(True)
         self._update_count()
-        self.status_label.setText(f"Top du jour créé : {folder}")
+        self.status_label.setText(f"Top du jour créé : {folder}" + (f"\n{note}" if note else ""))
         QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def _on_failed(self, message: str) -> None:

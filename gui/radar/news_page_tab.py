@@ -137,6 +137,12 @@ class GamingNewsTab(QWidget):
                                       "couverture + une image par news + la légende.")
         self.daily_top_btn.clicked.connect(self._open_daily_top)
         header.addWidget(self.daily_top_btn)
+        # Cle API Claude : le logiciel lit les articles cine et redige l'info.
+        self.ai_btn = QPushButton("🔑 IA Claude")
+        self.ai_btn.setToolTip("Clé API Claude : texte sous le titre rédigé à partir de "
+                               "l'article (info principale, réponse à la question du titre).")
+        self.ai_btn.clicked.connect(self._open_ai_settings)
+        header.addWidget(self.ai_btn)
         header.addStretch(1)
         outer.addLayout(header)
 
@@ -271,6 +277,11 @@ class GamingNewsTab(QWidget):
     def cinema_articles(self) -> list:
         """News du fil Cine et series, dans l'ordre du fil (unes en tete)."""
         return [a for a in self._articles if self._theme_of(a) == "cinema"]
+
+    def _open_ai_settings(self) -> None:
+        from gui.radar.claude_key_dialog import ClaudeKeyDialog
+
+        ClaudeKeyDialog(self).exec()
 
     def _open_daily_top(self) -> None:
         from gui.radar.daily_top_dialog import DailyTopDialog

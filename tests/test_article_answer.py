@@ -142,3 +142,28 @@ class TestEncodageEtBruit:
                 'Cyberpunk 2077. Confirmée simultanément">')
         assert page_chapo(page) == "Paramount va produire un film Cyberpunk 2077."
         assert page_chapo('<meta name="description" content="Un début sans fin">') == ""
+
+
+class TestResumeDuSite:
+    _PAGE = """<article>
+<div class="js-ia-abstract"><p>Résumé par IA, vérifié par la rédaction</p><ul>
+<li>David Corenswet confirme que le costume de Superman a été réingéniéré pour être plus fonctionnel.</li>
+<li>Le film Superman: Man of Tomorrow est attendu en France le 7 juillet 2027.</li></ul></div>
+<p>Si le premier opus posait les bases familiales, Superman: Man of Tomorrow monte d’un cran dans l’intensité brute.</p>
+<p>Ce changement de look n’a rien d’un simple caprice esthétique, mais pourquoi change-t-il de costume ?</p>
+</article>"""
+
+    def test_une_accroche_prend_les_points_cles_du_site(self):
+        from news_story.article_text import is_teaser, summary_points
+
+        title = "Superman changera déjà de costume dans la suite de 2027, et pour une bonne raison"
+        assert len(summary_points(self._PAGE)) == 2
+        assert is_teaser(title)
+        answer = answer_from_article(title, self._PAGE)
+        assert answer.startswith("David Corenswet confirme que le costume de Superman a été réingéniéré")
+        assert answer.endswith("7 juillet 2027.")
+
+    def test_point_positif_est_une_accroche(self):
+        from news_story.article_text import is_teaser
+
+        assert is_teaser("Cyberpunk 2077 : un film live est en route avec déjà un gros point positif")
