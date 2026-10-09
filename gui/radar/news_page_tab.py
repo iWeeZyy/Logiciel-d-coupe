@@ -74,6 +74,17 @@ def _card_summary(text: str) -> str:
     return text
 
 
+def _rank_badge(article) -> str:
+    """« ⭐ À la une » pour un article mis en avant par son site, « 🔥 Top n°X »
+    pour une bande-annonce du top AlloCine (gaming_news/featured.py)."""
+    rank = getattr(article, "rank", None)
+    if rank is None:
+        return ""
+    if article.source_key == "allocine_top_trailers":
+        return f"🔥 Top n°{rank + 1}"
+    return "⭐ À la une"
+
+
 class GamingNewsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -212,6 +223,11 @@ class GamingNewsTab(QWidget):
         frame, layout = _card()
         header = QHBoxLayout()
         header.addWidget(QLabel(article.source_label))
+        badge = _rank_badge(article)
+        if badge:
+            badge_label = QLabel(badge)
+            badge_label.setStyleSheet("color: #E0A24C; font-weight: 700;")
+            header.addWidget(badge_label)
         header.addStretch(1)
         if article.published_at:
             date_label = QLabel(article.published_at[:16])

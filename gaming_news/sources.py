@@ -29,17 +29,27 @@ DEFAULT_SOURCES = (
               feed_url="https://www.breakflip.com/actualites/", kind="breakflip"),
     # Cinema & series -- flux verifies le 2026-10-07 (Premiere et Le Film
     # Francais n'exposent pas de flux RSS exploitable).
+    # featured_url : page dont l'ordre dit ce qui est « a la une » (verifie
+    # le 2026-10-09) -- ces articles passent en tete du fil.
     NewsSource(key="allocine", label="AlloCiné",
-              feed_url="https://www.allocine.fr/rss/news.xml", theme="cinema"),
+              feed_url="https://www.allocine.fr/rss/news.xml", theme="cinema",
+              featured_url="https://www.allocine.fr/"),
     NewsSource(key="ecranlarge", label="Écran Large",
-              feed_url="https://www.ecranlarge.com/rss/", theme="cinema"),
+              feed_url="https://www.ecranlarge.com/rss/", theme="cinema",
+              featured_url="https://www.ecranlarge.com/"),
     NewsSource(key="cinechronicle", label="CinéChronicle",
-              feed_url="https://www.cinechronicle.com/feed/", theme="cinema"),
+              feed_url="https://www.cinechronicle.com/feed/", theme="cinema",
+              featured_url="https://www.cinechronicle.com/"),
     NewsSource(key="numerama_cinema", label="Numerama Ciné",
-              feed_url="https://www.numerama.com/pop-culture/cinema/feed/", theme="cinema"),
+              feed_url="https://www.numerama.com/pop-culture/cinema/feed/", theme="cinema",
+              featured_url="https://www.numerama.com/pop-culture/cinema/"),
     # Bandes-annonces : flux des chaines YouTube (verifies le 2026-10-08).
     # FilmsActu ne publie que des bandes-annonces ; les studios publient
     # aussi extraits et Shorts, d'ou le filtre sur le titre.
+    # Top bandes-annonces AlloCine, dans l'ordre du top : en tete du fil.
+    NewsSource(key="allocine_top_trailers", label="AlloCiné · Top bandes-annonces",
+              feed_url="https://www.allocine.fr/video/bandes-annonces/", kind="allocine_trailers",
+              theme="trailers"),
     NewsSource(key="yt_filmsactu", label="FilmsActu",
               feed_url=_YT + "UC_i8X3p8oZNaik8X513Zn1Q", theme="trailers"),
     NewsSource(key="yt_allocine", label="AlloCiné (YouTube)",
@@ -68,7 +78,7 @@ THEME_LABELS = {"gaming": "🎮 Gaming", "cinema": "🎬 Cinéma & séries",
 
 # Lecteurs connus (voir feed_fetcher.fetch_source) -- une valeur inconnue
 # dans la config retombe sur "rss" plutot que d'ecarter la source.
-KINDS = ("rss", "breakflip")
+KINDS = ("rss", "breakflip", "allocine_trailers")
 
 
 def load_sources(config: dict | None = None) -> list[NewsSource]:
@@ -98,7 +108,8 @@ def load_sources(config: dict | None = None) -> list[NewsSource]:
         if theme not in THEMES:
             theme = "gaming"
         title_filter = str(entry.get("title_filter") or "").strip()
+        featured_url = str(entry.get("featured_url") or "").strip()
         sources.append(NewsSource(key=key, label=label, feed_url=feed_url, kind=kind, theme=theme,
-                                  title_filter=title_filter))
+                                  title_filter=title_filter, featured_url=featured_url))
 
     return sources or list(DEFAULT_SOURCES)

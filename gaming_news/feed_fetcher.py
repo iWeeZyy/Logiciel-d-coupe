@@ -48,8 +48,18 @@ def fetch_all_sources(sources, timeout_s: float = DEFAULT_TIMEOUT_S,
     articles: list[Article] = []
     for source in sources:
         articles.extend(fetch_source(source, timeout_s=timeout_s, max_articles=max_articles))
-    articles.sort(key=lambda a: _sortable_date(a.published_at), reverse=True)
-    return articles
+    return sort_articles(articles)
+
+
+def sort_articles(articles: list[Article]) -> list[Article]:
+    """Les articles « a la une » / du top d'abord (rang 0 de chaque site,
+    puis rang 1... : les unes des sites s'alternent), puis tous les autres
+    du plus recent au plus ancien."""
+    ranked = [a for a in articles if a.rank is not None]
+    others = [a for a in articles if a.rank is None]
+    ranked.sort(key=lambda a: a.rank)
+    others.sort(key=lambda a: _sortable_date(a.published_at), reverse=True)
+    return ranked + others
 
 
 def _sortable_date(text: str):
@@ -96,6 +106,10 @@ def fetch_source(source: NewsSource, timeout_s: float = DEFAULT_TIMEOUT_S,
 
         return breakflip.fetch(source, timeout_s=timeout_s, max_articles=max_articles,
                                user_agent=USER_AGENT)
+    if source.kind == "allocine_trailers":
+        from gaming_news.featured import fetch_allocine_trailers
+
+        return fetch_allocine_trailers(source, timeout_s, max_articles)
 
     try:
         response = requests.get(
@@ -107,7 +121,14 @@ def fetch_source(source: NewsSource, timeout_s: float = DEFAULT_TIMEOUT_S,
         logger.warning(f"Flux « {source.label} » injoignable : {e}")
         return []
 
-    return parse_feed(response.content, source, max_articles=max_articles)
+    articles = parse_feed(response.content, source, max_articles=max_articles)
+    if source.featured_url and articles:
+        from gaming_news.featured import fetch_page, rank_featured
+
+        page = fetch_page(source.featured_url, timeout_s)
+        if page:
+            articles = rank_featured(articles, page, source.featured_url)
+    return articles
 
 
 def parse_feed(raw_xml: bytes | str, source: NewsSource,

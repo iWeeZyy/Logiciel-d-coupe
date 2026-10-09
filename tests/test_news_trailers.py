@@ -75,8 +75,12 @@ class TestSources:
 
         trailers = [s for s in load_sources(load_gaming_news_config()) if s.theme == "trailers"]
         assert len(trailers) >= 5
+        youtube = [s for s in trailers if s.kind == "rss"]
+        assert len(youtube) >= 5
         assert all(s.feed_url.startswith("https://www.youtube.com/feeds/videos.xml?channel_id=UC")
-                   for s in trailers)
+                   for s in youtube)
+        # Le top AlloCine est lu depuis sa page, pas depuis un flux.
+        assert [s.key for s in trailers if s.kind == "allocine_trailers"] == ["allocine_top_trailers"]
 
 
 class TestVignettesYouTube:

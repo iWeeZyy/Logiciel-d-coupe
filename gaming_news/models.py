@@ -35,6 +35,9 @@ class NewsSource:
     kind: str = "rss"
     theme: str = "gaming"
     title_filter: str = ""
+    # Page dont l'ordre des liens dit quels articles sont « a la une »
+    # (gaming_news/featured.py) ; vide = pas de mise en avant.
+    featured_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,9 @@ class Article:
     published_at: str = ""  # tel que fourni par le flux, jamais reformate ici
     summary: str = ""
     feed_image_url: str = ""
+    # Rang « a la une » / dans un top (0 = premier) ; None = article ordinaire.
+    # Les articles classes passent avant les autres dans le fil.
+    rank: int | None = None
 
     @property
     def article_id(self) -> str:
