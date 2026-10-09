@@ -68,3 +68,21 @@ class TestFenetre:
         assert not dialog.export_btn.isEnabled()       # plus de 10
         dialog.cleanup()
         app.processEvents()
+
+
+class TestPhraseSousLeLogo:
+    def test_la_phrase_est_sous_le_logo(self, tmp_path):
+        from news_story.post_composer import compose_post
+        from news_story.video_composer import DEFAULT_CTA
+
+        src = tmp_path / "s.png"
+        Image.new("RGB", (1080, 1920), (0, 0, 0)).save(src)
+        logo = tmp_path / "logo.png"
+        Image.new("RGBA", (200, 200), (255, 0, 255, 255)).save(logo)
+        out = compose_post(src, tmp_path / "p.png", title="Un film", label="", vertical=True,
+                           logo_path=logo, cta=DEFAULT_CTA["cinema"])
+        img = Image.open(out).convert("RGB")
+        logo_rows = [y for y in range(img.height) if img.getpixel((530, y)) == (255, 0, 255)]
+        below = img.crop((0, max(logo_rows) + 1, img.width, img.height - 400)).convert("L")
+        assert below.getextrema()[1] > 240          # du texte blanc sous le logo
+        assert DEFAULT_CTA["cinema"].endswith("🎬")

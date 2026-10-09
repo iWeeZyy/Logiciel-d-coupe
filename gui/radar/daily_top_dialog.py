@@ -53,12 +53,22 @@ class _TopThread(QThread):
                 return
             compose_daily_top(
                 items, self.out_dir, logo_path=Path(self.logo_path) if self.logo_path else None,
+                cta=_cinema_cta(),
                 on_progress=lambda i, n: self.progress.emit(f"Création des images… {i}/{n}"))
             caption = (self.out_dir / "legende.txt").read_text(encoding="utf-8")
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
             self.failed.emit(str(error))
         else:
             self.ready.emit(str(self.out_dir), caption)
+
+
+def _cinema_cta() -> str:
+    """La phrase sous le logo, telle que reglee dans « Créer un visuel » pour
+    le compte cinema (sinon celle par defaut, avec le clap)."""
+    from news_story.video_composer import DEFAULT_CTA
+
+    value = QSettings(_SETTINGS_ORG, _SETTINGS_APP).value("cta/cinema", None)
+    return str(value) if value is not None else DEFAULT_CTA["cinema"]
 
 
 def _cinema_logo() -> str | None:

@@ -82,7 +82,7 @@ def build_daily_caption(items: list[TopItem], day: date) -> str:
 
 
 def compose_cover(out_path, *, day: date, count: int, background: Path | None = None,
-                  logo_path: Path | None = None) -> Path:
+                  logo_path: Path | None = None, cta: str = "") -> Path:
     """Couverture 9:16 : « TOP NEWS CINÉ », la date, le nombre de news, le
     logo -- sur l'image de la premiere news floutee et assombrie (ou un fond
     sombre uni si elle manque)."""
@@ -128,9 +128,25 @@ def compose_cover(out_path, *, day: date, count: int, background: Path | None = 
     y += sum(date_font.getmetrics()) + 24
     centered(f"{count} infos ciné à ne pas rater", info_font, y, shadow=2)
 
+    # Bas : logo, puis la phrase d'appel dessous (comme sur chaque news).
+    from news_story.video_composer import (_CTA_LINE_HEIGHT, _CTA_SIZE, _cta_block, _draw_rich,
+                                           _rich_width)
+
+    cta_font, cta_lines, cta_h = _cta_block(draw, cta, W - _MARGIN_LEFT - _MARGIN_RIGHT)
+    y = _SAFE_BOTTOM - cta_h
     logo = _load_logo(logo_path)
     if logo is not None:
-        canvas.paste(logo, (int(center_x - logo.width / 2), _SAFE_BOTTOM - logo.height), logo)
+        canvas.paste(logo, (int(center_x - logo.width / 2), y - (14 if cta_h else 0) - logo.height),
+                     logo)
+    if cta_lines:
+        layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        ldraw = ImageDraw.Draw(layer)
+        for line in cta_lines:
+            x = center_x - _rich_width(ldraw, line, cta_font, _CTA_SIZE) / 2
+            _draw_rich(layer, ldraw, ldraw, (x, y), line, cta_font, _CTA_SIZE, (255, 255, 255, 255),
+                       (0, 0, 0, 255))
+            y += int(_CTA_SIZE * _CTA_LINE_HEIGHT)
+        canvas = Image.alpha_composite(canvas.convert("RGBA"), layer).convert("RGB")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(out_path, format="PNG")
@@ -138,21 +154,25 @@ def compose_cover(out_path, *, day: date, count: int, background: Path | None = 
 
 
 def compose_daily_top(items: list[TopItem], out_dir, *, day: date | None = None,
-                      logo_path: Path | None = None, on_progress=None) -> list[Path]:
+                      logo_path: Path | None = None, on_progress=None,
+                      cta: str | None = None) -> list[Path]:
     """Ecrit la couverture, une image par news et legende.txt dans `out_dir`.
     Une news sans image est ignoree (jamais une image vide). Renvoie les
     images ecrites, dans l'ordre du carrousel."""
     from news_story.story_composer import StoryOptions, compose_story
     from news_story.story_templates import TEMPLATE_POST_VERTICAL
 
+    from news_story.video_composer import DEFAULT_CTA
+
     day = day or date.today()
+    cta = DEFAULT_CTA["cinema"] if cta is None else cta
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     usable = [item for item in items if item.image_path and Path(item.image_path).is_file()]
     written: list[Path] = []
     written.append(compose_cover(out_dir / "00_couverture.png", day=day, count=len(usable),
                                  background=usable[0].image_path if usable else None,
-                                 logo_path=logo_path))
+                                 logo_path=logo_path, cta=cta))
     for i, item in enumerate(usable, 1):
         if on_progress:
             on_progress(i, len(usable))
@@ -162,7 +182,7 @@ def compose_daily_top(items: list[TopItem], out_dir, *, day: date | None = None,
             source_label=item.article.source_label, label=f"NEWS {i}/{len(usable)}",
             branding_enabled=logo_path is not None,
             branding_path=str(logo_path) if logo_path else None,
-            subtitle=item.subtitle)
+            subtitle=item.subtitle, cta=cta)
         path = out_dir / f"{i:02d}_{_slug(item.article.title)}.png"
         compose_story(item.image_path, path, options)
         written.append(path)

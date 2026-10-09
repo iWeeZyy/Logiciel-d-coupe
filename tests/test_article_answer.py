@@ -35,8 +35,9 @@ class TestReponse:
     def test_la_reponse_est_tiree_de_la_section_qui_repond(self):
         answer = answer_from_article(_TITLE, _PAGE, chapo=_CHAPO)
         assert "aucun des 4 haut-parleurs" in answer
-        # « Cependant » s'appuie sur la phrase d'avant : elle est gardee.
-        assert answer.startswith("L’ensemble est aussi compatible Dolby Atmos")
+        # « Cependant » s'appuie sur la phrase d'avant : elle est gardee, juste avant.
+        assert "L’ensemble est aussi compatible Dolby Atmos pour projeter le son au-dessus du " \
+               "spectateur. Cependant, aucun des 4 haut-parleurs" in answer
 
     def test_rien_n_est_invente(self):
         answer = answer_from_article(_TITLE, _PAGE, chapo=_CHAPO)

@@ -590,8 +590,9 @@ class StoryDialog(QDialog):
         self.label_combo.setVisible(is_post)
         self.opacity_caption.setVisible(is_video)
         self.opacity_combo.setVisible(is_video)
-        self.cta_caption.setVisible(is_video)
-        self.cta_edit.setVisible(is_video)
+        # Phrase sous le logo : posts image et video.
+        self.cta_caption.setVisible(is_post)
+        self.cta_edit.setVisible(is_post)
         self.subtitle_caption.setVisible(is_post)
         self.subtitle_edit.setVisible(is_post)
         # Le post a une mise en page fixe (titre en bas) : pas de position.

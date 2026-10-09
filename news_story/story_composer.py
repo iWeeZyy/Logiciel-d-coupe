@@ -452,6 +452,7 @@ def _compose_post(image_path: Path, out_path: Path, options: StoryOptions, templ
     title, label = post_text(options, template)
     return compose_post(
         image_path, out_path, title=title, label=label, subtitle=post_subtitle(options),
+        cta=options.cta,
         logo_path=_branding_path(options) if options.branding_enabled else None,
         title_scale=options.title_scale, output_format=options.output_format,
         vertical=template.key == TEMPLATE_POST_VERTICAL)

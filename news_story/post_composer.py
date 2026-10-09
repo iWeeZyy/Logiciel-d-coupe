@@ -57,6 +57,7 @@ _LOGO_MAX_W = 300
 _BOTTOM_MARGIN = 54
 _GAP_TITLE_LOGO = 34
 _GAP_LABEL_TITLE = 26
+_GAP_LOGO_CTA = 14
 _GRADIENT_START_FRAC = 0.40      # le degrade commence a 40 % de la hauteur
 _GRADIENT_MAX_ALPHA = 240
 _GRADIENT_COLOR = (10, 10, 14)
@@ -320,7 +321,7 @@ def _load_logo(path: Path | None):
 def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
                  label: str = DEFAULT_LABEL, logo_path: Path | None = None,
                  title_scale: float = 1.0, output_format: str = "PNG",
-                 vertical: bool = False, subtitle: str = "") -> Path:
+                 vertical: bool = False, subtitle: str = "", cta: str = "") -> Path:
     """Compose le post et l'ecrit a `out_path` : 4:5 pour le fil Instagram,
     ou 9:16 (`vertical`) pour TikTok, Reels et Story -- meme mise en page,
     bloc de texte remonte hors de l'interface de ces applications. Propage
@@ -349,6 +350,17 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
     # mesure AVANT de poser le degrade : c'est sa hauteur qui decide s'il
     # reste dans la zone basse ou s'il prend toute l'image.
     bottom = height - bottom_margin
+    # Phrase d'appel SOUS le logo (« N'hesitez pas a me suivre... 🎬 »),
+    # meme rendu que sur les videos (emojis dessines en image).
+    cta_layer = None
+    if cta and cta.strip():
+        from news_story.video_composer import _cta_block
+
+        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        cta_font, cta_lines, cta_h = _cta_block(probe, _french_spacing(cta), width - margin_l - margin_r)
+        if cta_lines:
+            cta_layer = (cta_font, cta_lines, bottom - cta_h)
+            bottom -= cta_h + _GAP_LOGO_CTA
     logo = _load_logo(logo_path)
     logo_y = bottom - logo.height if logo is not None else bottom
     if logo is not None:
@@ -382,6 +394,19 @@ def compose_post(image_path: str | Path, out_path: str | Path, *, title: str,
     _apply_gradient(canvas, gradient_start)
     if logo is not None:
         canvas.paste(logo, (int(center_x - logo.width / 2), logo_y), logo)
+    if cta_layer is not None:
+        from news_story.video_composer import _CTA_LINE_HEIGHT, _CTA_SIZE, _draw_rich, _rich_width
+
+        cta_font, cta_lines, y = cta_layer
+        overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        odraw = ImageDraw.Draw(overlay)
+        for line in cta_lines:
+            x = center_x - _rich_width(odraw, line, cta_font, _CTA_SIZE) / 2
+            _draw_rich(overlay, odraw, odraw, (x, y), line, cta_font, _CTA_SIZE,
+                       (255, 255, 255, 255), (0, 0, 0, 255))
+            y += int(_CTA_SIZE * _CTA_LINE_HEIGHT)
+        canvas = Image.alpha_composite(canvas.convert("RGBA"), overlay).convert("RGB")
+        draw = ImageDraw.Draw(canvas)
 
     if title or subtitle:
         top = bottom - fitted[6]
