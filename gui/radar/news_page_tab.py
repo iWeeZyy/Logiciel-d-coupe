@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 from core.config_loader import load_gaming_news_config
 from gaming_news.feed_fetcher import fetch_all_sources
 from gaming_news.sources import THEME_LABELS, THEMES, load_sources
+from news_story import published
 
 
 class NewsScanThread(QThread):
@@ -89,6 +91,8 @@ def _rank_badge(article) -> str:
 class GamingNewsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._published: dict = {}
+        self._published_labels: list = []
         self.config = load_gaming_news_config()
         self.sources = load_sources(self.config)
         scan_cfg = self.config.get("scan", {}) or {}
@@ -137,6 +141,15 @@ class GamingNewsTab(QWidget):
                                       "couverture + une image par news + la légende.")
         self.daily_top_btn.clicked.connect(self._open_daily_top)
         header.addWidget(self.daily_top_btn)
+        # Les autres carrousels cine : sorties, box-office, devine le film.
+        self.carousels_btn = QPushButton("🎞 Carrousels ciné")
+        self.carousels_btn.setToolTip("Sorties de la semaine, box-office, « Devine le film ».")
+        menu = QMenu(self.carousels_btn)
+        menu.addAction("🍿 Sorties de la semaine", lambda: self._open_film_carousel("releases"))
+        menu.addAction("📊 Box-office France", lambda: self._open_film_carousel("box_office"))
+        menu.addAction("❓ Devine le film", self._open_guess_film)
+        self.carousels_btn.setMenu(menu)
+        header.addWidget(self.carousels_btn)
         # Cle API Claude : le logiciel lit les articles cine et redige l'info.
         self.ai_btn = QPushButton("🔑 IA Claude")
         self.ai_btn.setToolTip("Clé API Claude : texte sous le titre rédigé à partir de "
@@ -223,6 +236,8 @@ class GamingNewsTab(QWidget):
 
     def _render(self) -> None:
         self._clear()
+        self._published = published.load()
+        self._published_labels = []
         if not self._articles:
             self.status_label.setText(
                 "Aucune actualité récupérée. Vérifiez la connexion internet, ou les adresses de "
@@ -242,6 +257,11 @@ class GamingNewsTab(QWidget):
             badge_label = QLabel(badge)
             badge_label.setStyleSheet("color: #E0A24C; font-weight: 700;")
             header.addWidget(badge_label)
+        done = QLabel(published.badge(article.url, self._published))
+        done.setStyleSheet("color: #6BBF59; font-weight: 700;")
+        done.setVisible(bool(done.text()))
+        self._published_labels.append((article.url, done))
+        header.addWidget(done)
         header.addStretch(1)
         if article.published_at:
             date_label = QLabel(article.published_at[:16])
@@ -278,6 +298,16 @@ class GamingNewsTab(QWidget):
         """News du fil Cine et series, dans l'ordre du fil (unes en tete)."""
         return [a for a in self._articles if self._theme_of(a) == "cinema"]
 
+    def _open_film_carousel(self, kind: str) -> None:
+        from gui.radar.film_carousel_dialog import FilmCarouselDialog
+
+        FilmCarouselDialog(kind, parent=self).exec()
+
+    def _open_guess_film(self) -> None:
+        from gui.radar.guess_film_dialog import GuessFilmDialog
+
+        GuessFilmDialog(parent=self).exec()
+
     def _open_ai_settings(self) -> None:
         from gui.radar.claude_key_dialog import ClaudeKeyDialog
 
@@ -294,12 +324,23 @@ class GamingNewsTab(QWidget):
             return
         dialog = DailyTopDialog(articles, parent=self)
         dialog.exec()
+        self._refresh_published()
 
     def _open_story_dialog(self, article) -> None:
         from gui.radar.story_dialog import StoryDialog
 
         dialog = StoryDialog(article, parent=self, theme=self._theme_of(article))
         dialog.exec()
+        self._refresh_published()
+
+    def _refresh_published(self) -> None:
+        """Met a jour les etiquettes « Déjà publiée » sans reconstruire la
+        liste (la position de defilement est gardee)."""
+        self._published = published.load()
+        for url, label in getattr(self, "_published_labels", []):
+            text = published.badge(url, self._published)
+            label.setText(text)
+            label.setVisible(bool(text))
 
     def cleanup(self) -> None:
         """Meme nom que les autres pages/onglets du Radar (voir

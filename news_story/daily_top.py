@@ -84,10 +84,14 @@ def build_daily_caption(items: list[TopItem], day: date) -> str:
 
 
 def compose_cover(out_path, *, day: date, count: int, background: Path | None = None,
-                  logo_path: Path | None = None, cta: str = "") -> Path:
-    """Couverture 9:16 : « TOP NEWS CINÉ », la date, le nombre de news, le
+                  logo_path: Path | None = None, cta: str = "",
+                  heading: tuple[str, str] = ("TOP NEWS", "CINÉ"), date_text: str | None = None,
+                  info: str | None = None) -> Path:
+    """Couverture 9:16 : deux lignes de titre (« TOP NEWS » / « CINÉ » par
+    defaut), la date, une ligne d'info (« 5 infos ciné à ne pas rater »), le
     logo -- sur l'image de la premiere news floutee et assombrie (ou un fond
-    sombre uni si elle manque)."""
+    sombre uni si elle manque). Les autres carrousels (sorties, box-office,
+    devine le film) changent les textes, pas la mise en page."""
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
     from news_story.post_composer import _font, _load_logo, _subtitle_font
@@ -116,15 +120,19 @@ def compose_cover(out_path, *, day: date, count: int, background: Path | None = 
         draw.text((x + shadow, y + shadow), text, font=font, fill=black)
         draw.text((x, y), text, font=font, fill=fill)
 
-    # « TOP NEWS » remplit la largeur sans deborder des marges (sous les
-    # boutons TikTok a droite).
+    # La 1re ligne remplit la largeur sans deborder des marges (sous les
+    # boutons TikTok a droite) ; la 2e aussi, a sa taille plus petite.
     max_w = W - _MARGIN_LEFT - _MARGIN_RIGHT
-    size = 230
-    while size > 120 and draw.textlength("TOP NEWS", font=_font(size)) > max_w:
-        size -= 4
-    big, mid = _font(size), _font(120)
+    line1, line2 = heading
+
+    def fitted(text: str, size: int):
+        while size > 60 and draw.textlength(text, font=_font(size)) > max_w:
+            size -= 4
+        return _font(size)
+
+    big, mid = fitted(line1, 230), fitted(line2, 120)
     date_font, info_font = _subtitle_font(64), _subtitle_font(52)
-    lines = [("TOP NEWS", big, white), ("CINÉ", mid, accent)]
+    lines = [(line1, big, white), (line2, mid, accent)]
     heights = [sum(f.getmetrics()) for _, f, _ in lines]
     block_h = sum(heights) + 40 + sum(date_font.getmetrics()) + 24 + sum(info_font.getmetrics())
     y = int(_SAFE_TOP + (_SAFE_BOTTOM - _SAFE_TOP - block_h) / 2) - 60
@@ -132,9 +140,11 @@ def compose_cover(out_path, *, day: date, count: int, background: Path | None = 
         centered(text, font, y, fill)
         y += h
     y += 40
-    centered(french_date(day).upper(), date_font, y, shadow=2)
+    centered((date_text if date_text is not None else french_date(day)).upper(), date_font, y,
+             shadow=2)
     y += sum(date_font.getmetrics()) + 24
-    centered(f"{count} infos ciné à ne pas rater", info_font, y, shadow=2)
+    centered(info if info is not None else f"{count} infos ciné à ne pas rater", info_font, y,
+             shadow=2)
 
     # Bas : logo, puis la phrase d'appel dessous (comme sur chaque news).
     from news_story.video_composer import (_CTA_LINE_HEIGHT, _CTA_SIZE, _cta_block, _draw_rich,

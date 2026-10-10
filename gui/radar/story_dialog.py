@@ -787,8 +787,11 @@ class StoryDialog(QDialog):
         self._export_thread.start()
 
     def _on_export_ready(self, path: str) -> None:
+        from news_story import published
+
         self.export_btn.setEnabled(True)
         self.status_label.setText("")
+        published.mark([self.article.url])     # plus pre-cochee dans le Top du jour
         QMessageBox.information(self, "Visuel exporté", f"Visuel enregistré :\n{path}")
 
     def _on_export_failed(self, message: str) -> None:

@@ -17,6 +17,8 @@ youtube_api_key.txt
 # Cle API Claude (news cine, news_story/ai_summary.py) -- jamais commitee.
 anthropic_api_key.txt
 anthropic_model.txt
+# Memoire des news deja exportees (news_story/published.py).
+news_publiees.json
 
 # Sorties du build .exe (voir .github/workflows/build-windows-exe.yml et
 # build-windows-gui.yml).

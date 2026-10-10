@@ -103,12 +103,22 @@ class DailyTopDialog(QDialog):
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
+        from news_story import published
+
         self.list = QListWidget()
-        for i, article in enumerate(self._articles):
+        done = published.load()
+        checked = 0
+        for article in self._articles:
+            # Une news deja publiee est signalee et n'est plus pre-cochee
+            # (demande de l'utilisateur : pas deux fois la meme news).
+            already = published.badge(article.url, done)
             badge = "⭐ " if getattr(article, "rank", None) is not None else ""
-            item = QListWidgetItem(f"{badge}{article.title}  —  {article.source_label}")
+            text = f"{badge}{article.title}  —  {article.source_label}"
+            item = QListWidgetItem(f"{text}   ({already})" if already else text)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if i < preselect else Qt.CheckState.Unchecked)
+            check = not already and checked < preselect
+            checked += check
+            item.setCheckState(Qt.CheckState.Checked if check else Qt.CheckState.Unchecked)
             self.list.addItem(item)
         self.list.itemChanged.connect(self._update_count)
         layout.addWidget(self.list, stretch=1)
@@ -156,6 +166,7 @@ class DailyTopDialog(QDialog):
             return
         out_dir = Path(parent) / folder_name(date.today())
         self.export_btn.setEnabled(False)
+        self._exported = articles
         self._thread = _TopThread(articles, out_dir, _cinema_logo(), self._cancel_token)
         self._thread.progress.connect(self.status_label.setText)
         self._thread.ready.connect(self._on_ready)
@@ -172,7 +183,10 @@ class DailyTopDialog(QDialog):
             thread.wait()
 
     def _on_ready(self, folder: str, caption: str, note: str = "") -> None:
+        from news_story import published
+
         self._release_thread()
+        published.mark([a.url for a in getattr(self, "_exported", [])])
         self._caption = caption
         self.copy_btn.setEnabled(True)
         self._update_count()

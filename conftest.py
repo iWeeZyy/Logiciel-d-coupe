@@ -38,3 +38,7 @@ def _pas_de_cle_claude(monkeypatch, tmp_path_factory):
     monkeypatch.setattr(ai_summary, "KEY_FILE", base / "anthropic_api_key.txt")
     monkeypatch.setattr(ai_summary, "MODEL_FILE", base / "anthropic_model.txt")
     monkeypatch.setattr(ai_summary, "CACHE_FILE", base / "ai_summaries.json")
+    # Ni la memoire des news publiees du developpeur.
+    from news_story import published
+
+    monkeypatch.setattr(published, "FILE", base / "news_publiees.json")
