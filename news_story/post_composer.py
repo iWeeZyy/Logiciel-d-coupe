@@ -65,10 +65,11 @@ _GRADIENT_COLOR = (10, 10, 14)
 # Format 9:16 (TikTok, Reels, Story) : l'interface de l'application recouvre
 # le bas de l'image (pseudo, description, musique : ~420 px sur TikTok et
 # Reels) et la colonne de boutons a droite (~130 px). Le bloc de texte est
-# donc remonte au-dessus de cette zone, avec une marge droite plus large que
-# la gauche (zones sures de TikTok) plutot que deux grandes marges qui
-# rapetissaient le titre.
-_VERTICAL_MARGIN_LEFT = 64
+# donc remonte au-dessus de cette zone. La marge de la colonne de boutons est
+# reprise a gauche : texte centre sur l'ECRAN (retour utilisateur -- avec une
+# marge gauche plus petite, tout paraissait decale de 38 px a gauche, et il a
+# prefere le centrage a quelques pixels de largeur de titre en plus).
+_VERTICAL_MARGIN_LEFT = 140
 _VERTICAL_MARGIN_RIGHT = 140
 _VERTICAL_BOTTOM_MARGIN = 440
 _VERTICAL_GRADIENT_START_FRAC = 0.26

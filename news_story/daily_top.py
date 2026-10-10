@@ -30,8 +30,9 @@ logger = get_logger()
 W, H = 1080, 1920
 _MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
            "septembre", "octobre", "novembre", "décembre")
-# Zones sures TikTok / Reels, comme le post 9:16 (post_composer).
-_MARGIN_LEFT, _MARGIN_RIGHT = 64, 140
+# Zones sures TikTok / Reels, comme le post 9:16 (post_composer) : marge des
+# boutons reprise a gauche, texte centre sur l'ecran.
+_MARGIN_LEFT, _MARGIN_RIGHT = 140, 140
 _SAFE_TOP, _SAFE_BOTTOM = int(H * 0.10), H - 440
 DEFAULT_COUNT = 5
 
@@ -115,7 +116,13 @@ def compose_cover(out_path, *, day: date, count: int, background: Path | None = 
         draw.text((x + shadow, y + shadow), text, font=font, fill=black)
         draw.text((x, y), text, font=font, fill=fill)
 
-    big, mid = _font(230), _font(120)
+    # « TOP NEWS » remplit la largeur sans deborder des marges (sous les
+    # boutons TikTok a droite).
+    max_w = W - _MARGIN_LEFT - _MARGIN_RIGHT
+    size = 230
+    while size > 120 and draw.textlength("TOP NEWS", font=_font(size)) > max_w:
+        size -= 4
+    big, mid = _font(size), _font(120)
     date_font, info_font = _subtitle_font(64), _subtitle_font(52)
     lines = [("TOP NEWS", big, white), ("CINÉ", mid, accent)]
     heights = [sum(f.getmetrics()) for _, f, _ in lines]
