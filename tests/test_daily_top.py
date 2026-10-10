@@ -48,7 +48,8 @@ class TestTopDuJour:
 
     def test_legende_sans_texte_invente(self):
         caption = build_daily_caption([TopItem(_article("Titre"), Path("x"), "")], date(2026, 1, 1))
-        assert caption == "🎬 Top news ciné du 1 janvier 2026\n\n1. Titre\n\nSources : AlloCiné\n"
+        assert caption == ("🎬 Top news ciné du 1 janvier 2026\n\n1. Titre\n\n"
+                           "Laquelle de ces news t'intéresse le plus ? 👇\n\nSources : AlloCiné\n")
 
 
 class TestFenetre:

@@ -143,10 +143,13 @@ class GamingNewsTab(QWidget):
         header.addWidget(self.daily_top_btn)
         # Les autres carrousels cine : sorties, box-office, devine le film.
         self.carousels_btn = QPushButton("🎞 Carrousels ciné")
-        self.carousels_btn.setToolTip("Sorties de la semaine, box-office, « Devine le film ».")
+        self.carousels_btn.setToolTip("Sorties de la semaine, box-office, presse vs public, "
+                                      "streaming, « Devine le film ».")
         menu = QMenu(self.carousels_btn)
         menu.addAction("🍿 Sorties de la semaine", lambda: self._open_film_carousel("releases"))
         menu.addAction("📊 Box-office France", lambda: self._open_film_carousel("box_office"))
+        menu.addAction("⚖️ Presse vs public", lambda: self._open_film_carousel("critics"))
+        menu.addAction("📺 Nouveautés streaming", lambda: self._open_film_carousel("streaming"))
         menu.addAction("❓ Devine le film", self._open_guess_film)
         self.carousels_btn.setMenu(menu)
         header.addWidget(self.carousels_btn)

@@ -78,6 +78,8 @@ def build_daily_caption(items: list[TopItem], day: date) -> str:
         label = item.article.source_label
         if label and label not in sources:
             sources.append(label)
+    lines.append("Laquelle de ces news t'intéresse le plus ? 👇")
+    lines.append("")
     if sources:
         lines.append("Sources : " + ", ".join(sources))
     return "\n".join(lines).strip() + "\n"

@@ -105,6 +105,7 @@ class _FetchImagesThread(QThread):
     video_found = Signal(str)                 # adresse de la video de l'article
     answer_found = Signal(str)                # reponse a la question du titre
     ai_status = Signal(str)                   # texte redige par Claude, ou son erreur
+    question_found = Signal(str)              # question aux abonnes (fin de legende)
 
     def __init__(self, article: Article, cancel_token: CancelToken, theme: str = "gaming"):
         super().__init__()
@@ -143,12 +144,13 @@ class _FetchImagesThread(QThread):
         elif self.theme == "cinema":
             # Toutes les news cine : l'info principale (et la reponse au
             # titre) sous le titre -- par Claude si une cle est configuree.
-            answer = _article_answer(self.article, self.ai_status.emit)
+            answer = _article_answer(self.article, self.ai_status.emit, self.question_found.emit)
             if answer and not self.cancel_token.is_cancelled:
                 self.answer_found.emit(answer)
 
 
-def _article_answer(article: Article, on_status=lambda message: None) -> str:
+def _article_answer(article: Article, on_status=lambda message: None,
+                    on_question=lambda question: None) -> str:
     """Texte sous le titre d'une news cine. Avec une cle API Claude : Claude
     lit l'article et redige l'info principale, et la reponse a la question
     du titre (news_story/ai_summary.py). Sans cle ou en erreur : pour un
@@ -176,6 +178,8 @@ def _article_answer(article: Article, on_status=lambda message: None) -> str:
             note = "" if summary.answer_found else " (l'article ne donne pas la réponse au titre)"
             on_status(f"Texte rédigé par Claude à partir de l'article{note} — relis-le avant "
                       "d'exporter.")
+            if summary.question:
+                on_question(summary.question)
             return summary.text
     if is_teaser(article.title, article.summary):
         return answer_from_article(article.title, page, chapo=chapo)
@@ -540,6 +544,7 @@ class StoryDialog(QDialog):
         self._fetch_thread.video_found.connect(self._on_video_found)
         self._fetch_thread.answer_found.connect(self._on_answer_found)
         self._fetch_thread.ai_status.connect(self.status_label.setText)
+        self._fetch_thread.question_found.connect(self._on_question_found)
         self._fetch_thread.start()
 
     def _on_answer_found(self, answer: str) -> None:
@@ -550,9 +555,21 @@ class StoryDialog(QDialog):
             self._auto_subtitle = answer
             self.subtitle_edit.setPlainText(answer)
         if self.caption_edit.toPlainText() == self._auto_caption:
-            self._auto_caption = build_caption(self.article.title, self.article.summary,
-                                               self.article.source_label, self.theme, answer=answer)
-            self.caption_edit.setPlainText(self._auto_caption)
+            self._answer = answer
+            self._refresh_auto_caption()
+
+    def _on_question_found(self, question: str) -> None:
+        """Question aux abonnes (Claude) : ajoutee en fin de legende, sauf si
+        l'utilisateur a deja retouche la legende."""
+        self._question = question
+        if self.caption_edit.toPlainText() == self._auto_caption:
+            self._refresh_auto_caption()
+
+    def _refresh_auto_caption(self) -> None:
+        self._auto_caption = build_caption(
+            self.article.title, self.article.summary, self.article.source_label, self.theme,
+            answer=getattr(self, "_answer", ""), question=getattr(self, "_question", ""))
+        self.caption_edit.setPlainText(self._auto_caption)
 
     def _on_template_chosen_by_user(self, _index: int) -> None:
         self._template_touched = True

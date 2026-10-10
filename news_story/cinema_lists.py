@@ -219,3 +219,137 @@ def fetch_film_stills(film: Film, timeout_s: float = 20) -> list[str]:
 
     url = photos_url(film)
     return parse_film_stills(fetch_page(url, timeout_s)) if url else []
+
+
+# ------------------------------------------- semaines passees, presse/public
+
+def agenda_url(wednesday) -> str:
+    """Page des sorties d'une semaine passee (« film/agenda/sem-2026-09-30/ »)."""
+    return f"{BASE_URL}film/agenda/sem-{wednesday.isoformat()}/"
+
+
+def rating_value(rating: str) -> float | None:
+    try:
+        return float(rating.replace(",", "."))
+    except (AttributeError, ValueError):
+        return None
+
+
+def rating_gap(film: Film) -> float | None:
+    """Note spectateurs moins note presse ; None s'il manque l'une des deux."""
+    press, public = rating_value(film.press_rating), rating_value(film.spectator_rating)
+    return None if press is None or public is None else round(public - press, 1)
+
+
+def fetch_recent_releases(weeks: int = 4, today=None, timeout_s: float = 20) -> list[Film]:
+    """Sorties des `weeks` dernieres semaines (celle-ci comprise), sans doublon."""
+    from datetime import date, timedelta
+
+    from gaming_news.featured import fetch_page
+
+    today = today or date.today()
+    wednesday = today - timedelta(days=(today.weekday() - 2) % 7)
+    films: list[Film] = []
+    seen: set[str] = set()
+    for week in range(weeks):
+        for film in parse_releases(fetch_page(agenda_url(wednesday - timedelta(weeks=week)),
+                                              timeout_s)):
+            key = film.film_id or film.title
+            if key not in seen:
+                seen.add(key)
+                films.append(film)
+    return films
+
+
+# ------------------------------------------------------------ streaming
+
+# Pages plateformes d'AlloCine. Chaque semaine, AlloCine y publie (pour
+# Netflix au moins) un article « Netflix : 19 nouveautés débarquent cette
+# semaine » : l'agenda jour par jour. Une plateforme sans cet article est
+# simplement absente du carrousel -- rien n'est devine.
+STREAMING_PLATFORMS = (
+    ("Netflix", "netflix/"), ("Disney+", "disney/"), ("Canal+", "mycanal/"),
+    ("Apple TV", "appletvplus/"), ("HBO Max", "max/"),
+    ("Paramount+", "paramountplus/"),
+)
+_NEWS_SERIES_URL = BASE_URL + "news/series/"
+_DAY_RE = re.compile(r"^(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b|incontournable",
+                     re.I)
+
+
+@dataclass
+class StreamingItem:
+    platform: str
+    title: str
+    kind: str = ""            # « Film », « Série », « Films »
+    day: str = ""             # « Vendredi 9 octobre »
+    synopsis: str = ""
+    url: str = ""             # fiche AlloCine du film / de la serie (affiche)
+    poster_url: str = ""
+
+
+def find_agenda_article(page_html: str, platform: str) -> str:
+    """Adresse du dernier article « <Plateforme> : … nouveautés … » de la page."""
+    for href, title in re.findall(r'meta-title-link"[^>]*href="(/article/[^"]+)"[^>]*>(.*?)</a>',
+                                  page_html or "", re.S):
+        title = _text(title)
+        if re.match(re.escape(platform) + r"\s*:", title, re.I) and "nouveaut" in title.lower():
+            return urljoin(BASE_URL, unescape(href))
+    return ""
+
+
+def parse_streaming_agenda(article_html: str, platform: str) -> list[StreamingItem]:
+    """Titres de l'agenda, jour par jour (« Vendredi 9 octobre »), plus
+    « L'incontournable de la semaine ». Les autres intertitres de l'article
+    (sans date) sont ignores ; un titre deja vu n'est pas repete."""
+    page = article_html or ""
+    start, end = page.find("<article"), page.find("</article>")
+    page = page[start:end] if start >= 0 and end > start else page
+    items: list[StreamingItem] = []
+    day = ""
+    for tag, inner in re.findall(r'<(h2|p)\b[^>]*>(.*?)</\1>', page, re.S):
+        text = _text(inner)
+        if tag == "h2":
+            day = text if _DAY_RE.search(text) else ""
+            continue
+        if not day or " - " not in text:
+            continue
+        head, _, rest = text.partition(" - ")
+        kind, _, synopsis = rest.partition(" : ")
+        head = re.sub(r"\s+,", ",", head).strip(" ,")
+        if any(i.title == head for i in items):
+            continue
+        link = re.search(r'href="(/(?:film|series)/[^"]+)"', inner)
+        items.append(StreamingItem(
+            platform=platform, title=head, kind=kind.strip(), day=day,
+            synopsis=synopsis.strip(),
+            url=urljoin(BASE_URL, unescape(link.group(1))) if link else ""))
+    return items
+
+
+def page_poster(page_html: str) -> str:
+    """Affiche d'une fiche film/serie (og:image), pleine taille."""
+    match = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', page_html or "")
+    return full_size(unescape(match.group(1))) if match else ""
+
+
+def fetch_streaming(timeout_s: float = 20, on_progress=None) -> list[StreamingItem]:
+    """Nouveautes de la semaine des plateformes qui publient leur agenda."""
+    from gaming_news.featured import fetch_page
+
+    series_news = fetch_page(_NEWS_SERIES_URL, timeout_s)
+    items: list[StreamingItem] = []
+    for name, path in STREAMING_PLATFORMS:
+        if on_progress:
+            on_progress(name)
+        article = find_agenda_article(fetch_page(BASE_URL + path, timeout_s), name) or \
+            find_agenda_article(series_news, name)
+        if article:
+            items += parse_streaming_agenda(fetch_page(article, timeout_s), name)
+    return items
+
+
+def fetch_poster(item_url: str, timeout_s: float = 20) -> str:
+    from gaming_news.featured import fetch_page
+
+    return page_poster(fetch_page(item_url, timeout_s)) if item_url else ""

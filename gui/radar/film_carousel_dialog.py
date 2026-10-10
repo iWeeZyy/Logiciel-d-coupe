@@ -25,9 +25,18 @@ from PySide6.QtWidgets import (
 from core.cancellation import CancelToken
 from gui.radar.daily_top_dialog import _cinema_cta, _cinema_logo
 
-RELEASES, BOX_OFFICE = "releases", "box_office"
-_TITLES = {RELEASES: "Sorties ciné de la semaine", BOX_OFFICE: "Box-office France"}
-_PRESELECT = {RELEASES: 6, BOX_OFFICE: 5}
+RELEASES, BOX_OFFICE, CRITICS, STREAMING = "releases", "box_office", "critics", "streaming"
+_TITLES = {RELEASES: "Sorties ciné de la semaine", BOX_OFFICE: "Box-office France",
+           CRITICS: "Presse vs public", STREAMING: "Nouveautés streaming de la semaine"}
+_PRESELECT = {RELEASES: 6, BOX_OFFICE: 5, CRITICS: 5, STREAMING: 6}
+_INTROS = {
+    RELEASES: "Les films qui sortent en salle cette semaine (AlloCiné). ",
+    BOX_OFFICE: "Le classement des entrées de la semaine en France (AlloCiné). ",
+    CRITICS: "Les sorties des 4 dernières semaines notées par la presse ET les spectateurs "
+             "(AlloCiné), du plus grand écart au plus petit. ",
+    STREAMING: "Les nouveautés de la semaine des plateformes dont AlloCiné publie l'agenda "
+               "(Netflix aujourd'hui ; les autres apparaissent dès qu'AlloCiné les publie). ",
+}
 MAX_ITEMS = 10
 
 
@@ -42,16 +51,24 @@ class _LoadThread(QThread):
     def run(self) -> None:
         from news_story import cinema_lists
 
+        from news_story import film_carousels as fc
+
         try:
+            week = ""
             if self.kind == RELEASES:
-                items, week = cinema_lists.fetch_releases(), ""
+                items = cinema_lists.fetch_releases()
+            elif self.kind == CRITICS:
+                items = fc.critics_films(cinema_lists.fetch_recent_releases(weeks=4))
+            elif self.kind == STREAMING:
+                items = cinema_lists.fetch_streaming()
             else:
                 week, items = cinema_lists.fetch_box_office()
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
             self.failed.emit(str(error))
             return
         if not items:
-            self.failed.emit("La page AlloCiné n'a rien donné (connexion internet ? page modifiée ?).")
+            self.failed.emit("La page AlloCiné n'a rien donné (connexion internet ? page modifiée ? "
+                             "agenda de la semaine pas encore publié ?).")
             return
         self.loaded.emit(items, week)
 
@@ -75,13 +92,22 @@ class _ExportThread(QThread):
                 if self.cancel_token.is_cancelled:
                     return
                 self.progress.emit(f"Téléchargement des affiches… {i}/{len(self.items)}")
-                film = item if self.kind == RELEASES else item.film
+                if self.kind == STREAMING:
+                    from news_story.cinema_lists import fetch_poster
+
+                    images.append(fc.download_image(fetch_poster(item.url)))
+                    continue
+                film = item.film if self.kind == BOX_OFFICE else item
                 images.append(fc.download_image(film.poster_url))
             logo = _cinema_logo()
             common = dict(day=date.today(), logo_path=Path(logo) if logo else None, cta=_cinema_cta(),
                           on_progress=lambda i, n: self.progress.emit(f"Création des images… {i}/{n}"))
             if self.kind == RELEASES:
                 fc.compose_releases(self.items, images, self.out_dir, **common)
+            elif self.kind == CRITICS:
+                fc.compose_critics(self.items, images, self.out_dir, **common)
+            elif self.kind == STREAMING:
+                fc.compose_streaming(self.items, images, self.out_dir, **common)
             else:
                 fc.compose_box_office(self.items, images, self.out_dir, week_label=self.week, **common)
             caption = (self.out_dir / "legende.txt").read_text(encoding="utf-8")
@@ -100,6 +126,22 @@ def _box_office_line(entry) -> str:
     return f"N°{entry.rank}  {entry.film.title}  —  {entry.entries} entrées"
 
 
+def _critics_line(film) -> str:
+    from news_story.cinema_lists import rating_gap
+
+    gap = rating_gap(film) or 0.0
+    return (f"{film.title}  —  presse {film.press_rating} · spectateurs {film.spectator_rating}"
+            f"  (écart {abs(gap):.1f})".replace(".", ","))
+
+
+def _streaming_line(item) -> str:
+    return f"{item.platform} · {item.day}  —  {item.title}" + (f" ({item.kind})" if item.kind else "")
+
+
+_LINES = {RELEASES: _release_line, BOX_OFFICE: _box_office_line, CRITICS: _critics_line,
+          STREAMING: _streaming_line}
+
+
 class FilmCarouselDialog(QDialog):
     def __init__(self, kind: str, parent=None):
         super().__init__(parent)
@@ -114,10 +156,9 @@ class FilmCarouselDialog(QDialog):
 
         layout = QVBoxLayout(self)
         intro = QLabel(
-            ("Les films qui sortent en salle cette semaine (AlloCiné). " if kind == RELEASES else
-             "Le classement des entrées de la semaine en France (AlloCiné). ")
+            _INTROS[kind]
             + "Coche ceux à mettre dans le carrousel (10 au maximum) : l'export crée une "
-            "couverture, une fiche 9:16 par film et la légende, dans un seul dossier.")
+            "couverture, une fiche 9:16 par titre et la légende, dans un seul dossier.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
         self.list = QListWidget()
@@ -161,7 +202,7 @@ class FilmCarouselDialog(QDialog):
     def _on_loaded(self, items: list, week: str) -> None:
         self._release_thread()
         self._items, self._week = list(items), week
-        line = _release_line if self.kind == RELEASES else _box_office_line
+        line = _LINES[self.kind]
         self.list.blockSignals(True)
         for i, item in enumerate(self._items):
             row = QListWidgetItem(line(item))
@@ -187,8 +228,8 @@ class FilmCarouselDialog(QDialog):
         if not self._items:
             return
         prefix = f"Box-office de la {self._week}. " if self._week else ""
-        self.status_label.setText(prefix + (f"{count} films cochés : {MAX_ITEMS} au maximum."
-                                            if count > MAX_ITEMS else f"{count} film(s) coché(s)."))
+        self.status_label.setText(prefix + (f"{count} titres cochés : {MAX_ITEMS} au maximum."
+                                            if count > MAX_ITEMS else f"{count} titre(s) coché(s)."))
 
     def _export(self) -> None:
         from news_story import film_carousels as fc
@@ -199,8 +240,9 @@ class FilmCarouselDialog(QDialog):
         parent = QFileDialog.getExistingDirectory(self, "Dossier où créer le carrousel")
         if not parent:
             return
-        name = (fc.releases_folder_name if self.kind == RELEASES else fc.box_office_folder_name)(
-            date.today())
+        name = {RELEASES: fc.releases_folder_name, BOX_OFFICE: fc.box_office_folder_name,
+                CRITICS: fc.critics_folder_name,
+                STREAMING: fc.streaming_folder_name}[self.kind](date.today())
         self.export_btn.setEnabled(False)
         self._start(_ExportThread(self.kind, items, self._week, Path(parent) / name,
                                   self._cancel_token),

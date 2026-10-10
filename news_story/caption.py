@@ -2,11 +2,12 @@
 
 Le visuel ne porte que le titre ; c'est la legende qui raconte la news --
 exactement le format des comptes d'actualite cinema/series pris pour modele.
-Comme le reste de news_story/, AUCUNE IA generative : la legende est faite du
+La legende est faite du
 titre et du resume de l'article tels que fournis par le flux (balisage HTML
 retire, redite du titre ecartee -- meme regle que title_shortener), suivis de
-la source. Rien n'est reformule ni invente ; l'utilisateur la retouche
-librement avant de publier.
+la source. Rien n'est reformule ni invente ; seule la question finale aux
+abonnes est redigee par Claude quand une cle est configuree. L'utilisateur la
+retouche librement avant de publier.
 """
 from __future__ import annotations
 
@@ -37,7 +38,9 @@ _MAX_SUMMARY_CHARS = 1600  # Instagram coupe a 2200 caracteres au total
 
 
 def build_caption(title: str, summary: str = "", source_label: str = "",
-                  theme: str = "", answer: str = "") -> str:
+                  theme: str = "", answer: str = "", question: str = "") -> str:
+    """`question` : question aux abonnes en fin de legende (redigee par Claude
+    a partir de l'article, news_story/ai_summary.py), pour les faire reagir."""
     title = " ".join((title or "").split())
     summary = _SPACE_BEFORE_PUNCT.sub(r"\1", _strip_html(drop_promo_lines(summary or "")))
     if len(summary) > _MAX_SUMMARY_CHARS:
@@ -54,6 +57,9 @@ def build_caption(title: str, summary: str = "", source_label: str = "",
     answer = " ".join((answer or "").split())
     if answer and answer not in summary:
         parts.append(answer)
+    question = " ".join((question or "").split())
+    if question:
+        parts.append(f"{question} 👇")
     if source_label.strip():
         parts.append(f"Source : {source_label.strip()}")
     return "\n\n".join(parts)

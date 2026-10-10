@@ -480,3 +480,96 @@ def clean_title_for_answer(title: str) -> str:
     """« Le Seigneur des anneaux : les deux tours (version longue) » -> sans
     la mention de version, inutile pour deviner."""
     return re.sub(r"\s*\((?:version|director'?s cut)[^)]*\)\s*$", "", title, flags=re.I).strip()
+
+
+# ------------------------------------------------------ presse vs public
+
+def critics_films(films: list, min_gap: float = 0.0) -> list:
+    """Films notes par la presse ET le public, du plus grand ecart au plus
+    petit (en valeur absolue)."""
+    from news_story.cinema_lists import rating_gap
+
+    rated = [f for f in films if rating_gap(f) is not None and abs(rating_gap(f)) >= min_gap]
+    return sorted(rated, key=lambda f: -abs(rating_gap(f)))
+
+
+def critics_slide(film, image_path: Path | None, index: int, total: int) -> Slide:
+    from news_story.cinema_lists import rating_gap
+
+    gap = rating_gap(film) or 0.0
+    ecart = f"{abs(gap):.1f}".replace(".", ",")
+    if gap > 0:
+        verdict = f"Le public a plus aimé que la presse (écart de {ecart})"
+    elif gap < 0:
+        verdict = f"La presse a plus aimé que le public (écart de {ecart})"
+    else:
+        verdict = "Presse et public sont d'accord"
+    lines = [f"Presse {film.press_rating}/5 · Spectateurs {film.spectator_rating}/5", verdict,
+             " · ".join(p for p in (_join(film.genres, 2),
+                                    f"sorti le {film.release_date}" if film.release_date else "")
+                        if p)]
+    return Slide(image_path, f"PRESSE VS PUBLIC · {index}/{total}", film.title, lines,
+                 slug=film.title)
+
+
+def critics_folder_name(day: date) -> str:
+    return f"Presse vs public {day.isoformat()}"
+
+
+def critics_caption(films: list) -> str:
+    lines = ["⚖️ Presse vs public : les films qui divisent", ""]
+    for i, film in enumerate(films, 1):
+        lines.append(f"{i}. {film.title} — presse {film.press_rating}/5, "
+                     f"spectateurs {film.spectator_rating}/5")
+    lines += ["", "Tu es plutôt du côté de la presse ou du public ? 👇", "",
+              "Notes : AlloCiné", "#cinema #critique #film #filmtok #cinematok"]
+    return "\n".join(lines) + "\n"
+
+
+def compose_critics(films: list, images: list[Path | None], out_dir, *, day: date,
+                    logo_path: Path | None = None, cta: str = "", on_progress=None) -> list[Path]:
+    slides = [critics_slide(f, img, i, len(films))
+              for i, (f, img) in enumerate(zip(films, images), 1)]
+    first = next((img for img in images if img), None)
+    return _write(slides, out_dir, logo_path=logo_path, cta=cta, on_progress=on_progress,
+                  caption=critics_caption(films),
+                  cover_kwargs=dict(day=day, count=len(films), background=first,
+                                    heading=("PRESSE", "VS PUBLIC"),
+                                    date_text="les notes AlloCiné qui divergent",
+                                    info=f"{len(films)} films qui divisent"))
+
+
+# ------------------------------------------------------------ streaming
+
+def streaming_slide(item, image_path: Path | None, index: int, total: int) -> Slide:
+    label = f"{item.platform} · {item.day}" if item.day else item.platform
+    return Slide(image_path, f"{label} · {index}/{total}", item.title,
+                 [item.kind] if item.kind else [], item.synopsis, slug=item.title)
+
+
+def streaming_folder_name(day: date) -> str:
+    return f"Streaming {day.isoformat()}"
+
+
+def streaming_caption(items: list) -> str:
+    lines = ["📺 Les nouveautés streaming de la semaine", ""]
+    for i, item in enumerate(items, 1):
+        when = f" ({item.platform}, {item.day.lower()})" if item.day else f" ({item.platform})"
+        lines.append(f"{i}. {item.title}{when}")
+    lines += ["", "Tu regardes quoi ce week-end ? 👇", "", "Source : AlloCiné",
+              "#streaming #netflix #serie #film #cinematok"]
+    return "\n".join(lines) + "\n"
+
+
+def compose_streaming(items: list, images: list[Path | None], out_dir, *, day: date,
+                      logo_path: Path | None = None, cta: str = "", on_progress=None) -> list[Path]:
+    slides = [streaming_slide(it, img, i, len(items))
+              for i, (it, img) in enumerate(zip(items, images), 1)]
+    first = next((img for img in images if img), None)
+    platforms = sorted({it.platform for it in items})
+    return _write(slides, out_dir, logo_path=logo_path, cta=cta, on_progress=on_progress,
+                  caption=streaming_caption(items),
+                  cover_kwargs=dict(day=day, count=len(items), background=first,
+                                    heading=("STREAMING", "CETTE SEMAINE"),
+                                    date_text=" · ".join(platforms),
+                                    info=f"{len(items)} nouveautés à regarder"))

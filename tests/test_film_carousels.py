@@ -195,3 +195,60 @@ def test_le_top_du_jour_ne_pre_coche_pas_une_news_deja_publiee(monkeypatch):
     assert states == [Qt.CheckState.Unchecked, Qt.CheckState.Checked, Qt.CheckState.Checked,
                       Qt.CheckState.Unchecked]
     assert "Déjà publiée" in dialog.list.item(0).text()
+
+
+class TestPresseVsPublic:
+    def test_ecart_et_ordre(self):
+        a = cl.Film("A", press_rating="2,0", spectator_rating="4,0")
+        b = cl.Film("B", press_rating="3,5", spectator_rating="3,0")
+        c = cl.Film("C", press_rating="", spectator_rating="4,0")       # pas de note presse
+        assert cl.rating_gap(a) == 2.0 and cl.rating_gap(b) == -0.5 and cl.rating_gap(c) is None
+        assert [f.title for f in fc.critics_films([b, c, a])] == ["A", "B"]
+
+    def test_fiche(self):
+        film = cl.Film("B", press_rating="3,5", spectator_rating="2,0", genres=["Drame"],
+                       release_date="30 septembre 2026")
+        slide = fc.critics_slide(film, None, 1, 3)
+        assert slide.lines[0] == "Presse 3,5/5 · Spectateurs 2,0/5"
+        assert slide.lines[1] == "La presse a plus aimé que le public (écart de 1,5)"
+
+    def test_semaine_passee(self):
+        assert cl.agenda_url(date(2026, 9, 30)) == \
+            "https://www.allocine.fr/film/agenda/sem-2026-09-30/"
+
+
+_AGENDA = """<article><h2 class="bo-h2">L'incontournable de la semaine</h2>
+<p class="bo-p"><a href="/film/fichefilm_gen_cfilm=326107.html"><b>Animals</b></a><b> - Film : </b>Un enlèvement.</p>
+<h2 class="bo-h2">Vendredi 9 octobre</h2>
+<p class="bo-p"><a href="/series/ficheserie_gen_cserie=36717.html" class="bo-link"><b>Haunted Hotel</b></a><b>, saison 2 - Série : </b>Un hôtel hanté.</p>
+<p class="bo-p"><b>Animals</b><b> - Film : </b>Un enlèvement.</p>
+<h2 class="bo-h2">À lire aussi</h2><p class="bo-p">Autre chose - sans rapport : x</p>
+</article>"""
+
+
+class TestStreaming:
+    def test_agenda(self):
+        items = cl.parse_streaming_agenda(_AGENDA, "Netflix")
+        assert [(i.day, i.title, i.kind) for i in items] == [
+            ("L'incontournable de la semaine", "Animals", "Film"),
+            ("Vendredi 9 octobre", "Haunted Hotel, saison 2", "Série")]
+        assert items[1].url == "https://www.allocine.fr/series/ficheserie_gen_cserie=36717.html"
+        assert items[1].synopsis == "Un hôtel hanté."
+
+    def test_article_de_la_semaine(self):
+        page = ('<a class="meta-title-link" href="/article/a1.html">Netflix : la bande-annonce</a>'
+                '<a class="meta-title-link" href="/article/a2.html">Netflix : 19 nouveautés '
+                'débarquent cette semaine</a>')
+        assert cl.find_agenda_article(page, "Netflix") == "https://www.allocine.fr/article/a2.html"
+        assert cl.find_agenda_article(page, "Disney+") == ""
+
+    def test_affiche_de_la_fiche(self):
+        page = '<meta property="og:image" content="https://fr.web.img3.acsta.net/c_1200_630/img/d5/a.jpg" />'
+        assert cl.page_poster(page) == "https://fr.web.img3.acsta.net/img/d5/a.jpg"
+
+    def test_carrousel(self, tmp_path):
+        items = cl.parse_streaming_agenda(_AGENDA, "Netflix")
+        written = fc.compose_streaming(items, [None, None], tmp_path / "s", day=date(2026, 10, 10))
+        assert len(written) == 3
+        caption = (tmp_path / "s" / "legende.txt").read_text(encoding="utf-8")
+        assert "2. Haunted Hotel, saison 2 (Netflix, vendredi 9 octobre)" in caption

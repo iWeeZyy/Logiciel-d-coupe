@@ -16,13 +16,14 @@ _PAGE = """<html><head><meta charset="utf-8"></head><body><article>
 _TITLE = "Superman changera déjà de costume dans la suite de 2027, et pour une bonne raison"
 
 
-def _message(text, found=True, stop="end_turn"):
+def _message(text, found=True, stop="end_turn", question="Tu iras le voir ?"):
     import json as _json
 
     return {"id": "msg_test", "type": "message", "role": "assistant",
             "model": "claude-sonnet-5-5", "stop_reason": stop, "stop_sequence": None,
             "content": [{"type": "text",
-                         "text": _json.dumps({"texte": text, "reponse_trouvee": found})}],
+                         "text": _json.dumps({"texte": text, "reponse_trouvee": found,
+                                              "question": question})}],
             "usage": {"input_tokens": 10, "output_tokens": 10}}
 
 
@@ -196,3 +197,20 @@ class TestTopDuJour:
         item = daily_top.prepare_item(article)
         assert "refusée" in item.ai_error
         assert item.subtitle                              # texte tire de l'article
+
+
+def test_question_pour_la_legende(posted):
+    calls, _ = posted
+    summary = ai_summary.summarize(_TITLE, "", _PAGE, url="https://x/q", api_key="sk-ant-k-1234567890")
+    assert summary.question == "Tu iras le voir ?"
+    assert "question" in calls[0]["json"]["output_config"]["format"]["schema"]["required"]
+    again = ai_summary.summarize(_TITLE, "", _PAGE, url="https://x/q", api_key="sk-ant-k-1234567890")
+    assert again.question == "Tu iras le voir ?" and len(calls) == 1      # gardee en cache
+
+
+def test_question_en_fin_de_legende():
+    from news_story.caption import build_caption
+
+    caption = build_caption("Un titre", "Un résumé.", "AlloCiné", "cinema",
+                            question="Tu iras le voir ?")
+    assert caption.endswith("Tu iras le voir ? 👇\n\nSource : AlloCiné")
