@@ -190,7 +190,9 @@ class GuessFilmDialog(QDialog):
         row = self.list.currentRow()
         if row < 0:
             return
-        parent = QFileDialog.getExistingDirectory(self, "Dossier où créer le carrousel")
+        from gui.radar.daily_top_dialog import ask_export_folder
+
+        parent = ask_export_folder(self, "Dossier où créer le carrousel")
         if not parent:
             return
         film = self._films[row]

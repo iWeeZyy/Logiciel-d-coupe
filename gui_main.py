@@ -32,6 +32,12 @@ def _write_crash_log(exc: BaseException) -> str:
 
 
 def main() -> int:
+    # Lance par le Planificateur de taches : Top news cine du jour, sans
+    # fenetre (news_story/auto_top.py).
+    if "--daily-top" in sys.argv[1:]:
+        from news_story.auto_top import main_cli
+
+        return main_cli()
     try:
         from gui.app import main as run_gui
 

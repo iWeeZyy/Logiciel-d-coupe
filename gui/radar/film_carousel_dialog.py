@@ -237,7 +237,9 @@ class FilmCarouselDialog(QDialog):
         items = self.selected()
         if not items:
             return
-        parent = QFileDialog.getExistingDirectory(self, "Dossier où créer le carrousel")
+        from gui.radar.daily_top_dialog import ask_export_folder
+
+        parent = ask_export_folder(self, "Dossier où créer le carrousel")
         if not parent:
             return
         name = {RELEASES: fc.releases_folder_name, BOX_OFFICE: fc.box_office_folder_name,

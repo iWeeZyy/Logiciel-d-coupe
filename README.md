@@ -771,6 +771,34 @@ transcrit la piste son (Whisper, comme les clips), la fait traduire par Claude
 (clé « 🔑 IA Claude »), et l'incruste en bas de la vidéo. Une VF n'est pas
 sous-titrée (`news_story/vost.py`).
 
+**Presse vs public** (sorties des 4 dernières semaines, notes presse et
+spectateurs AlloCiné qui divergent) et **Nouveautés streaming** (agenda
+hebdomadaire publié par AlloCiné — Netflix aujourd'hui, d'autres plateformes
+dès qu'AlloCiné publie le leur) sont dans le même menu.
+
+**Top du jour** :
+- **Vidéo avec voix off** (case dans la fenêtre) : les mêmes images en MP4
+  9:16, chaque image le temps que la voix lise son texte, avec un lent zoom
+  (`news_story/top_video.py`). Voix de Voice Studio : voix système
+  (Hortense sous Windows) ou Piper, tout est local.
+- **Préparé automatiquement chaque matin** : la case « ⏰ » crée une tâche du
+  Planificateur de tâches Windows qui lance `ClipFarming.exe --daily-top` à
+  l'heure choisie : news ciné du jour, premières non publiées, dossier du Top
+  (et vidéo si cochée) dans le dossier choisi (`news_story/auto_top.py`). Le
+  PC doit être allumé ; une console s'ouvre le temps de la préparation.
+- Le dossier d'export est mémorisé : un dossier OneDrive ou Google Drive
+  synchronisé fait arriver les images sur le téléphone.
+
+**Légende** : avec une clé Claude, une question aux abonnés est ajoutée en
+fin de légende (« Tu iras le voir ? 👇 »).
+
+**Publication directe** : non branchée. TikTok exige une application
+développeur auditée par TikTok (sans audit, publications privées seulement)
+et n'accepte les carrousels photo que depuis une adresse web publique ;
+Instagram ne reçoit pas de fichier local du tout (adresse publique exigée).
+Le module `publishing/` contient les appels officiels, sans connexion de
+compte.
+
 **News déjà publiées** : chaque export réussi (visuel, vidéo, Top du jour)
 est mémorisé 90 jours (`news_publiees.json` du dossier de données) ; la liste
 affiche « ✅ Déjà publiée le … » et le Top du jour ne les pré-coche plus.
