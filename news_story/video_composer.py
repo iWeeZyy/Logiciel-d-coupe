@@ -27,7 +27,7 @@ logger = get_logger()
 W, H = 1080, 1920
 # Zones sures TikTok / Reels (voir post_composer) : bas de l'ecran et
 # colonne de boutons a droite recouverts par l'interface, onglets en haut.
-_MARGIN_LEFT, _MARGIN_RIGHT = 64, 140
+_MARGIN_RIGHT = 140          # colonne de boutons TikTok, reprise a gauche (texte centre)
 _SAFE_TOP = int(H * 0.10)
 _SAFE_BOTTOM = H - 440
 _TITLE_SIZES = (90, 44)
@@ -146,6 +146,17 @@ def _cta_block(draw, cta: str, max_w: int):
         return None, [], 0
     font = _subtitle_font(_CTA_SIZE)
     lines = _rich_wrap(draw, cta, font, _CTA_SIZE, max_w)
+    if len(lines) > 1:
+        # Lignes equilibrees : la plus petite largeur qui garde le meme nombre
+        # de lignes (jamais « cinéma 🎬 » seul sur la derniere).
+        low, high = 1, max_w
+        while low < high:
+            mid = (low + high) // 2
+            if len(_rich_wrap(draw, cta, font, _CTA_SIZE, mid)) <= len(lines):
+                high = mid
+            else:
+                low = mid + 1
+        lines = _rich_wrap(draw, cta, font, _CTA_SIZE, low)
     return font, lines, len(lines) * int(_CTA_SIZE * _CTA_LINE_HEIGHT)
 
 
@@ -176,13 +187,17 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     text_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     shadow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw, shadow_draw = ImageDraw.Draw(text_layer), ImageDraw.Draw(shadow_layer)
-    center_x = (_MARGIN_LEFT + W - _MARGIN_RIGHT) / 2
-    max_w = W - _MARGIN_LEFT - _MARGIN_RIGHT
+    # Tout est centre sur l'ECRAN (retour utilisateur : centre sur la zone
+    # sure, decalee a gauche par la marge droite de TikTok, le titre
+    # paraissait decentre). La marge de la colonne de boutons TikTok est
+    # donc reprise a gauche : marges symetriques, rien sous les boutons.
+    center_x = W / 2
+    max_w = bottom_w = W - 2 * _MARGIN_RIGHT
     white, black = (255, 255, 255, 255), (0, 0, 0, 255)
 
     # Bas : phrase d'appel + logo.
     logo = _load_logo(logo_path)
-    cta_font, cta_lines, cta_h = _cta_block(draw, _french_spacing(cta or ""), max_w)
+    cta_font, cta_lines, cta_h = _cta_block(draw, _french_spacing(cta or ""), bottom_w)
     bottom_h = cta_h + (logo.height if logo else 0) + (_GAP_CTA_LOGO if cta_h and logo else 0)
 
     # Haut : etiquette + titre + chapo, ajustes a la place laissee par la video.
@@ -220,8 +235,8 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
         draw.text((x_text, top), label, font=label_font, fill=white)
         y_rule = top + (ascent + descent) // 2 + 2
         left_end, right_start = x_text - _LABEL_GAP, x_text + text_w + _LABEL_GAP
-        if left_end > _MARGIN_LEFT:
-            draw.rectangle([_MARGIN_LEFT, y_rule, left_end, y_rule + _RULE_THICKNESS - 1], fill=white)
+        if left_end > _MARGIN_RIGHT:
+            draw.rectangle([_MARGIN_RIGHT, y_rule, left_end, y_rule + _RULE_THICKNESS - 1], fill=white)
         if right_start < W - _MARGIN_RIGHT:
             draw.rectangle([right_start, y_rule, W - _MARGIN_RIGHT, y_rule + _RULE_THICKNESS - 1],
                            fill=white)

@@ -195,3 +195,16 @@ class TestClapDansLaPhrase:
         # Le clap ajoute des pixels opaques, et des pixels non blancs (couleurs de l'emoji).
         assert sum(with_clap.getchannel("A").point(lambda a: 255 if a > 200 else 0).histogram()[255:]) > \
             sum(without.getchannel("A").point(lambda a: 255 if a > 200 else 0).histogram()[255:])
+
+
+def test_titre_et_logo_centres_sur_l_ecran():
+    """Retour utilisateur : etiquette et titre paraissaient decales a gauche
+    (centres sur la zone sure, pas sur l'ecran)."""
+    from news_story.video_composer import W, build_overlay
+
+    overlay, (x, y, w, h) = build_overlay(title="Le Corset", label="BANDE-ANNONCE",
+                                          cta="N'hésitez pas à me suivre")
+    alpha = overlay.getchannel("A")
+    for top, bottom in ((0, y), (y + h, overlay.height)):
+        left, _, right, _ = alpha.crop((0, top, W, bottom)).getbbox()
+        assert abs((left + right) / 2 - W / 2) <= 3
