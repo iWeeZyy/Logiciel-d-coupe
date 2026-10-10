@@ -81,7 +81,8 @@ def run(out_root: Path | None = None, *, count: int = 5, video: bool | None = No
         shots = top_video.shots_for(written[0], written[1:], usable, today, _cinema_cta())
         try:
             top_video.compose_top_video(shots, out_dir / "top_video.mp4",
-                                        voice=top_video.pick_voice(voice_id))
+                                        voice=top_video.pick_voice(voice_id),
+                                        on_note=logger.warning)
         except Exception as e:  # noqa: BLE001 -- les images restent utilisables
             logger.warning(f"Vidéo du Top automatique impossible : {e}")
     logger.info(f"Top du jour automatique cree : {out_dir}")

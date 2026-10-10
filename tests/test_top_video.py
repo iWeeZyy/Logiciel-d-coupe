@@ -67,3 +67,38 @@ def test_video_complete(tmp_path, monkeypatch):
     assert "1080,1920" in probe
     duration = float(probe.strip().splitlines()[-1])
     assert 2.6 <= duration <= 3.6          # 2 plans de 1 s de voix + 0,5 s chacun
+
+
+def test_zerogpu_en_echec_toute_la_video_passe_a_la_voix_locale(tmp_path, monkeypatch):
+    """Jamais deux voix melangees : un echec ZeroGPU refait tout en local."""
+    from voice_studio import zerogpu_service
+
+    calls = []
+
+    def flaky(text, params, out_wav, **kwargs):
+        if calls:
+            raise RuntimeError("Space endormi")
+        calls.append(text)
+        Path(out_wav).write_bytes(b"")
+
+    local = []
+
+    def local_voices(shots, work, voice, rate, token):
+        local.extend(s.text for s in shots)
+        raise RuntimeError("arret avant le montage ffmpeg, hors sujet ici")
+
+    monkeypatch.setattr(zerogpu_service, "generate", flaky)
+    monkeypatch.setattr(top_video, "pick_voice", lambda voice_id="": SimpleNamespace(label="Hortense"))
+    monkeypatch.setattr(top_video, "_local_voices", local_voices)
+    notes = []
+    shots = [top_video.Shot(Path("a.png"), "Un."), top_video.Shot(Path("b.png"), "Deux.")]
+    with pytest.raises(RuntimeError, match="arret avant le montage"):
+        top_video.compose_top_video(shots, tmp_path / "v.mp4", voice=top_video.ZEROGPU,
+                                    on_note=notes.append)
+    assert local == ["Un.", "Deux."]                     # les deux plans, en local
+    assert "Space endormi" in notes[0] and "Hortense" in notes[0]
+
+
+def test_choix_zerogpu():
+    assert top_video.zerogpu_available()
+    assert top_video.pick_voice(top_video.ZEROGPU) == top_video.ZEROGPU

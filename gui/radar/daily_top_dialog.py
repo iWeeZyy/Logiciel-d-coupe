@@ -41,6 +41,7 @@ class _TopThread(QThread):
         self.articles, self.out_dir = articles, out_dir
         self.logo_path, self.cancel_token = logo_path, cancel_token
         self.voice_id = voice_id          # None : pas de video narree
+        self.notes: list[str] = []        # repli de voix, a afficher a la fin
 
     def run(self) -> None:
         from news_story.daily_top import compose_daily_top, prepare_item
@@ -68,6 +69,8 @@ class _TopThread(QThread):
         else:
             errors = [item.ai_error for item in items if item.ai_error]
             note = f"⚠ IA Claude : {errors[0]} Texte tiré des articles à la place." if errors else ""
+            if self.notes:
+                note = (note + "\n" if note else "") + "⚠ " + self.notes[0]
             self.ready.emit(str(self.out_dir), caption, note)
 
 
@@ -81,8 +84,8 @@ class _TopThread(QThread):
         shots = top_video.shots_for(written[0], written[1:], usable, date.today(), _cinema_cta())
         top_video.compose_top_video(
             shots, self.out_dir / "top_video.mp4", voice=top_video.pick_voice(self.voice_id),
-            cancel_token=self.cancel_token,
-            on_progress=lambda i, n: self.progress.emit(f"Vidéo avec voix off… plan {i}/{n}"))
+            cancel_token=self.cancel_token, on_progress=self.progress.emit,
+            on_note=self.notes.append)
 
 
 def ask_export_folder(parent, title: str) -> str:
@@ -160,14 +163,22 @@ class DailyTopDialog(QDialog):
         video_row = QHBoxLayout()
         self.video_check = QCheckBox("🎙 Aussi en vidéo avec voix off")
         self.voice_combo = QComboBox()
+        from news_story import top_video
+
         try:
             from voice_studio.tts import available_voices
 
             voices = available_voices()
         except Exception:  # noqa: BLE001 -- pas de moteur de voix : option grisee
             voices = []
+        if top_video.zerogpu_available():
+            # Chatterbox sur GPU distant (Voice Studio ZeroGPU) : plus naturelle,
+            # repli automatique sur la voix locale si le service echoue.
+            self.voice_combo.addItem("⚡ ZeroGPU — Chatterbox (en ligne, plus naturelle)",
+                                     top_video.ZEROGPU)
         for voice in voices:
             self.voice_combo.addItem(voice.display_label, voice.id)
+        voices = voices or ([top_video.ZEROGPU] if top_video.zerogpu_available() else [])
         saved = QSettings(_SETTINGS_ORG, _SETTINGS_APP).value("top/voice", "")
         if saved and self.voice_combo.findData(saved) >= 0:
             self.voice_combo.setCurrentIndex(self.voice_combo.findData(saved))

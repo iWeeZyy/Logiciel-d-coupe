@@ -5,8 +5,9 @@ video qu'un carrousel photo. Les images du Top (daily_top.py) deviennent les
 plans de la video ; chacune reste a l'ecran le temps que la voix lise son
 texte (titre puis texte sous le titre), avec un lent zoom pour donner du
 mouvement. La voix vient de Voice Studio (voice_studio/tts.py) : voix
-systeme (Hortense sous Windows) ou voix Piper installee -- tout est local,
-rien n'est envoye nulle part.
+systeme (Hortense sous Windows) ou voix Piper installee, en local ; ou, au
+choix, Chatterbox sur le GPU distant de Hugging Face (Voice Studio ZeroGPU,
+plus naturelle, quota gratuit quotidien), avec repli sur la voix locale.
 """
 from __future__ import annotations
 
@@ -27,6 +28,18 @@ _ZOOM_STEP = 0.0005           # zoom par image (~ +8 % en 5 s)
 _ZOOM_MAX = 1.10
 # Emojis et pictogrammes : illisibles par une voix de synthese.
 _EMOJI_RE = re.compile("[\U0001F000-\U0001FFFF☀-➿️‍]")
+
+
+ZEROGPU = "zerogpu"           # choix de voix : Chatterbox sur GPU distant (Voice Studio ZeroGPU)
+
+
+def zerogpu_available() -> bool:
+    """Le banc d'essai ZeroGPU est-il present (il peut etre supprime) ?"""
+    try:
+        from voice_studio import zerogpu_service  # noqa: F401
+    except Exception:  # noqa: BLE001
+        return False
+    return True
 
 
 class TopVideoError(Exception):
@@ -73,8 +86,12 @@ def wav_duration(path) -> float:
 
 def pick_voice(voice_id: str = ""):
     """La voix demandee si elle existe, sinon la premiere voix francaise
-    (Piper avant la voix systeme : plus naturelle), sinon None."""
+    (Piper avant la voix systeme : plus naturelle), sinon None. « zerogpu »
+    est rendu tel quel : la synthese passe alors par le GPU distant."""
     from voice_studio import tts
+
+    if voice_id == ZEROGPU and zerogpu_available():
+        return ZEROGPU
 
     voices = tts.available_voices()
     if voice_id:
@@ -102,27 +119,72 @@ def shot_args(image: Path, audio: Path, out: Path, duration: float) -> list[str]
             "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2", str(out)]
 
 
-def compose_top_video(shots: list[Shot], out_path, *, voice=None, rate: float = 1.05,
-                      on_progress=None, cancel_token=None) -> Path:
-    """Ecrit la video MP4. Leve TopVideoError / FfmpegError / CancelledError."""
-    from video.ffmpeg_utils import run_ffmpeg
+def _local_voices(shots: list[Shot], work: Path, voice, rate: float, cancel_token) -> list[Path]:
     from voice_studio import tts
+
+    wavs = []
+    for i, shot in enumerate(shots, 1):
+        wav = work / f"voix_{i:02d}.wav"
+        try:
+            tts.synthesize(shot.text, str(wav), voice=voice, rate=rate, cancel_token=cancel_token)
+        except tts.TtsError as e:
+            raise TopVideoError(f"Voix de synthèse : {e}") from None
+        wavs.append(wav)
+    return wavs
+
+
+def _zerogpu_voices(shots: list[Shot], work: Path, on_progress, cancel_token) -> list[Path]:
+    """Chatterbox sur le GPU distant de Hugging Face (Voice Studio ZeroGPU),
+    en francais, reglages par defaut du banc d'essai. Leve en cas d'echec
+    (Space endormi, file d'attente, quota) : l'appelant se replie."""
+    from voice_studio import zerogpu_catalogue, zerogpu_service
+
+    params = zerogpu_catalogue.params_for(language="fr")
+    wavs = []
+    for i, shot in enumerate(shots, 1):
+        if on_progress:
+            on_progress(f"Voix ZeroGPU… {i}/{len(shots)}")
+        wav = work / f"voix_{i:02d}.wav"
+        zerogpu_service.generate(shot.text, params, str(wav), cancel_token=cancel_token)
+        wavs.append(wav)
+    return wavs
+
+
+def compose_top_video(shots: list[Shot], out_path, *, voice=None, rate: float = 1.05,
+                      on_progress=None, cancel_token=None, on_note=None) -> Path:
+    """Ecrit la video MP4. Leve TopVideoError / FfmpegError / CancelledError.
+    `voice` = « zerogpu » : voix generee en ligne ; si ZeroGPU echoue, TOUTE
+    la video est refaite avec la voix locale (jamais deux voix melangees) et
+    `on_note` recoit la raison."""
+    from utils.errors import CancelledError
+    from video.ffmpeg_utils import run_ffmpeg
 
     if voice is None:
         raise TopVideoError("Aucune voix de synthèse sur cet ordinateur (Voice Studio).")
     out_path = Path(out_path)
+    say = on_progress or (lambda *a: None)
     with tempfile.TemporaryDirectory(prefix="clipfarming_top_video_") as workdir:
         work = Path(workdir)
-        parts: list[Path] = []
-        for i, shot in enumerate(shots, 1):
-            if on_progress:
-                on_progress(i, len(shots))
-            wav = work / f"voix_{i:02d}.wav"
+        if voice == ZEROGPU:
             try:
-                tts.synthesize(shot.text, str(wav), voice=voice, rate=rate,
-                               cancel_token=cancel_token)
-            except tts.TtsError as e:
-                raise TopVideoError(f"Voix de synthèse : {e}") from None
+                wavs = _zerogpu_voices(shots, work, lambda m: say(m), cancel_token)
+            except CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 -- repli sur la voix locale
+                fallback = pick_voice("")
+                if fallback is None or fallback == ZEROGPU:
+                    raise TopVideoError(f"ZeroGPU indisponible ({e}) et aucune voix locale.") \
+                        from None
+                logger.warning(f"ZeroGPU indisponible, voix locale utilisee : {e}")
+                if on_note:
+                    on_note(f"ZeroGPU indisponible ({e}) : voix « {fallback.label} » utilisée.")
+                wavs = _local_voices(shots, work, fallback, rate, cancel_token)
+        else:
+            say("Voix de synthèse…")
+            wavs = _local_voices(shots, work, voice, rate, cancel_token)
+        parts: list[Path] = []
+        for i, (shot, wav) in enumerate(zip(shots, wavs), 1):
+            say(f"Montage de la vidéo… plan {i}/{len(shots)}")
             part = work / f"plan_{i:02d}.mp4"
             run_ffmpeg(shot_args(shot.image, wav, part, wav_duration(wav) + _TAIL_S),
                        f"plan {i} de la vidéo du Top", cancel_token=cancel_token)

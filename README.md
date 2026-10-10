@@ -780,7 +780,11 @@ dès qu'AlloCiné publie le leur) sont dans le même menu.
 - **Vidéo avec voix off** (case dans la fenêtre) : les mêmes images en MP4
   9:16, chaque image le temps que la voix lise son texte, avec un lent zoom
   (`news_story/top_video.py`). Voix de Voice Studio : voix système
-  (Hortense sous Windows) ou Piper, tout est local.
+  (Hortense sous Windows) ou Piper, en local ; ou **⚡ ZeroGPU** (Chatterbox
+  sur le GPU distant de Hugging Face, plus naturelle, quota gratuit
+  quotidien ; jeton `HF_TOKEN` du banc d'essai ZeroGPU). Si ZeroGPU échoue
+  (Space endormi, file d'attente, quota), toute la vidéo est refaite avec la
+  voix locale — jamais deux voix mélangées — et la raison est affichée.
 - **Préparé automatiquement chaque matin** : la case « ⏰ » crée une tâche du
   Planificateur de tâches Windows qui lance `ClipFarming.exe --daily-top` à
   l'heure choisie : news ciné du jour, premières non publiées, dossier du Top
