@@ -193,9 +193,10 @@ class _VideoExportThread(QThread):
 
     def __init__(self, video_url: str, out_path: str, title: str, label: str,
                  logo_path, text_opacity: float, title_scale: float, cancel_token: CancelToken,
-                 subtitle: str = "", cta: str = ""):
+                 subtitle: str = "", cta: str = "", french_subtitles: bool = False):
         super().__init__()
         self.subtitle, self.cta = subtitle, cta
+        self.french_subtitles = french_subtitles
         self.video_url, self.out_path = video_url, out_path
         self.title, self.label, self.logo_path = title, label, logo_path
         self.text_opacity, self.title_scale = text_opacity, title_scale
@@ -217,12 +218,23 @@ class _VideoExportThread(QThread):
                 source = download_video(self.video_url, workdir, consent_confirmed=True,
                                         max_height=1080, on_progress=progress,
                                         cancel_token=self.cancel_token)
+                cues = None
+                if self.french_subtitles:
+                    from news_story.vost import VostError, french_cues
+
+                    try:
+                        cues = french_cues(source, on_status=self.status.emit,
+                                           cancel_token=self.cancel_token)
+                    except VostError as error:
+                        self.failed.emit(f"Sous-titres français impossibles : {error}\n\n"
+                                         "Décoche « Sous-titres français » pour exporter sans.")
+                        return
                 self.status.emit("Montage de la vidéo 9:16… (cela peut prendre une minute)")
                 compose_video(source, self.out_path, title=self.title, label=self.label,
                               logo_path=Path(self.logo_path) if self.logo_path else None,
                               text_opacity=self.text_opacity, title_scale=self.title_scale,
                               subtitle=self.subtitle, cta=self.cta,
-                              cancel_token=self.cancel_token)
+                              cancel_token=self.cancel_token, french_subtitles=cues)
         except CancelledError:
             self.cancelled.emit()
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -396,6 +408,16 @@ class StoryDialog(QDialog):
         self.opacity_combo.setCurrentIndex(self.opacity_combo.findData(1.0))
         self.opacity_combo.currentIndexChanged.connect(self._schedule_preview)
         options_panel.addWidget(self.opacity_combo)
+
+        # VOST : bande-annonce en VO -> sous-titres francais (Whisper +
+        # traduction Claude). Rien n'est fait pour une VF.
+        from news_story import ai_summary
+
+        self.vost_check = QCheckBox("Sous-titres français si la vidéo est en VO")
+        self.vost_check.setChecked(ai_summary.is_configured())
+        self.vost_check.setToolTip("Transcription de la piste son, traduction par Claude (clé "
+                                   "« 🔑 IA Claude » requise), incrustation en bas de la vidéo.")
+        options_panel.addWidget(self.vost_check)
 
         # Phrase au-dessus du logo, dans la bande floue du bas de la video ;
         # memorisee par compte (meme cle que le logo).
@@ -611,6 +633,7 @@ class StoryDialog(QDialog):
         self.label_combo.setVisible(is_post)
         self.opacity_caption.setVisible(is_video)
         self.opacity_combo.setVisible(is_video)
+        self.vost_check.setVisible(is_video)
         # Phrase sous le logo : posts image et video.
         self.cta_caption.setVisible(is_post)
         self.cta_edit.setVisible(is_post)
@@ -779,7 +802,7 @@ class StoryDialog(QDialog):
         self._export_thread = _VideoExportThread(
             self._video_url, path, title, label, logo, options.text_opacity,
             options.title_scale, self._cancel_token, subtitle=post_subtitle(options),
-            cta=options.cta)
+            cta=options.cta, french_subtitles=self.vost_check.isChecked())
         self._export_thread.status.connect(self.status_label.setText)
         self._export_thread.ready.connect(self._on_export_ready)
         self._export_thread.failed.connect(self._on_export_failed)

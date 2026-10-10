@@ -301,17 +301,23 @@ def compose_still(image_path, out_path, *, title: str, label: str = "",
 
 
 def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
-                box: tuple[int, int, int, int]) -> list[str]:
+                box: tuple[int, int, int, int], subtitles_path: str | None = None) -> list[str]:
     """Arguments ffmpeg (sans le binaire) : fond flou 9:16 fait de la video,
     video entiere a la place `box` (une 16:9 garde son format, sous la bande
-    de texte), calque par-dessus, son conserve s'il existe. Fonction pure."""
+    de texte), calque par-dessus, son conserve s'il existe ; sous-titres .ass
+    brules en dernier si fournis (VOST, news_story/vost.py). Fonction pure."""
     x, y, w, h = box
+    subtitles = ""
+    if subtitles_path:
+        from video.subtitle_renderer import subtitle_filter
+
+        subtitles = subtitle_filter(str(subtitles_path)) + ","
     graph = (
         f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
         f"boxblur=luma_radius=30:luma_power=2,eq=brightness={_FFMPEG_BG_BRIGHTNESS:.2f}[bg];"
         f"[0:v]scale={w}:{h}[fg];"
         f"[bg][fg]overlay={x}:{y}[base];"
-        f"[base][1:v]overlay=0:0,format=yuv420p[v]"
+        f"[base][1:v]overlay=0:0,{subtitles}format=yuv420p[v]"
     )
     return [
         "-i", str(video_path), "-i", str(overlay_path),
@@ -327,8 +333,10 @@ def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
 def compose_video(video_path, out_path, *, title: str, label: str = "",
                   logo_path: Path | None = None, text_opacity: float = DEFAULT_TEXT_OPACITY,
                   title_scale: float = 1.0, subtitle: str = "", cta: str = "",
-                  cancel_token=None) -> Path:
-    """Rend le post video MP4 9:16. Leve FfmpegError / CancelledError."""
+                  cancel_token=None, french_subtitles=None) -> Path:
+    """Rend le post video MP4 9:16. Leve FfmpegError / CancelledError.
+    `french_subtitles` : repliques (news_story/vost.Cue) a incruster en bas
+    de la video, ou None."""
     import tempfile
 
     from video.ffmpeg_utils import run_ffmpeg, video_resolution
@@ -342,7 +350,12 @@ def compose_video(video_path, out_path, *, title: str, label: str = "",
     with tempfile.TemporaryDirectory(prefix="clipfarming_video_post_") as workdir:
         overlay_path = Path(workdir) / "overlay.png"
         overlay.save(overlay_path)
-        run_ffmpeg(ffmpeg_args(str(video_path), str(overlay_path), str(out_path), box),
+        ass_path = None
+        if french_subtitles:
+            from news_story.vost import build_ass
+
+            ass_path = build_ass(french_subtitles, box, Path(workdir) / "vost.ass")
+        run_ffmpeg(ffmpeg_args(str(video_path), str(overlay_path), str(out_path), box, ass_path),
                    "montage du post video 9:16", cancel_token=cancel_token)
     logger.info(f"Post video ecrit : {out_path}")
     return out_path

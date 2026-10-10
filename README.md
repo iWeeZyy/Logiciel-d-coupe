@@ -750,6 +750,31 @@ l'export.
   l'article (`news_story/article_text.py`), sans IA ; l'erreur est affichée
   dans la fenêtre.
 
+### Carrousels ciné, VOST et news déjà publiées
+
+Onglet News, bouton **🎞 Carrousels ciné** :
+
+- **Sorties de la semaine** et **Box-office France** : listes lues sur les
+  pages AlloCiné (`news_story/cinema_lists.py`). On coche les films ; l'export
+  crée une couverture, une fiche 9:16 par film (affiche, genre, durée,
+  réalisateur, acteurs, notes presse/spectateurs, synopsis en phrases
+  entières ; entrées et semaine pour le box-office) et la légende, dans un
+  dossier (`news_story/film_carousels.py`). Un champ absent de la page n'est
+  pas affiché, rien n'est estimé.
+- **Devine le film** : un film (films cultes, box-office ou sorties), une
+  photo de scène prise sur sa page AlloCiné ; trois images : très pixelisée,
+  moins pixelisée avec un indice (genre, durée, réalisateur), puis la réponse.
+
+**Sous-titres français (VOST)** : dans « Créer un visuel » d'une
+bande-annonce, l'option « Sous-titres français si la vidéo est en VO »
+transcrit la piste son (Whisper, comme les clips), la fait traduire par Claude
+(clé « 🔑 IA Claude »), et l'incruste en bas de la vidéo. Une VF n'est pas
+sous-titrée (`news_story/vost.py`).
+
+**News déjà publiées** : chaque export réussi (visuel, vidéo, Top du jour)
+est mémorisé 90 jours (`news_publiees.json` du dossier de données) ; la liste
+affiche « ✅ Déjà publiée le … » et le Top du jour ne les pré-coche plus.
+
 ### Analyse de contenu d'un clip
 
 Depuis une carte du Radar, "🔊 Analyser le contenu" ecoute le clip localement et
