@@ -22,20 +22,24 @@ strategies, choisies A LA MAIN par theme apres avoir REGARDE chaque video
   remplit tout le cadre, au prix des bords lateraux. Convient a un sujet
   centre (chimpanzee) ou une texture qui doit couvrir tout l'ecran sans trou
   (pluie, intelligence, manga, confettis) : perdre quelques bords y est
-  anodin. Confettis est passe de "contain" a "cover" (signale par
-  l'utilisateur : en vertical, ils ne couvraient qu'un bandeau au milieu de
-  l'ecran, comme en 16:9) ; ils sont repartis sur toute l'image source, le
-  centre rogne en reste plein.
+  anodin.
 - "contain" : mise a l'echelle sur la LARGEUR, jamais de rognage, complete
   par un bandeau transparent -- rien n'est jamais perdu. Necessaire des qu'un
   element FIXE proche d'un bord importe (le bandeau "LIVE" d'infos, colle au
   bord gauche de sa video source : un rognage l'aurait coupe -- constate en
   testant "cover" dessus avant de choisir "contain").
 
+- "tile" (mosaique) : mise a l'echelle sur la LARGEUR, comme "contain", puis
+  la video est EMPILEE autant de fois qu'il faut pour remplir la hauteur.
+  Signale par l'utilisateur : en vertical, confettis/euros/fleurs ne
+  couvraient qu'un bandeau 16:9 au milieu de l'ecran ; "cover" les grossit
+  trois fois (pieces enormes, fleurs presque toutes rognees), l'utilisateur a
+  propose de les dupliquer. Chaque copie demarre a un autre moment de la
+  video (et une sur deux en miroir) pour que la repetition ne se voie pas.
+  En 16:9, une seule copie suffit : rendu identique a "contain".
+
 `anchor` ne vaut que pour "contain" : ou va le bandeau transparent restant.
-"center" convient a un contenu disperse sur toute la hauteur (euros, fleurs,
-infos ; pas "cover" pour euros et fleurs : les pieces deviendraient enormes,
-et les fleurs, clairsemees, sortiraient presque toutes du cadre rogne). "bottom" est reserve a "flammes" : un feu doit toucher
+"center" convient a un contenu disperse sur toute la hauteur (infos). "bottom" est reserve a "flammes" : un feu doit toucher
 le bas du cadre, un centrage le ferait flotter au milieu de l'ecran sans
 toucher aucun bord -- constate en testant "center" dessus avant de corriger.
 """
@@ -60,6 +64,7 @@ ASSETS_SUBDIR = "delire"
 
 FIT_COVER = "cover"
 FIT_CONTAIN = "contain"
+FIT_TILE = "tile"
 
 ANCHOR_CENTER = "center"
 ANCHOR_TOP = "top"
@@ -87,6 +92,11 @@ class ThemeLayer:
     chroma_color: str = "0x00FF00"
     chroma_similarity: float = 0.14
     chroma_blend: float = 0.02
+    # "tile" seulement : duree de la video (s), pour repartir les points de
+    # depart des copies sur toute sa boucle, et son rapport largeur/hauteur,
+    # pour savoir combien de copies remplissent le cadre.
+    loop_s: float = 0.0
+    aspect: float = 16 / 9
 
 
 # Le calque video de chaque theme, avec son ajustement de cadre choisi a
@@ -140,11 +150,11 @@ _LAYERS = {
                    chroma_color="0x0ECA42", chroma_similarity=0.24, chroma_blend=0.02),
     ),
     THEME_CONFETTIS: (
-        ThemeLayer("confettis.mp4", fit=FIT_COVER, opacity=0.75,
+        ThemeLayer("confettis.mp4", fit=FIT_TILE, opacity=0.75, loop_s=30.0,
                    chroma_color="0x00FF01", chroma_similarity=0.20, chroma_blend=0.02),
     ),
     THEME_EUROS: (
-        ThemeLayer("euros.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
+        ThemeLayer("euros.mp4", fit=FIT_TILE, opacity=0.75, loop_s=20.1,
                    chroma_color="0x0FFA05", chroma_similarity=0.30, chroma_blend=0.02),
     ),
     THEME_FLAMMES: (
@@ -152,7 +162,7 @@ _LAYERS = {
                    chroma_color="0x12850F", chroma_similarity=0.18, chroma_blend=0.02),
     ),
     THEME_FLEURS: (
-        ThemeLayer("fleurs.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
+        ThemeLayer("fleurs.mp4", fit=FIT_TILE, opacity=0.75, loop_s=28.3,
                    chroma_color="0x00CA00", chroma_similarity=0.28, chroma_blend=0.02),
     ),
     THEME_PLUIE: (

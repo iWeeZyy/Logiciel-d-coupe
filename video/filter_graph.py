@@ -609,9 +609,14 @@ def build_ffmpeg_args(
         from video.delire_theme_filters import overlay_layers as _theme_overlay_layers
 
         for layer in _theme_overlay_layers(getattr(delire_plan, "theme", ""), out_w, out_h, fps):
-            input_args = (["-stream_loop", "-1", "-i", layer.asset_path] if layer.is_video
-                          else ["-i", layer.asset_path])
-            overlays.append((input_args, layer.prep_filter, layer.position))
+            if layer.tile_offsets:
+                # Mosaique : plusieurs entrees, sous-graphe deja indexe
+                # (meme mecanisme "prepared" que l'intro, plus bas).
+                first = 1 + sum(args.count("-i") for args, *_ in overlays)
+                overlays.append((layer.input_args(), layer.tiled_graph(first, f"th{len(overlays)}"),
+                                 layer.position, None, True))
+                continue
+            overlays.append((layer.input_args(), layer.prep_filter, layer.position))
     if watermark is not None:
         from video.watermark import overlay_position, prepare_filter
 

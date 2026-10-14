@@ -77,6 +77,16 @@ def build_clip(
             duration=video_duration(intro.video),
         )
 
+    # Themes en mosaique (confettis, euros, fleurs en vertical) : la copie
+    # reduite de leur video est faite une fois, avant le premier export.
+    theme = getattr(delire_plan, "theme", "") if delire_plan is not None else ""
+    if theme:
+        from video.delire_theme_filters import prepare_tile_sources
+        from video.filter_graph import TARGET_H, TARGET_W
+
+        out_w, out_h = tuple(target_size) if target_size else (TARGET_W, TARGET_H)
+        prepare_tile_sources(theme, out_w, out_h, cancel_token=cancel_token)
+
     args = build_ffmpeg_args(
         video_path=video_path,
         edit_list=edit_list,

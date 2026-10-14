@@ -14,13 +14,17 @@ Couvre trois couches, chacune verifiable sans encoder une image :
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from editing.delire import (
     DEFAULT_LEVEL,
     THEME_CHIMPANZEE,
     THEME_CONFETTIS,
+    THEME_EUROS,
     THEME_FLAMMES,
+    THEME_FLEURS,
     THEME_INFOS,
     THEME_MANGA,
     THEME_MYSTERE,
@@ -129,13 +133,15 @@ class TestCatalogueDesCalques:
         assert couche.fit == FIT_CONTAIN
         assert couche.anchor == ANCHOR_BOTTOM
 
-    def test_confettis_couvrent_tout_l_ecran_vertical(self):
-        """Signale par l'utilisateur : en "contain", les confettis ne
-        couvraient qu'un bandeau 16:9 au milieu d'un clip vertical."""
-        (couche,) = layers_for(THEME_CONFETTIS)
-        assert couche.fit == FIT_COVER
-        (prepare,) = overlay_layers(THEME_CONFETTIS, 1080, 1920, 30.0)
-        assert "crop=1080:1920" in prepare.prep_filter and "pad=" not in prepare.prep_filter
+    def test_confettis_euros_fleurs_en_mosaique(self):
+        """Signale par l'utilisateur : en "contain", ils ne couvraient qu'un
+        bandeau 16:9 au milieu d'un clip vertical ; "cover" les grossissait
+        trop -- l'utilisateur a propose de les dupliquer."""
+        from video.delire_theme import FIT_TILE
+
+        for theme in (THEME_CONFETTIS, THEME_EUROS, THEME_FLEURS):
+            (couche,) = layers_for(theme)
+            assert couche.fit == FIT_TILE and couche.loop_s > 0
 
     def test_infos_ne_rogne_jamais_le_cadre(self):
         """Le bandeau "LIVE" colle au bord gauche du rush source : un
@@ -181,8 +187,10 @@ class TestCalquesPrepares:
     def test_le_chromakey_precede_toujours_le_format_rgba(self):
         """`format=rgba` doit voir le resultat du detourage, pas l'inverse --
         sinon le calque n'aurait jamais de canal alpha a composer."""
-        (couche,) = overlay_layers(THEME_CONFETTIS, 1080, 1920, 30.0)
+        (couche,) = overlay_layers(THEME_FLAMMES, 1080, 1920, 30.0)
         assert couche.prep_filter.index("chromakey=") < couche.prep_filter.index("format=rgba")
+        (mosaique,) = overlay_layers(THEME_CONFETTIS, 1080, 1920, 30.0)
+        assert mosaique.tile_copy.index("chromakey=") < mosaique.tile_copy.index("format=rgba")
 
     def test_la_mise_a_l_echelle_precede_toujours_le_chromakey(self):
         (couche,) = overlay_layers(THEME_MANGA, 1080, 1920, 30.0)
@@ -360,3 +368,78 @@ class TestLeMenuThemeDansLAccueil:
         box.setChecked(False)
         assert not options.theme_combo.isEnabled()
         assert not options.delire_combo.isEnabled()
+
+
+# ------------------------------------------------------- mosaique (tile)
+
+class TestMosaique:
+    def test_trois_copies_decalees_en_vertical(self):
+        (couche,) = overlay_layers(THEME_CONFETTIS, 1080, 1920, 30.0)
+        assert len(couche.tile_offsets) == 3
+        assert len(set(couche.tile_offsets)) == 3              # jamais deux copies synchrones
+        assert all(0 <= o < 30.0 for o in couche.tile_offsets)
+        graph = couche.tiled_graph(1, "th0")
+        assert graph.startswith("[1:v]") and "[3:v]" in graph and "[4:v]" not in graph
+        assert "vstack=inputs=3" in graph and "hflip" in graph
+        assert "crop=1080:1920:0:0" in graph
+        assert graph.count("chromakey=") == 3
+        assert couche.input_args().count("-i") == 3 and couche.input_args().count("-ss") == 3
+
+    def test_en_16_9_une_seule_copie_comme_avant(self):
+        (couche,) = overlay_layers(THEME_CONFETTIS, 1920, 1080, 30.0)
+        assert couche.tile_offsets == ()
+        assert "pad=1920:1080" in couche.prep_filter and "vstack" not in couche.prep_filter
+
+    def test_le_filigrane_suit_les_trois_entrees_de_la_mosaique(self):
+        from video.watermark import Watermark
+
+        args = _args(delire_plan=build_theme_plan(THEME_EUROS), watermark=Watermark(image="logo.png"))
+        assert args.count("-i") == 5                           # clip + 3 copies + logo
+        graph = args[args.index("-filter_complex") + 1]
+        assert "[th0t0][th0t1][th0t2]vstack" in graph
+        assert "[4:v]" in graph                                # le logo, apres la mosaique
+
+    def test_copie_reduite_utilisee_quand_elle_existe(self, tmp_path, monkeypatch):
+        from video import delire_theme_filters as f
+
+        monkeypatch.setattr("core.paths.user_data_dir", lambda: tmp_path)
+        (couche,) = layers_for(THEME_FLEURS)
+        (sans,) = overlay_layers(THEME_FLEURS, 1080, 1920, 30.0)
+        assert sans.asset_path == str(asset_path("fleurs.mp4"))
+        proxy = f.tile_proxy_path(couche, 1080)
+        proxy.parent.mkdir(parents=True)
+        proxy.write_bytes(b"x")
+        (avec,) = overlay_layers(THEME_FLEURS, 1080, 1920, 30.0)
+        assert avec.asset_path == str(proxy)
+
+    def test_preparation_des_copies(self, tmp_path, monkeypatch):
+        from video import delire_theme_filters as f
+        from video import ffmpeg_utils
+
+        monkeypatch.setattr("core.paths.user_data_dir", lambda: tmp_path)
+        calls = []
+
+        def fake_run(args, description, cancel_token=None):
+            calls.append(args)
+            Path(args[-1]).write_bytes(b"video")
+
+        monkeypatch.setattr(ffmpeg_utils, "run_ffmpeg", fake_run)
+        f.prepare_tile_sources(THEME_CONFETTIS, 1080, 1920)
+        f.prepare_tile_sources(THEME_CONFETTIS, 1080, 1920)     # deja la : rien a refaire
+        f.prepare_tile_sources(THEME_CONFETTIS, 1920, 1080)     # 16:9 : pas de mosaique
+        f.prepare_tile_sources(THEME_PLUIE, 1080, 1920)         # pas un theme en mosaique
+        assert len(calls) == 1 and "scale=1080:-2" in calls[0]
+        assert (tmp_path / "delire_cache" / "confettis_1080w.mp4").read_bytes() == b"video"
+
+    def test_echec_de_preparation_sans_consequence(self, tmp_path, monkeypatch):
+        from video import delire_theme_filters as f
+        from video import ffmpeg_utils
+
+        monkeypatch.setattr("core.paths.user_data_dir", lambda: tmp_path)
+
+        def broken(*a, **k):
+            raise RuntimeError("disque plein")
+
+        monkeypatch.setattr(ffmpeg_utils, "run_ffmpeg", broken)
+        f.prepare_tile_sources(THEME_EUROS, 1080, 1920)          # ne leve pas
+        assert not list((tmp_path / "delire_cache").glob("*"))
