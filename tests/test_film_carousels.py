@@ -252,3 +252,57 @@ class TestStreaming:
         assert len(written) == 3
         caption = (tmp_path / "s" / "legende.txt").read_text(encoding="utf-8")
         assert "2. Haunted Hotel, saison 2 (Netflix, vendredi 9 octobre)" in caption
+
+
+_PRIME = """<article><ul>
+<li>7 octobre : <strong>Carrie</strong> , saison 1</li>
+<li>14 octobre : Helluva Boss , saison 3</li>
+<li>14 octobre : L’Amour de ta vie , film avec Margaret Qualley et Gabriel Basso</li>
+<li>19 octobre : Love in Disguise , saison 1</li>
+<li>Facebook</li></ul></article>"""
+
+
+class TestPrimeVideo:
+    def test_semaine_en_cours_seulement(self):
+        items = cl.parse_prime_month(_PRIME, date(2026, 10, 14))      # semaine du 12 au 18
+        assert [(i.day, i.title, i.kind) for i in items] == [
+            ("Mercredi 14 octobre", "Helluva Boss, saison 3", "Série"),
+            ("Mercredi 14 octobre", "L’Amour de ta vie", "Film")]
+        assert items[1].synopsis == "Avec Margaret Qualley et Gabriel Basso."
+        assert items[0].platform == "Prime Video"
+
+    def test_article_du_mois(self):
+        listing = ('<a href="https://www.serie-news.com/amazon-prime-video/nouveautes-prime-video/'
+                   '1-prime-video-en-septembre-2026-x/">a</a><a href="https://www.serie-news.com/'
+                   'amazon-prime-video/nouveautes-prime-video/2-prime-video-en-octobre-2026-y/">b</a>')
+        assert cl.find_prime_month_article(listing, date(2026, 10, 14)).endswith("octobre-2026-y/")
+
+
+class TestDateDeSortie:
+    def test_fiche_allocine(self):
+        from news_story import release_date as rd
+
+        page = ('<div class="meta-body-item meta-body-info"> <span class="ACrx date blue-link"> '
+                '14 octobre 2026 </span> <span class="meta-release-type"> en salle </span> </div>')
+        release = rd.parse_film_page(page)
+        assert rd.line(release, date(2026, 10, 1)) == "Au cinéma le 14 octobre 2026"
+        assert rd.line(release, date(2026, 10, 20)) == "Au cinéma depuis le 14 octobre 2026"
+
+    def test_texte_de_la_video(self):
+        from news_story import release_date as rd
+
+        assert rd.line(rd.from_text("TEMPÊTE Bande Annonce VF. Au cinéma le 12 novembre !"),
+                       date(2026, 10, 1)) == "Au cinéma le 12 novembre"
+        assert rd.line(rd.from_text("Disponible sur Netflix le 3 décembre 2026"),
+                       date(2026, 10, 1)) == "Sur Netflix le 3 décembre 2026"
+        assert rd.from_text("Rien de daté ici") is None
+
+    def test_recherche_titre_exact_seulement(self):
+        from news_story import release_date as rd
+
+        page = ('<li class="mdl"><span class="ACrx meta-title-link">Le Corset</span>'
+                '<span class="ACry date">14 octobre 2026</span></li>'
+                '<li class="mdl"><span class="ACrz meta-title-link">Le Corset social</span>'
+                '<span class="date">5 janvier 2011</span></li>')
+        assert rd.parse_search(page, "le corset").day == "14 octobre 2026"
+        assert rd.parse_search(page, "Corset") is None          # jamais un titre approchant

@@ -34,8 +34,8 @@ _INTROS = {
     BOX_OFFICE: "Le classement des entrées de la semaine en France (AlloCiné). ",
     CRITICS: "Les sorties des 4 dernières semaines notées par la presse ET les spectateurs "
              "(AlloCiné), du plus grand écart au plus petit. ",
-    STREAMING: "Les nouveautés de la semaine des plateformes dont AlloCiné publie l'agenda "
-               "(Netflix aujourd'hui ; les autres apparaissent dès qu'AlloCiné les publie). ",
+    STREAMING: "Les nouveautés de la semaine : agenda AlloCiné (Netflix ; d'autres plateformes "
+               "dès qu'AlloCiné les publie) et calendrier Prime Video de Serie-news. ",
 }
 MAX_ITEMS = 10
 
@@ -95,7 +95,7 @@ class _ExportThread(QThread):
                 if self.kind == STREAMING:
                     from news_story.cinema_lists import fetch_poster
 
-                    images.append(fc.download_image(fetch_poster(item.url)))
+                    images.append(fc.download_image(fetch_poster(item.url, title=item.title)))
                     continue
                 film = item.film if self.kind == BOX_OFFICE else item
                 images.append(fc.download_image(film.poster_url))

@@ -346,10 +346,114 @@ def fetch_streaming(timeout_s: float = 20, on_progress=None) -> list[StreamingIt
             find_agenda_article(series_news, name)
         if article:
             items += parse_streaming_agenda(fetch_page(article, timeout_s), name)
+    if on_progress:
+        on_progress("Prime Video")
+    try:
+        items += fetch_prime_video(timeout_s=timeout_s)
+    except Exception as e:  # noqa: BLE001 -- une source en panne ne bloque pas les autres
+        logger.warning(f"Calendrier Prime Video illisible : {e}")
     return items
 
 
-def fetch_poster(item_url: str, timeout_s: float = 20) -> str:
+def fetch_poster(item_url: str, timeout_s: float = 20, title: str = "") -> str:
+    """Affiche de la fiche AlloCine ; sans fiche (Prime Video), recherche du
+    titre exact."""
     from gaming_news.featured import fetch_page
 
-    return page_poster(fetch_page(item_url, timeout_s)) if item_url else ""
+    if item_url:
+        return page_poster(fetch_page(item_url, timeout_s))
+    return search_poster(title, timeout_s) if title else ""
+
+
+# ------------------------------------------------------- Prime Video
+
+# AlloCine ne publie pas d'agenda hebdomadaire Prime Video. Serie-news publie
+# chaque mois « Prime Video en octobre 2026 : … » avec une liste datee
+# (« 14 octobre : Helluva Boss , saison 3 ») : on en garde la semaine en
+# cours. Les affiches viennent de la recherche AlloCine (titre exact).
+PRIME_LISTING_URL = "https://www.serie-news.com/amazon-prime-video/nouveautes-prime-video/"
+_FR_MONTHS = ("janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout",
+              "septembre", "octobre", "novembre", "decembre")
+_FR_DAYS = ("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche")
+_PRIME_LINE_RE = re.compile(r"^(1er|\d{1,2})\s+([a-zéû]+)\s*:\s*(.+)$", re.I)
+
+
+def find_prime_month_article(listing_html: str, today) -> str:
+    """Article du mois en cours (« …-octobre-2026-… ») dans la liste Serie-news."""
+    slug = f"{_FR_MONTHS[today.month - 1]}-{today.year}"
+    for url in re.findall(r'href="(https://www\.serie-news\.com/amazon-prime-video/'
+                          r'nouveautes-prime-video/[^"#]+)"', listing_html or ""):
+        if slug in url:
+            return url
+    return ""
+
+
+def _fold_month(name: str) -> str:
+    import unicodedata
+
+    return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+
+
+def parse_prime_month(article_html: str, today) -> list[StreamingItem]:
+    """Titres du calendrier dates de la semaine (lundi -> dimanche) de `today`."""
+    from datetime import date, timedelta
+
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    items: list[StreamingItem] = []
+    for inner in re.findall(r"<li[^>]*>(.*?)</li>", article_html or "", re.S):
+        text = _text(inner)
+        match = _PRIME_LINE_RE.match(text)
+        if not match or _fold_month(match.group(2)) not in _FR_MONTHS:
+            continue
+        day_number = 1 if match.group(1).lower() == "1er" else int(match.group(1))
+        try:
+            when = date(today.year, _FR_MONTHS.index(_fold_month(match.group(2))) + 1, day_number)
+        except ValueError:
+            continue
+        if not monday <= when <= sunday:
+            continue
+        title, _, detail = (p.strip() for p in match.group(3).partition(","))
+        kind, synopsis = "", ""
+        low = detail.lower()
+        if low.startswith("saison"):
+            kind, title = "Série", f"{title}, {detail}"
+        elif low.startswith("film"):
+            kind = "Film"
+            rest = detail[4:].strip()
+            synopsis = (rest[0].upper() + rest[1:] + ".") if rest else ""
+        elif detail:
+            title = f"{title}, {detail}"
+        items.append(StreamingItem(
+            platform="Prime Video", title=title, kind=kind,
+            day=f"{_FR_DAYS[when.weekday()]} {when.day} {match.group(2).lower()}",
+            synopsis=synopsis))
+    return items
+
+
+def search_poster(title: str, timeout_s: float = 20) -> str:
+    """Affiche AlloCine d'un film ou d'une serie dont le titre est EXACTEMENT
+    `title` (sans « , saison 3 ») ; "" sinon."""
+    from urllib.parse import quote
+
+    from gaming_news.featured import fetch_page
+    from news_story.release_date import _fold
+
+    name = title.split(",")[0].strip()
+    for kind in ("series", "movie"):
+        page = fetch_page(f"{BASE_URL}rechercher/{kind}/?q={quote(name)}", timeout_s)
+        for card in page.split('<li class="mdl')[1:]:
+            found = re.search(r'meta-title-link[^"]*"[^>]*>(.*?)</', card, re.S)
+            if found and _fold(_text(found.group(1))) == _fold(name):
+                return _image_url(card, "thumbnail-img")
+    return ""
+
+
+def fetch_prime_video(today=None, timeout_s: float = 20) -> list[StreamingItem]:
+    from datetime import date
+
+    from gaming_news.featured import fetch_page
+
+    today = today or date.today()
+    article = find_prime_month_article(fetch_page(PRIME_LISTING_URL, timeout_s), today)
+    return parse_prime_month(fetch_page(article, timeout_s), today) if article else []

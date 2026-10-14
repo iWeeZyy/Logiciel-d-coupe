@@ -141,6 +141,16 @@ class _FetchImagesThread(QThread):
             video_url = fetch_video_url(self.article.url)
             if video_url:
                 self.video_found.emit(video_url)
+            # Date de sortie du film, sous le titre (demande de l'utilisateur) :
+            # fiche AlloCine, texte de la video, ou recherche par titre exact.
+            from news_story import release_date
+
+            release = release_date.find_release(
+                self.article.url, film_title(self.article.title),
+                f"{self.article.title}\n{self.article.summary}")
+            text = release_date.line(release)
+            if text and not self.cancel_token.is_cancelled:
+                self.answer_found.emit(text)
         elif self.theme == "cinema":
             # Toutes les news cine : l'info principale (et la reponse au
             # titre) sous le titre -- par Claude si une cle est configuree.
