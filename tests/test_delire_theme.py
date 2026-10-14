@@ -129,6 +129,14 @@ class TestCatalogueDesCalques:
         assert couche.fit == FIT_CONTAIN
         assert couche.anchor == ANCHOR_BOTTOM
 
+    def test_confettis_couvrent_tout_l_ecran_vertical(self):
+        """Signale par l'utilisateur : en "contain", les confettis ne
+        couvraient qu'un bandeau 16:9 au milieu d'un clip vertical."""
+        (couche,) = layers_for(THEME_CONFETTIS)
+        assert couche.fit == FIT_COVER
+        (prepare,) = overlay_layers(THEME_CONFETTIS, 1080, 1920, 30.0)
+        assert "crop=1080:1920" in prepare.prep_filter and "pad=" not in prepare.prep_filter
+
     def test_infos_ne_rogne_jamais_le_cadre(self):
         """Le bandeau "LIVE" colle au bord gauche du rush source : un
         rognage (fit="cover") l'aurait coupe -- constate en testant "cover"

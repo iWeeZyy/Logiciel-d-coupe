@@ -21,7 +21,11 @@ strategies, choisies A LA MAIN par theme apres avoir REGARDE chaque video
 - "cover" : mise a l'echelle sur la HAUTEUR puis rognage horizontal centre --
   remplit tout le cadre, au prix des bords lateraux. Convient a un sujet
   centre (chimpanzee) ou une texture qui doit couvrir tout l'ecran sans trou
-  (pluie, intelligence, manga) : perdre quelques bords y est anodin.
+  (pluie, intelligence, manga, confettis) : perdre quelques bords y est
+  anodin. Confettis est passe de "contain" a "cover" (signale par
+  l'utilisateur : en vertical, ils ne couvraient qu'un bandeau au milieu de
+  l'ecran, comme en 16:9) ; ils sont repartis sur toute l'image source, le
+  centre rogne en reste plein.
 - "contain" : mise a l'echelle sur la LARGEUR, jamais de rognage, complete
   par un bandeau transparent -- rien n'est jamais perdu. Necessaire des qu'un
   element FIXE proche d'un bord importe (le bandeau "LIVE" d'infos, colle au
@@ -29,8 +33,9 @@ strategies, choisies A LA MAIN par theme apres avoir REGARDE chaque video
   testant "cover" dessus avant de choisir "contain").
 
 `anchor` ne vaut que pour "contain" : ou va le bandeau transparent restant.
-"center" convient a un contenu disperse sur toute la hauteur (confettis,
-euros, fleurs, infos). "bottom" est reserve a "flammes" : un feu doit toucher
+"center" convient a un contenu disperse sur toute la hauteur (euros, fleurs,
+infos ; pas "cover" pour euros et fleurs : les pieces deviendraient enormes,
+et les fleurs, clairsemees, sortiraient presque toutes du cadre rogne). "bottom" est reserve a "flammes" : un feu doit toucher
 le bas du cadre, un centrage le ferait flotter au milieu de l'ecran sans
 toucher aucun bord -- constate en testant "center" dessus avant de corriger.
 """
@@ -135,7 +140,7 @@ _LAYERS = {
                    chroma_color="0x0ECA42", chroma_similarity=0.24, chroma_blend=0.02),
     ),
     THEME_CONFETTIS: (
-        ThemeLayer("confettis.mp4", fit=FIT_CONTAIN, anchor=ANCHOR_CENTER, opacity=0.75,
+        ThemeLayer("confettis.mp4", fit=FIT_COVER, opacity=0.75,
                    chroma_color="0x00FF01", chroma_similarity=0.20, chroma_blend=0.02),
     ),
     THEME_EUROS: (
