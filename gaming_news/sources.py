@@ -50,6 +50,10 @@ DEFAULT_SOURCES = (
     NewsSource(key="allocine_top_trailers", label="AlloCiné · Top bandes-annonces",
               feed_url="https://www.allocine.fr/video/bandes-annonces/", kind="allocine_trailers",
               theme="trailers"),
+    # Dernieres bandes-annonces AlloCine, datees, triees avec les chaines.
+    NewsSource(key="allocine_latest_trailers", label="AlloCiné · Dernières bandes-annonces",
+              feed_url="https://www.allocine.fr/video/bandes-annonces/plus-recentes/",
+              kind="allocine_latest_trailers", theme="trailers"),
     NewsSource(key="yt_filmsactu", label="FilmsActu",
               feed_url=_YT + "UC_i8X3p8oZNaik8X513Zn1Q", theme="trailers"),
     NewsSource(key="yt_allocine", label="AlloCiné (YouTube)",
@@ -78,7 +82,7 @@ THEME_LABELS = {"gaming": "🎮 Gaming", "cinema": "🎬 Cinéma & séries",
 
 # Lecteurs connus (voir feed_fetcher.fetch_source) -- une valeur inconnue
 # dans la config retombe sur "rss" plutot que d'ecarter la source.
-KINDS = ("rss", "breakflip", "allocine_trailers")
+KINDS = ("rss", "breakflip", "allocine_trailers", "allocine_latest_trailers")
 
 
 def load_sources(config: dict | None = None) -> list[NewsSource]:

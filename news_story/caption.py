@@ -38,10 +38,16 @@ _MAX_SUMMARY_CHARS = 1600  # Instagram coupe a 2200 caracteres au total
 
 
 def build_caption(title: str, summary: str = "", source_label: str = "",
-                  theme: str = "", answer: str = "", question: str = "") -> str:
+                  theme: str = "", answer: str = "", question: str = "",
+                  synopsis: str = "") -> str:
     """`question` : question aux abonnes en fin de legende (redigee par Claude
-    a partir de l'article, news_story/ai_summary.py), pour les faire reagir."""
+    a partir de l'article, news_story/ai_summary.py), pour les faire reagir.
+    `synopsis` : synopsis du film (fiche AlloCine, bandes-annonces) ; il
+    remplace la description de la video, souvent promotionnelle."""
     title = " ".join((title or "").split())
+    synopsis = " ".join((synopsis or "").split())
+    if synopsis:
+        summary = f"📖 Synopsis : {synopsis}"
     summary = _SPACE_BEFORE_PUNCT.sub(r"\1", _strip_html(drop_promo_lines(summary or "")))
     if len(summary) > _MAX_SUMMARY_CHARS:
         summary = summary[:_MAX_SUMMARY_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"

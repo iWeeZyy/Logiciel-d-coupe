@@ -48,7 +48,21 @@ def fetch_all_sources(sources, timeout_s: float = DEFAULT_TIMEOUT_S,
     articles: list[Article] = []
     for source in sources:
         articles.extend(fetch_source(source, timeout_s=timeout_s, max_articles=max_articles))
-    return sort_articles(articles)
+    return dedupe(sort_articles(articles))
+
+
+def dedupe(articles: list[Article]) -> list[Article]:
+    """Une meme adresse (meme bande-annonce dans le Top et dans les plus
+    recentes) n'apparait qu'une fois, a sa premiere place. Les parametres
+    comptent (« watch?v=… » : une video YouTube par valeur)."""
+    seen: set[str] = set()
+    kept = []
+    for article in articles:
+        key = re.sub(r"^https?://(www\.)?", "", (article.url or "").strip().lower()).split("#")[0]
+        if key not in seen:
+            seen.add(key)
+            kept.append(article)
+    return kept
 
 
 def sort_articles(articles: list[Article]) -> list[Article]:
@@ -110,6 +124,10 @@ def fetch_source(source: NewsSource, timeout_s: float = DEFAULT_TIMEOUT_S,
         from gaming_news.featured import fetch_allocine_trailers
 
         return fetch_allocine_trailers(source, timeout_s, max_articles)
+    if source.kind == "allocine_latest_trailers":
+        from gaming_news.featured import fetch_allocine_latest_trailers
+
+        return fetch_allocine_latest_trailers(source, timeout_s, max_articles)
 
     try:
         response = requests.get(
@@ -119,15 +137,30 @@ def fetch_source(source: NewsSource, timeout_s: float = DEFAULT_TIMEOUT_S,
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         logger.warning(f"Flux « {source.label} » injoignable : {e}")
-        return []
+        return _youtube_fallback(source, max_articles)
 
     articles = parse_feed(response.content, source, max_articles=max_articles)
+    if not articles:
+        articles = _youtube_fallback(source, max_articles)
     if source.featured_url and articles:
         from gaming_news.featured import fetch_page, rank_featured
 
         page = fetch_page(source.featured_url, timeout_s)
         if page:
             articles = rank_featured(articles, page, source.featured_url)
+    return articles
+
+
+def _youtube_fallback(source: NewsSource, max_articles: int) -> list[Article]:
+    """Flux d'une chaine YouTube muet (404 constate le 2026-10-14) : la page
+    de la chaine, via yt-dlp (gaming_news/youtube_channel.py)."""
+    from gaming_news import youtube_channel
+
+    if not youtube_channel.channel_id(source.feed_url):
+        return []
+    articles = youtube_channel.fetch(source, max_articles, _compile_title_filter(source))
+    if articles:
+        logger.info(f"« {source.label} » lu depuis la page de la chaîne ({len(articles)} vidéos).")
     return articles
 
 

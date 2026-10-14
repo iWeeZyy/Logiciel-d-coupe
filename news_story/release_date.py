@@ -1,4 +1,4 @@
-"""Date de sortie d'un film, pour l'afficher sous le titre d'une bande-annonce.
+"""Date de sortie et synopsis d'un film, pour les bandes-annonces.
 
 Demande explicite de l'utilisateur : « ajouter la date de sortie du film dans
 les bandes-annonces, juste sous le titre ». Trois sources, dans l'ordre de
@@ -9,9 +9,15 @@ fiabilite, et rien d'invente -- sans date trouvee, rien n'est affiche :
    « sur Netflix le 3 décembre 2026 »… ;
 3. la recherche AlloCine par titre, seulement si un resultat porte EXACTEMENT
    ce titre (un film homonyme d'une autre epoque serait une fausse date).
+
+Le synopsis (legende des bandes-annonces, autre demande de l'utilisateur)
+vient de la meme fiche AlloCine : celle de l'adresse « cfilm=… », sinon
+celle du resultat de recherche au titre exact (film, puis serie). Jamais
+reformule ; aucun synopsis plutot que celui d'un homonyme.
 """
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -78,18 +84,66 @@ def parse_film_page(page_html: str) -> Release | None:
                    " ".join(unescape(where.group(1)).split()) if where else "")
 
 
-def parse_search(page_html: str, title: str) -> Release | None:
-    """Premier resultat de recherche dont le titre est EXACTEMENT `title`."""
+def _exact_card(page_html: str, title: str) -> str:
+    """La carte du premier resultat de recherche dont le titre est EXACTEMENT
+    `title` ("" sinon)."""
     wanted = _fold(title)
+    if not wanted:
+        return ""
     for card in (page_html or "").split('<li class="mdl')[1:]:
         name = re.search(r'meta-title-link[^"]*"[^>]*>(.*?)</', card, re.S)
-        if not name or _fold(re.sub(r"<[^>]+>", " ", name.group(1))) != wanted:
-            continue
-        day = re.search(r'class="[^"]*\bdate\b[^"]*"[^>]*>\s*([^<]+?)\s*<', card)
-        if day and _DATE_RE.search(day.group(1)):
-            return Release(" ".join(unescape(day.group(1)).split()), "en salle")
-        return None
+        if name and _fold(re.sub(r"<[^>]+>", " ", name.group(1))) == wanted:
+            return card
+    return ""
+
+
+def parse_search(page_html: str, title: str) -> Release | None:
+    """Date du premier resultat de recherche dont le titre est EXACTEMENT `title`."""
+    card = _exact_card(page_html, title)
+    day = re.search(r'class="[^"]*\bdate\b[^"]*"[^>]*>\s*([^<]+?)\s*<', card)
+    if day and _DATE_RE.search(day.group(1)):
+        return Release(" ".join(unescape(day.group(1)).split()), "en salle")
     return None
+
+
+def search_page_link(page_html: str, title: str) -> str:
+    """Adresse de la fiche du resultat au titre exact ("" sinon). AlloCine
+    chiffre ses liens (classe « ACr… »)."""
+    from gaming_news.featured import decode_allocine_link
+
+    card = _exact_card(page_html, title)
+    link = re.search(r'class="(ACr[A-Za-z0-9+/=]+) [^"]*meta-title-link', card) or \
+        re.search(r'href="(/(?:film|series)/[^"]+)"', card)
+    if not link:
+        return ""
+    path = link.group(1)
+    if path.startswith("ACr"):
+        path = decode_allocine_link(path)
+    return f"https://www.allocine.fr{path}" if path.startswith("/") else path
+
+
+_MAX_SYNOPSIS = 700
+
+
+def parse_synopsis(page_html: str) -> str:
+    """Synopsis d'une fiche AlloCine (donnees structurees « Movie » /
+    « TVSeries »), tel quel ; coupe en fin de phrase s'il est tres long."""
+    for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>',
+                            page_html or "", re.S):
+        try:
+            data = json.loads(block)
+        except ValueError:
+            continue
+        for item in data if isinstance(data, list) else [data]:
+            if isinstance(item, dict) and item.get("@type") in ("Movie", "TVSeries"):
+                text = " ".join(unescape(re.sub(r"<[^>]+>", " ", item.get("description") or "")).split())
+                if len(text) > _MAX_SYNOPSIS:
+                    cut = text[:_MAX_SYNOPSIS]
+                    end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
+                    text = cut[:end + 1] if end > 200 else cut.rsplit(" ", 1)[0] + "…"
+                if text:
+                    return text
+    return ""
 
 
 def from_text(text: str) -> Release | None:
@@ -129,24 +183,45 @@ def line(release: Release | None, today: date | None = None) -> str:
 _CFILM_RE = re.compile(r"cfilm=(\d+)")
 
 
-def find_release(url: str, title: str, text: str = "", timeout_s: float = 15) -> Release | None:
-    """La date de sortie d'un film : fiche AlloCine, texte, puis recherche.
-    Jamais d'exception (None si rien de sur)."""
+@dataclass
+class FilmInfo:
+    release: Release | None = None
+    synopsis: str = ""
+
+
+def find_film(url: str, title: str, text: str = "", timeout_s: float = 15) -> FilmInfo:
+    """Date de sortie et synopsis : fiche AlloCine de l'adresse, sinon fiche
+    du resultat de recherche au titre exact ; la date du texte de la video
+    passe avant celle d'une recherche. Jamais d'exception."""
     from gaming_news.featured import fetch_page
 
+    info = FilmInfo()
     try:
         match = _CFILM_RE.search(url or "")
         if match:
-            release = parse_film_page(fetch_page(
-                f"https://www.allocine.fr/film/fichefilm_gen_cfilm={match.group(1)}.html", timeout_s))
-            if release:
-                return release
-        release = from_text(text)
-        if release:
-            return release
-        if title:
-            return parse_search(fetch_page(
-                f"https://www.allocine.fr/rechercher/movie/?q={quote(title)}", timeout_s), title)
-    except Exception as e:  # noqa: BLE001 -- une date manquante ne bloque rien
-        logger.warning(f"Date de sortie introuvable pour « {title} » : {e}")
-    return None
+            page = fetch_page(
+                f"https://www.allocine.fr/film/fichefilm_gen_cfilm={match.group(1)}.html", timeout_s)
+            info.release, info.synopsis = parse_film_page(page), parse_synopsis(page)
+        if info.release is None:
+            info.release = from_text(text)
+        if title and not (info.release and info.synopsis):
+            for kind in ("movie", "series"):
+                found = fetch_page(
+                    f"https://www.allocine.fr/rechercher/{kind}/?q={quote(title)}", timeout_s)
+                link = search_page_link(found, title)
+                if not link:
+                    continue
+                page = fetch_page(link, timeout_s)
+                if info.release is None:
+                    info.release = parse_film_page(page) or parse_search(found, title)
+                if not info.synopsis:
+                    info.synopsis = parse_synopsis(page)
+                break
+    except Exception as e:  # noqa: BLE001 -- une info manquante ne bloque rien
+        logger.warning(f"Fiche du film introuvable pour « {title} » : {e}")
+    return info
+
+
+def find_release(url: str, title: str, text: str = "", timeout_s: float = 15) -> Release | None:
+    """La date de sortie seule (voir find_film)."""
+    return find_film(url, title, text, timeout_s).release

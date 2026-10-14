@@ -106,6 +106,7 @@ class _FetchImagesThread(QThread):
     answer_found = Signal(str)                # reponse a la question du titre
     ai_status = Signal(str)                   # texte redige par Claude, ou son erreur
     question_found = Signal(str)              # question aux abonnes (fin de legende)
+    synopsis_found = Signal(str)              # synopsis du film (bandes-annonces)
 
     def __init__(self, article: Article, cancel_token: CancelToken, theme: str = "gaming"):
         super().__init__()
@@ -141,15 +142,20 @@ class _FetchImagesThread(QThread):
             video_url = fetch_video_url(self.article.url)
             if video_url:
                 self.video_found.emit(video_url)
-            # Date de sortie du film, sous le titre (demande de l'utilisateur) :
-            # fiche AlloCine, texte de la video, ou recherche par titre exact.
+            # Date de sortie du film sous le titre, et synopsis dans la
+            # legende (demandes de l'utilisateur) : fiche AlloCine, texte de
+            # la video, ou recherche par titre exact.
             from news_story import release_date
 
-            release = release_date.find_release(
+            film = release_date.find_film(
                 self.article.url, film_title(self.article.title),
                 f"{self.article.title}\n{self.article.summary}")
-            text = release_date.line(release)
-            if text and not self.cancel_token.is_cancelled:
+            if self.cancel_token.is_cancelled:
+                return
+            if film.synopsis:
+                self.synopsis_found.emit(film.synopsis)
+            text = release_date.line(film.release)
+            if text:
                 self.answer_found.emit(text)
         elif self.theme == "cinema":
             # Toutes les news cine : l'info principale (et la reponse au
@@ -555,6 +561,7 @@ class StoryDialog(QDialog):
         self._fetch_thread.answer_found.connect(self._on_answer_found)
         self._fetch_thread.ai_status.connect(self.status_label.setText)
         self._fetch_thread.question_found.connect(self._on_question_found)
+        self._fetch_thread.synopsis_found.connect(self._on_synopsis_found)
         self._fetch_thread.start()
 
     def _on_answer_found(self, answer: str) -> None:
@@ -575,10 +582,18 @@ class StoryDialog(QDialog):
         if self.caption_edit.toPlainText() == self._auto_caption:
             self._refresh_auto_caption()
 
+    def _on_synopsis_found(self, synopsis: str) -> None:
+        """Synopsis du film (bandes-annonces) : dans la legende, a la place
+        de la description de la video, sauf legende deja retouchee."""
+        self._synopsis = synopsis
+        if self.caption_edit.toPlainText() == self._auto_caption:
+            self._refresh_auto_caption()
+
     def _refresh_auto_caption(self) -> None:
         self._auto_caption = build_caption(
             self.article.title, self.article.summary, self.article.source_label, self.theme,
-            answer=getattr(self, "_answer", ""), question=getattr(self, "_question", ""))
+            answer=getattr(self, "_answer", ""), question=getattr(self, "_question", ""),
+            synopsis=getattr(self, "_synopsis", ""))
         self.caption_edit.setPlainText(self._auto_caption)
 
     def _on_template_chosen_by_user(self, _index: int) -> None:

@@ -112,30 +112,48 @@ def fetch_page(url: str, timeout_s: float) -> str:
 _TRAILER_LINK_RE = re.compile(
     r'<a[^>]+href="(/video/player_gen_cmedia=\d+&amp;cfilm=\d+\.html)"[^>]*>(.*?)</a>', re.S)
 _THUMB_RE = re.compile(r'data-src="(https://[^"]+acsta\.net[^"]+)"')
+_CARD_THUMB_RE = re.compile(r'(?:data-src|src)="(https://[^"]+acsta\.net[^"]+)"')
 _TAG_RE = re.compile(r"<[^>]+>")
+_CARD = '<div class="card video-card-trailer'
+TOP_TRAILERS_N = 5            # le Top AlloCine bouge peu : seulement ses 5 premieres
+LATEST_TRAILERS_URL = "https://www.allocine.fr/video/bandes-annonces/plus-recentes/"
+
+
+def _trailer_cards(page: str):
+    """(lien, titre, vignette) de chaque carte, dans l'ordre de la page. La
+    vignette est cherchee DANS la carte du lien (elle suit le lien sur la
+    page actuelle) ; ancienne mise en page : la derniere avant le lien."""
+    if _CARD in page:
+        for card in page.split(_CARD)[1:]:
+            match = _TRAILER_LINK_RE.search(card)
+            if match:
+                thumbs = [u for u in _CARD_THUMB_RE.findall(card) if "/empty/" not in u]
+                yield match.group(1), match.group(2), thumbs[0] if thumbs else ""
+        return
+    for match in _TRAILER_LINK_RE.finditer(page):
+        before = page[max(0, match.start() - 1500):match.start()]
+        thumbs = _THUMB_RE.findall(before)
+        yield match.group(1), match.group(2), thumbs[-1] if thumbs else ""
 
 
 def parse_allocine_trailers(page_html: str, source: NewsSource,
-                            max_articles: int = 30) -> list[Article]:
-    """Bandes-annonces du top, dans l'ordre de la page (rang 0 = numero 1).
-    Pas de date sur la page : le rang fait l'ordre."""
+                            max_articles: int = 30, ranked: bool = True) -> list[Article]:
+    """Bandes-annonces de la page, dans son ordre (rang 0 = numero 1 du top ;
+    `ranked=False` pour la page des plus recentes : pas de rang)."""
     start = page_html.find("Top Trailers")
-    page = page_html[start:] if start >= 0 else page_html
+    page = page_html[start:] if start >= 0 and _CARD not in page_html else page_html
     articles: list[Article] = []
     seen: set[str] = set()
-    for match in _TRAILER_LINK_RE.finditer(page):
-        href = unescape(match.group(1))
-        title = " ".join(unescape(_TAG_RE.sub(" ", match.group(2))).split())
+    for raw_href, raw_title, thumb in _trailer_cards(page):
+        href = unescape(raw_href)
+        title = " ".join(unescape(_TAG_RE.sub(" ", raw_title)).split())
         if href in seen or not title:
             continue
         seen.add(href)
-        # Vignette : la derniere image avant le lien, dans la meme carte.
-        before = page[max(0, match.start() - 1500):match.start()]
-        thumbs = _THUMB_RE.findall(before)
         articles.append(Article(
             source_key=source.key, source_label=source.label, title=title,
-            url=urljoin("https://www.allocine.fr/", href),
-            feed_image_url=thumbs[-1] if thumbs else "", rank=len(articles)))
+            url=urljoin("https://www.allocine.fr/", href), feed_image_url=thumb,
+            rank=len(articles) if ranked else None))
         if len(articles) >= max_articles:
             break
     return articles
@@ -144,4 +162,33 @@ def parse_allocine_trailers(page_html: str, source: NewsSource,
 def fetch_allocine_trailers(source: NewsSource, timeout_s: float,
                             max_articles: int) -> list[Article]:
     page = fetch_page(source.feed_url, timeout_s)
-    return parse_allocine_trailers(page, source, max_articles) if page else []
+    return parse_allocine_trailers(page, source, min(max_articles, TOP_TRAILERS_N)) if page else []
+
+
+_DATE_PUBLISHED_RE = re.compile(r'"(?:uploadDate|datePublished)"\s*:\s*"([^"]+)"')
+
+
+def player_details(page_html: str) -> tuple[str, str]:
+    """(date de mise en ligne ISO, synopsis du film) d'une page de lecture
+    AlloCine ; "" pour ce qui manque."""
+    from news_story.release_date import parse_synopsis
+
+    match = _DATE_PUBLISHED_RE.search(page_html or "")
+    return (match.group(1) if match else ""), parse_synopsis(page_html)
+
+
+def fetch_allocine_latest_trailers(source: NewsSource, timeout_s: float,
+                                   max_articles: int) -> list[Article]:
+    """Les bandes-annonces les plus recentes d'AlloCine. La liste n'a pas de
+    date : chaque page de lecture donne la sienne (et le synopsis du film),
+    lues en parallele pour trier ces videos avec celles des chaines YouTube."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    page = fetch_page(source.feed_url or LATEST_TRAILERS_URL, timeout_s)
+    articles = parse_allocine_trailers(page, source, max_articles, ranked=False) if page else []
+    if not articles:
+        return []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        details = list(pool.map(lambda a: player_details(fetch_page(a.url, timeout_s)), articles))
+    return [replace(a, published_at=day, summary=synopsis)
+            for a, (day, synopsis) in zip(articles, details)]

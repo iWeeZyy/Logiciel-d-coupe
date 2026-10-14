@@ -771,10 +771,20 @@ transcrit la piste son (Whisper, comme les clips), la fait traduire par Claude
 (clé « 🔑 IA Claude »), et l'incruste en bas de la vidéo. Une VF n'est pas
 sous-titrée (`news_story/vost.py`).
 
+**Fil Bandes-annonces** : les 5 premières du Top AlloCiné en tête, puis les
+plus récentes, datées, de la page « Les plus récentes » d'AlloCiné et des
+chaînes YouTube (FilmsActu, Netflix, Prime Video, studios). Quand le flux
+RSS d'une chaîne ne répond plus (404 constaté le 2026-10-14 sur toutes), sa
+page est lue avec yt-dlp (`gaming_news/youtube_channel.py`). Dans « Créer un
+visuel », la date de sortie se place sous le titre et le synopsis de la fiche
+AlloCiné (titre exact uniquement) remplace la description de la vidéo dans la
+légende (`news_story/release_date.py`).
+
 **Presse vs public** (sorties des 4 dernières semaines, notes presse et
 spectateurs AlloCiné qui divergent) et **Nouveautés streaming** (agenda
 hebdomadaire publié par AlloCiné — Netflix aujourd'hui, d'autres plateformes
-dès qu'AlloCiné publie le leur) sont dans le même menu.
+dès qu'AlloCiné publie le leur ; Prime Video d'après le calendrier mensuel de
+Serie-news) sont dans le même menu.
 
 **Top du jour** :
 - **Vidéo avec voix off** (case dans la fenêtre) : les mêmes images en MP4
