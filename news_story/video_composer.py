@@ -58,9 +58,11 @@ DEFAULT_CTA = {
 }
 
 # Emojis dessines en image : les polices de l'appli n'ont pas de glyphe
-# emoji (un carre vide s'afficherait). Clap = emoji Noto de Google
-# (assets/emoji, licence dans NotoEmoji-LICENSE.txt).
-_EMOJI_ICONS = {"🎬": "clapper.png"}
+# emoji (un carre vide s'afficherait). Clap et popcorn = emojis Noto de
+# Google (assets/emoji, licence dans NotoEmoji-LICENSE.txt) ; le popcorn,
+# pour la phrase d'accroche « Les infos ciné avant tout le monde 🍿 », est
+# rendu depuis la police Noto Color Emoji au cadrage du clap.
+_EMOJI_ICONS = {"🎬": "clapper.png", "🍿": "popcorn.png"}
 _VARIATION_SELECTOR = "\ufe0f"
 
 

@@ -189,6 +189,14 @@ class TestClapDansLaPhrase:
         icon = _emoji_image("🎬", 44)
         assert icon is not None and icon.size == (44, 44)
 
+    def test_le_popcorn_aussi(self):
+        from news_story.video_composer import _emoji_image, _segments
+
+        assert _segments("Les infos ciné avant tout le monde 🍿") == \
+            [(False, "Les infos ciné avant tout le monde "), (True, "🍿")]
+        icon = _emoji_image("🍿", 44)
+        assert icon is not None and icon.size == (44, 44)
+
     def test_le_clap_apparait_dans_le_calque(self):
         with_clap, _ = build_overlay(title="", cta="Suivez-moi 🎬")
         without, _ = build_overlay(title="", cta="Suivez-moi")
