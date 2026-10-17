@@ -380,6 +380,21 @@ titre pose dans TikTok, au-dessus de la colonne de boutons (constate sur une
 capture : colle en haut, il etait cache par la barre de recherche). En 16:9,
 il reste colle a la marge.
 
+### Compilations de clips (« Top 5 des moments de… »)
+
+Les clips Twitch font une minute au plus : trop courts pour une « Partie 1 /
+Partie 2 ». Dans **Mes projets → 🎞 Créer une compilation**, on coche 2 à 5
+clips deja produits (l'ordre de coche est l'ordre de la video) ;
+`video/compilation.py` les enchaine (format, cadence et son communs) avec :
+un numero par clip en haut a gauche (#5 → #1 par defaut), l'intro « Follow »
+une seule fois au debut de chaque partie, un ecran de fin incruste sur les 3
+dernieres secondes (« La suite dans la PARTIE 2 » / « Abonne-toi pour la
+prochaine compil »). En 2 parties, la coupe tombe entre deux clips, au plus
+equilibre ; la numerotation continue d'une partie a l'autre. La fenetre
+affiche la duree de chaque partie et signale celles sous la minute, et les
+clips produits avec l'intro (elle reviendrait au milieu). Une legende .txt est
+ecrite a cote de chaque video.
+
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
 **CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de

@@ -42,9 +42,18 @@ class ProjectsPage(QWidget):
         outer.setContentsMargins(40, 32, 40, 24)
         outer.setAlignment(Qt.AlignmentFlag.AlignTop)
 
+        header = QHBoxLayout()
         title = QLabel("Mes projets")
         title.setProperty("role", "pageTitle")
-        outer.addWidget(title)
+        header.addWidget(title)
+        header.addStretch(1)
+        # Compilation de clips deja produits (« Top 5 des moments de… »),
+        # voir gui/compilation_dialog.py.
+        compil_btn = QPushButton("🎞 Créer une compilation")
+        compil_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        compil_btn.clicked.connect(self._open_compilation)
+        header.addWidget(compil_btn)
+        outer.addLayout(header)
         outer.addSpacing(16)
 
         scroll = QScrollArea()
@@ -59,6 +68,11 @@ class ProjectsPage(QWidget):
 
         self.empty_label = QLabel("Aucun projet pour l'instant — lancez une analyse depuis Accueil.")
         self.empty_label.setProperty("role", "muted")
+
+    def _open_compilation(self) -> None:
+        from gui.compilation_dialog import CompilationDialog
+
+        CompilationDialog(self.controller, parent=self).exec()
 
     def on_shown(self) -> None:
         self._reload()
