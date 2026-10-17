@@ -558,3 +558,36 @@ class TestPetitEcran:
             # La legende garde sa hauteur minimale au lieu d'etre ecrasee.
             assert caption.height() >= caption.minimumHeight()
             dialog.cleanup()
+
+
+class TestIntroPopcorn:
+    def test_case_cochee_pour_une_bande_annonce_video(self, app, monkeypatch):
+        from PySide6.QtCore import QSettings
+
+        from news_story.story_templates import TEMPLATE_VIDEO
+
+        monkeypatch.setattr(QSettings, "value", lambda self, key, default=None: default)
+        monkeypatch.setattr(QSettings, "setValue", lambda self, key, value: None)
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog.fetch_video_url",
+                           lambda url: "https://www.youtube.com/watch?v=AAAAAAAAAAA"):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="trailers")
+            assert _process_until(app, lambda: dialog.template_combo.currentData() == TEMPLATE_VIDEO)
+            assert dialog.intro_check.isVisibleTo(dialog) and dialog.intro_check.isChecked()
+            assert dialog._current_options().intro is True
+            dialog.intro_check.setChecked(False)
+            assert dialog._current_options().intro is False
+            dialog.cleanup()
+
+    def test_pas_d_intro_hors_video(self, app):
+        p1, p2 = _patched_single_candidate()
+        with p1, p2, patch("gui.radar.story_dialog.fetch_video_url", lambda url: ""):
+            from gui.radar.story_dialog import StoryDialog
+
+            dialog = StoryDialog(_fake_article(), theme="cinema")
+            assert _process_until(app, lambda: dialog.export_btn.isEnabled())
+            assert not dialog.intro_check.isVisibleTo(dialog)
+            assert dialog._current_options().intro is False
+            dialog.cleanup()

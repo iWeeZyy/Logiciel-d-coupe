@@ -18,6 +18,7 @@ composition est faite en image a partir de la vignette de l'article
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from core.logging_setup import get_logger
@@ -172,6 +173,105 @@ def video_size(source_size: tuple[int, int], max_h: int) -> tuple[int, int]:
     return w, h
 
 
+# ------------------------------------------------------------ intro popcorn
+#
+# Demande de l'utilisateur : l'animation du logo popcorn (detouree, voir
+# tools/build_popcorn_intro.py) en INCRUSTATION au debut des bandes-annonces,
+# petite, dans un coin, avec la phrase d'accroche dessous -- la bande-annonce
+# demarre tout de suite et reste visible autour. Coin haut gauche de la
+# video : la colonne de boutons TikTok est a droite. Fondu d'entree et de
+# sortie ; le crepitement du pop-corn est mixe au son de la bande-annonce.
+
+INTRO_TEXT = "Les infos ciné avant tout le monde 🍿"
+_INTRO_ASSETS = ("intro_popcorn.mp4", "intro_popcorn_mask.mp4", "intro_popcorn_still.png")
+# Cote du carre de l'animation. Le rond y finit a ~64 % (le reste laisse la
+# place aux grains qui sautent hors du rond, voir tools/build_popcorn_intro.py).
+_INTRO_SIZE = 384
+_INTRO_MARGIN = 24           # distance aux bords de la video
+_INTRO_TEXT_SIZE = 34
+_INTRO_TEXT_MAX_W = 380
+_INTRO_FADE_IN = 0.25
+_INTRO_FADE_OUT = 0.4
+_INTRO_VOLUME = 0.8          # crepitement, par rapport au son de la bande-annonce
+
+
+def intro_paths() -> tuple[Path, Path, Path] | None:
+    """(video, masque, image fixe) livres avec l'appli, ou None s'il en
+    manque un (l'export se fait alors sans intro)."""
+    from core.paths import app_base_dir
+
+    paths = tuple(app_base_dir() / "assets" / "branding" / name for name in _INTRO_ASSETS)
+    return paths if all(p.is_file() for p in paths) else None
+
+
+def intro_position(box: tuple[int, int, int, int]) -> tuple[int, int]:
+    """Coin haut gauche du carre de l'intro : en haut a gauche de la video."""
+    vx, vy, _, _ = box
+    return vx + _INTRO_MARGIN, vy + _INTRO_MARGIN
+
+
+def _balanced_lines(draw, text: str, font, size: int, max_w: int) -> list[str]:
+    lines = _rich_wrap(draw, text, font, size, max_w)
+    if len(lines) > 1:
+        low, high = 1, max_w
+        while low < high:
+            mid = (low + high) // 2
+            if len(_rich_wrap(draw, text, font, size, mid)) <= len(lines):
+                high = mid
+            else:
+                low = mid + 1
+        lines = _rich_wrap(draw, text, font, size, low)
+    return lines
+
+
+def build_intro_text(box: tuple[int, int, int, int], text: str = INTRO_TEXT):
+    """Calque RGBA 1080x1920 : la phrase d'accroche centree sous le rond,
+    sur un cartouche sombre translucide (lisible sur n'importe quelle
+    image de la bande-annonce)."""
+    from PIL import Image, ImageDraw
+
+    from news_story.post_composer import _french_spacing, _subtitle_font
+
+    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    text = _french_spacing(" ".join((text or "").split()))
+    if not text:
+        return layer
+    text_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    shadow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw, shadow_draw = ImageDraw.Draw(text_layer), ImageDraw.Draw(shadow_layer)
+    font = _subtitle_font(_INTRO_TEXT_SIZE)
+    lines = _balanced_lines(draw, text, font, _INTRO_TEXT_SIZE, _INTRO_TEXT_MAX_W)
+    line_h = int(_INTRO_TEXT_SIZE * _CTA_LINE_HEIGHT)
+    x0, y0 = intro_position(box)
+    center_x = x0 + _INTRO_SIZE / 2
+    top = y0 + int(_INTRO_SIZE * 0.87)          # juste sous le rond
+    widths = [_rich_width(draw, line, font, _INTRO_TEXT_SIZE) for line in lines]
+    pad = 14
+    ImageDraw.Draw(layer).rounded_rectangle(
+        [center_x - max(widths) / 2 - pad, top - pad / 2,
+         center_x + max(widths) / 2 + pad, top + len(lines) * line_h + pad / 2],
+        radius=18, fill=(0, 0, 0, 150))
+    for line, width in zip(lines, widths):
+        _draw_rich(text_layer, draw, shadow_draw, (center_x - width / 2, top), line, font,
+                   _INTRO_TEXT_SIZE, (255, 255, 255, 255), (0, 0, 0, 255))
+        top += line_h
+    return Image.alpha_composite(layer, Image.alpha_composite(shadow_layer, text_layer))
+
+
+def _intro_preview(frame, box):
+    """Apercu : l'intro (sa derniere image) et sa phrase, a leur place."""
+    from PIL import Image
+
+    paths = intro_paths()
+    if paths is None:
+        return frame
+    with Image.open(paths[2]) as still:
+        badge = still.convert("RGBA").resize((_INTRO_SIZE, _INTRO_SIZE), Image.LANCZOS)
+    frame = frame.convert("RGBA")
+    frame.alpha_composite(badge, intro_position(box))
+    return Image.alpha_composite(frame, build_intro_text(box))
+
+
 def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
                   text_opacity: float = DEFAULT_TEXT_OPACITY, title_scale: float = 1.0,
                   subtitle: str = "", source_size: tuple[int, int] = (16, 9), cta: str = ""):
@@ -285,8 +385,9 @@ def _background_and_frame(still, box):
 def compose_still(image_path, out_path, *, title: str, label: str = "",
                   logo_path: Path | None = None, text_opacity: float = DEFAULT_TEXT_OPACITY,
                   title_scale: float = 1.0, output_format: str = "PNG",
-                  subtitle: str = "", cta: str = "") -> Path:
-    """Apercu du post video a partir d'une image (vignette de l'article)."""
+                  subtitle: str = "", cta: str = "", intro: bool = False) -> Path:
+    """Apercu du post video a partir d'une image (vignette de l'article).
+    `intro` : l'intro popcorn est montree a sa place (sa derniere image)."""
     from PIL import Image
 
     out_path = Path(out_path)
@@ -296,18 +397,59 @@ def compose_still(image_path, out_path, *, title: str, label: str = "",
                                  text_opacity=text_opacity, title_scale=title_scale,
                                  subtitle=subtitle, source_size=still.size, cta=cta)
     frame = _background_and_frame(still, box)
-    frame = Image.alpha_composite(frame.convert("RGBA"), overlay).convert("RGB")
+    frame = Image.alpha_composite(frame.convert("RGBA"), overlay)
+    if intro:
+        frame = _intro_preview(frame, box)
+    frame = frame.convert("RGB")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     frame.save(out_path, format="JPEG" if output_format.upper() == "JPEG" else "PNG")
     return out_path
 
 
+@dataclass(frozen=True)
+class IntroSpec:
+    """L'intro popcorn a incruster : ses fichiers, sa duree (lue par
+    l'appelant) et la presence d'un son dans la bande-annonce."""
+
+    video: str
+    mask: str
+    text_png: str
+    duration: float
+    trailer_has_audio: bool = True
+    trailer_duration: float = 0.0    # utile sans son : le crepitement est prolonge en silence
+
+
+def _intro_graph(intro: IntroSpec, box) -> tuple[list[str], str, str]:
+    """(entrees, filtres de preparation, filtre audio) de l'intro ; entrees
+    numerotees 2 (video, avec son), 3 (masque), 4 (phrase)."""
+    end = max(_INTRO_FADE_IN, intro.duration - _INTRO_FADE_OUT)
+    fades = (f"fade=t=in:st=0:d={_INTRO_FADE_IN}:alpha=1,"
+             f"fade=t=out:st={end:.3f}:d={_INTRO_FADE_OUT}:alpha=1")
+    inputs = ["-i", intro.video, "-i", intro.mask,
+              "-loop", "1", "-t", f"{intro.duration:.3f}", "-i", intro.text_png]
+    video = (f"[2:v]scale={_INTRO_SIZE}:{_INTRO_SIZE},format=rgba[iv];"
+             f"[3:v]scale={_INTRO_SIZE}:{_INTRO_SIZE},format=gray[im];"
+             f"[iv][im]alphamerge,{fades}[intro];"
+             f"[4:v]format=rgba,{fades}[itext];")
+    if intro.trailer_has_audio:
+        audio = (f"[2:a]volume={_INTRO_VOLUME}[ia];"
+                 "[0:a][ia]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[a]")
+    else:
+        # Duree explicite : « apad » seul ne s'arrete jamais, et -shortest
+        # n'est pas respecte avec -filter_complex (export sans fin constate).
+        audio = (f"[2:a]volume={_INTRO_VOLUME},"
+                 f"apad=whole_dur={max(intro.trailer_duration, intro.duration):.3f}[a]")
+    return inputs, video, audio
+
+
 def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
-                box: tuple[int, int, int, int], subtitles_path: str | None = None) -> list[str]:
+                box: tuple[int, int, int, int], subtitles_path: str | None = None,
+                intro: IntroSpec | None = None) -> list[str]:
     """Arguments ffmpeg (sans le binaire) : fond flou 9:16 fait de la video,
     video entiere a la place `box` (une 16:9 garde son format, sous la bande
     de texte), calque par-dessus, son conserve s'il existe ; sous-titres .ass
-    brules en dernier si fournis (VOST, news_story/vost.py). Fonction pure."""
+    brules en dernier si fournis (VOST, news_story/vost.py) ; intro popcorn
+    incrustee au debut si fournie. Fonction pure."""
     x, y, w, h = box
     subtitles = ""
     if subtitles_path:
@@ -319,12 +461,26 @@ def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
         f"boxblur=luma_radius=30:luma_power=2,eq=brightness={_FFMPEG_BG_BRIGHTNESS:.2f}[bg];"
         f"[0:v]scale={w}:{h}[fg];"
         f"[bg][fg]overlay={x}:{y}[base];"
-        f"[base][1:v]overlay=0:0,{subtitles}format=yuv420p[v]"
     )
+    inputs = ["-i", str(video_path), "-i", str(overlay_path)]
+    audio_map = ["-map", "0:a?"]
+    if intro is None:
+        graph += f"[base][1:v]overlay=0:0,{subtitles}format=yuv420p[v]"
+    else:
+        intro_inputs, intro_video, intro_audio = _intro_graph(intro, box)
+        ix, iy = intro_position(box)
+        inputs += intro_inputs
+        # eof_action=pass : une fois l'intro finie, la bande-annonce seule.
+        graph += (intro_video
+                  + f"[base][1:v]overlay=0:0[texted];"
+                  + f"[texted][intro]overlay={ix}:{iy}:eof_action=pass[withintro];"
+                  + f"[withintro][itext]overlay=0:0:eof_action=pass,{subtitles}format=yuv420p[v];"
+                  + intro_audio)
+        audio_map = ["-map", "[a]"]
     return [
-        "-i", str(video_path), "-i", str(overlay_path),
+        *inputs,
         "-filter_complex", graph,
-        "-map", "[v]", "-map", "0:a?",
+        "-map", "[v]", *audio_map,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "aac", "-b:a", "160k",
         "-movflags", "+faststart",
@@ -335,13 +491,14 @@ def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
 def compose_video(video_path, out_path, *, title: str, label: str = "",
                   logo_path: Path | None = None, text_opacity: float = DEFAULT_TEXT_OPACITY,
                   title_scale: float = 1.0, subtitle: str = "", cta: str = "",
-                  cancel_token=None, french_subtitles=None) -> Path:
+                  cancel_token=None, french_subtitles=None, intro: bool = False) -> Path:
     """Rend le post video MP4 9:16. Leve FfmpegError / CancelledError.
     `french_subtitles` : repliques (news_story/vost.Cue) a incruster en bas
-    de la video, ou None."""
+    de la video, ou None. `intro` : l'intro popcorn en incrustation au debut
+    (ignoree si ses fichiers manquent)."""
     import tempfile
 
-    from video.ffmpeg_utils import run_ffmpeg, video_resolution
+    from video.ffmpeg_utils import has_audio_stream, run_ffmpeg, video_duration, video_resolution
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -357,7 +514,19 @@ def compose_video(video_path, out_path, *, title: str, label: str = "",
             from news_story.vost import build_ass
 
             ass_path = build_ass(french_subtitles, box, Path(workdir) / "vost.ass")
-        run_ffmpeg(ffmpeg_args(str(video_path), str(overlay_path), str(out_path), box, ass_path),
+        spec = None
+        paths = intro_paths() if intro else None
+        if paths is not None:
+            text_png = Path(workdir) / "intro_text.png"
+            build_intro_text(box).save(text_png)
+            spec = IntroSpec(video=str(paths[0]), mask=str(paths[1]), text_png=str(text_png),
+                             duration=video_duration(str(paths[0])),
+                             trailer_has_audio=has_audio_stream(str(video_path)),
+                             trailer_duration=video_duration(str(video_path)))
+        elif intro:
+            logger.warning("Intro popcorn absente des fichiers de l'application : export sans intro.")
+        run_ffmpeg(ffmpeg_args(str(video_path), str(overlay_path), str(out_path), box, ass_path,
+                               intro=spec),
                    "montage du post video 9:16", cancel_token=cancel_token)
     logger.info(f"Post video ecrit : {out_path}")
     return out_path

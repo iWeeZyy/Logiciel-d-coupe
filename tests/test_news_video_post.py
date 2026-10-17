@@ -216,3 +216,69 @@ def test_titre_et_logo_centres_sur_l_ecran():
     for top, bottom in ((0, y), (y + h, overlay.height)):
         left, _, right, _ = alpha.crop((0, top, W, bottom)).getbbox()
         assert abs((left + right) / 2 - W / 2) <= 3
+
+
+class TestIntroPopcorn:
+    _BOX = (0, 738, 1080, 608)
+
+    def _spec(self, has_audio=True):
+        from news_story.video_composer import IntroSpec
+
+        return IntroSpec(video="intro.mp4", mask="mask.mp4", text_png="text.png", duration=5.04,
+                         trailer_has_audio=has_audio, trailer_duration=30.0)
+
+    def test_incrustation_en_haut_a_gauche_de_la_video(self):
+        from news_story.video_composer import intro_position
+
+        assert intro_position(self._BOX) == (24, 762)
+
+    def test_graphe_avec_son(self):
+        args = ffmpeg_args("in.mp4", "ov.png", "out.mp4", self._BOX, intro=self._spec())
+        assert args.count("-i") == 5
+        graph = args[args.index("-filter_complex") + 1]
+        assert "alphamerge" in graph and "overlay=24:762:eof_action=pass" in graph
+        assert "fade=t=out:st=4.640" in graph
+        assert "amix=inputs=2:duration=first" in graph       # son de la bande-annonce garde
+        assert args[args.index("-map", args.index("-map") + 1) + 1] == "[a]"
+        assert "-shortest" not in args
+
+    def test_graphe_sans_son_ne_tourne_pas_sans_fin(self):
+        """REGRESSION : « apad » sans duree + -shortest -> export sans fin."""
+        args = ffmpeg_args("in.mp4", "ov.png", "out.mp4", self._BOX, intro=self._spec(False))
+        graph = args[args.index("-filter_complex") + 1]
+        assert "apad=whole_dur=30.000" in graph and "amix" not in graph
+
+    def test_sans_intro_rien_ne_change(self):
+        args = ffmpeg_args("in.mp4", "ov.png", "out.mp4", self._BOX)
+        assert args.count("-i") == 2 and "alphamerge" not in args[args.index("-filter_complex") + 1]
+
+    def test_apercu_montre_l_intro(self, tmp_path):
+        from PIL import Image
+
+        from news_story.video_composer import compose_still
+
+        src = tmp_path / "vignette.png"
+        Image.new("RGB", (1280, 720), (20, 120, 60)).save(src)
+        sans = compose_still(src, tmp_path / "a.png", title="Le Corset")
+        avec = compose_still(src, tmp_path / "b.png", title="Le Corset", intro=True)
+        with Image.open(sans) as a, Image.open(avec) as b:
+            x, y = 24 + 192, 762 + 192                           # centre du rond
+            assert a.getpixel((x, y)) != b.getpixel((x, y))
+            assert a.getpixel((900, 1000)) == b.getpixel((900, 1000))   # le reste intact
+
+    @pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+                        reason="ffmpeg absent")
+    @pytest.mark.parametrize("with_audio", [True, False])
+    def test_vrai_rendu_avec_intro(self, tmp_path, with_audio):
+        src = tmp_path / "src.mp4"
+        cmd = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=6"]
+        if with_audio:
+            cmd += ["-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-c:a", "aac"]
+        subprocess.run(cmd + ["-c:v", "libx264", "-pix_fmt", "yuv420p", str(src)], check=True)
+        out = compose_video(src, tmp_path / "out.mp4", title="Un film", intro=True)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,duration",
+                                "-of", "csv=p=0", str(out)], capture_output=True, text=True,
+                               check=True, timeout=60).stdout
+        durations = {line.split(",")[0]: float(line.split(",")[1]) for line in probe.split()}
+        assert abs(durations["video"] - 6.0) < 0.1
+        assert abs(durations["audio"] - 6.0) < 0.2             # crepitement, puis la suite

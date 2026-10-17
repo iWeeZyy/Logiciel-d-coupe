@@ -8,9 +8,9 @@ RUN A LA MAIN, PAS AU BUILD -- meme convention que tools/build_intro_asset.py :
 les fichiers produits sont COMMITES.
 
 Demande de l'utilisateur : ne garder que le rond brun et tout ce qu'il
-contient (le seau, le pop-corn qui jaillit A L'INTERIEUR). Tout le reste
-disparait : salle de cinema du fond, grains qui sortent du rond, mention
-« KlingAI » en bas a droite.
+contient, PLUS les grains de pop-corn qui sautent hors du rond (premier
+detourage : ils etaient coupes net au bord, signale). Tout le reste
+disparait : salle de cinema du fond, mention « KlingAI » en bas a droite.
 
 Le rond n'est pas fixe : il se resserre pendant la premiere seconde (rayon
 669 -> 511 px) et se decale un peu vers le haut. Il est donc retrouve IMAGE
@@ -45,10 +45,20 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "tools" / "source" / "popcorn_intro_source.mp4"
 OUT_VIDEO = ROOT / "assets" / "branding" / "intro_popcorn.mp4"
 OUT_MASK = ROOT / "assets" / "branding" / "intro_popcorn_mask.mp4"
+# Derniere image, transparente : l'apercu de « Créer un visuel » la pose a
+# la place de l'intro (news_story/video_composer.py).
+OUT_STILL = ROOT / "assets" / "branding" / "intro_popcorn_still.png"
 
 OUT_SIZE = 1080
 RING_COLOR = (60, 37, 22)
 _FEATHER = 1.5              # largeur du degrade du bord, en pixels source
+# Grains hors du rond : ils ne s'en eloignent jamais de plus de ~65 px ; la
+# mention « KlingAI » est a plus de 250 px. Au-dela de cette distance, rien
+# n'est garde.
+_KERNEL_REACH = 140
+_KERNEL_MIN_AREA = 20       # pixels clairs : plus petit = bruit de compression
+_KERNEL_OUTLINE = 9         # contour brun du dessin autour de la partie claire
+_DARK_BACKGROUND = 38       # rouge au-dessous : fond de salle, jamais un grain
 
 
 def read_frames(path: Path) -> tuple[np.ndarray, float]:
@@ -128,18 +138,44 @@ def track(frames: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return _median_smooth(cx), _median_smooth(cy), _median_smooth(rc * (1 + ratio) - 1)
 
 
+def kernels_mask(frame: np.ndarray, x0: float, y0: float, r: float) -> np.ndarray:
+    """Grains de pop-corn sortis du rond (0..1, coordonnees source) : les
+    taches claires proches du rond, etendues a leur contour brun -- qui se
+    distingue du fond, presque noir. Fonction pure."""
+    h, w, _ = frame.shape
+    yy, xx = np.mgrid[0:h, 0:w]
+    dist = np.hypot(xx - x0, yy - y0)
+    f = frame.astype(np.int16)
+    near = (dist > r) & (dist < r + _KERNEL_REACH)
+    bright = ((f[..., 0] > 150) & (f[..., 1] > 120) & near).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(bright, 8)
+    seeds = np.isin(labels, [k for k in range(1, count)
+                             if stats[k, cv2.CC_STAT_AREA] >= _KERNEL_MIN_AREA]).astype(np.uint8)
+    if not seeds.any():
+        return np.zeros((h, w), np.float32)
+    size = 2 * _KERNEL_OUTLINE + 1
+    grown = cv2.dilate(seeds, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size)))
+    kernel = (grown > 0) & (f[..., 0] > _DARK_BACKGROUND)
+    # Trous du contour (reflets sombres) bouches, bord adouci comme le rond.
+    kernel = cv2.morphologyEx(kernel.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    return cv2.GaussianBlur(kernel.astype(np.float32), (0, 0), 0.8)
+
+
 def render(frames, cx, cy, r_out):
     """Images recentrees sur le rond (carre de cote 2 x rayon maximal) et
     masques correspondants, a OUT_SIZE."""
-    side = int(np.ceil(2 * r_out.max())) + 4
+    side = int(np.ceil(2 * (r_out.max() + _KERNEL_REACH))) + 4
     half = side / 2
-    yy, xx = np.mgrid[0:side, 0:side]
-    dist = np.hypot(xx + 0.5 - half, yy + 0.5 - half)
+    h, w = frames.shape[1:3]
+    yy, xx = np.mgrid[0:h, 0:w]
     for frame, x0, y0, r in zip(frames, cx, cy, r_out):
+        circle = np.clip((r - np.hypot(xx + 0.5 - x0, yy + 0.5 - y0)) / _FEATHER + 0.5, 0.0, 1.0)
+        alpha_src = np.maximum(circle, kernels_mask(frame, x0, y0, r)).astype(np.float32)
         move = np.float32([[1, 0, half - x0], [0, 1, half - y0]])
         moved = cv2.warpAffine(frame, move, (side, side), flags=cv2.INTER_LINEAR,
                                borderMode=cv2.BORDER_CONSTANT, borderValue=RING_COLOR)
-        alpha = np.clip((r - dist) / _FEATHER + 0.5, 0.0, 1.0)
+        alpha = cv2.warpAffine(alpha_src, move, (side, side), flags=cv2.INTER_LINEAR,
+                               borderMode=cv2.BORDER_CONSTANT, borderValue=0)
         moved = np.where(alpha[..., None] > 0, moved, np.uint8(RING_COLOR)).astype(np.uint8)
         yield (cv2.resize(moved, (OUT_SIZE, OUT_SIZE), interpolation=cv2.INTER_AREA),
                cv2.resize((alpha * 255).astype(np.uint8), (OUT_SIZE, OUT_SIZE),
@@ -171,7 +207,9 @@ def main() -> None:
         webm = (_encoder(args.webm, fps, "rgba", ["-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
                                                    "-b:v", "0", "-crf", "24", "-auto-alt-ref", "0"])
                 if args.webm else None)
+        last = None
         for rgb, alpha in render(frames, cx, cy, r_out):
+            last = np.dstack([rgb, alpha])
             video.stdin.write(rgb.tobytes())
             mask.stdin.write(alpha.tobytes())
             if webm:
@@ -181,11 +219,14 @@ def main() -> None:
                 proc.stdin.close()
                 if proc.wait():
                     raise SystemExit("ffmpeg en echec")
+        from PIL import Image
+
+        Image.fromarray(last, "RGBA").save(OUT_STILL, optimize=True)
         # Le son d'origine (crepitement du pop-corn) est garde.
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(silent), "-i", str(SOURCE),
                         "-map", "0:v", "-map", "1:a?", "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
                         "-movflags", "+faststart", str(OUT_VIDEO)], check=True)
-    print(f"Ecrit : {OUT_VIDEO.name}, {OUT_MASK.name}" + (f", {args.webm}" if args.webm else ""))
+    print(f"Ecrit : {OUT_VIDEO.name}, {OUT_MASK.name}, {OUT_STILL.name}" + (f", {args.webm}" if args.webm else ""))
 
 
 if __name__ == "__main__":

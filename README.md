@@ -780,6 +780,24 @@ visuel », la date de sortie se place sous le titre et le synopsis de la fiche
 AlloCiné (titre exact uniquement) remplace la description de la vidéo dans la
 légende (`news_story/release_date.py`).
 
+**Intro popcorn** : dans « Créer un visuel » d'une bande-annonce (modèle
+vidéo), la case « Intro popcorn au début » (cochée par défaut, mémorisée)
+incruste le logo popcorn animé en haut à gauche de la vidéo pendant ses 5
+premières secondes, avec « Les infos ciné avant tout le monde 🍿 » dessous,
+fondu d'entrée et de sortie, crépitement mixé au son. L'animation fournie
+(Kling) est détourée par `tools/build_popcorn_intro.py` : le rond brun et son
+contenu, retrouvés image par image, plus les grains qui sautent hors du rond
+(suivis par leur contour) ; fichiers produits dans `assets/branding/intro_popcorn*`.
+
+**Intro popcorn** : dans « Créer un visuel » d'une bande-annonce (modèle
+vidéo), la case « Intro popcorn au début » (cochée par défaut, mémorisée)
+incruste le logo popcorn animé en haut à gauche de la vidéo pendant ses 5
+premières secondes, avec « Les infos ciné avant tout le monde 🍿 » dessous,
+fondu d'entrée et de sortie, crépitement mixé au son. L'animation fournie
+(Kling) est détourée par `tools/build_popcorn_intro.py` (le rond brun et son
+contenu seulement, retrouvé image par image) ; les fichiers produits sont
+dans `assets/branding/intro_popcorn*`.
+
 **Presse vs public** (sorties des 4 dernières semaines, notes presse et
 spectateurs AlloCiné qui divergent) et **Nouveautés streaming** (agenda
 hebdomadaire publié par AlloCiné — Netflix aujourd'hui, d'autres plateformes

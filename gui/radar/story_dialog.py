@@ -213,9 +213,10 @@ class _VideoExportThread(QThread):
 
     def __init__(self, video_url: str, out_path: str, title: str, label: str,
                  logo_path, text_opacity: float, title_scale: float, cancel_token: CancelToken,
-                 subtitle: str = "", cta: str = "", french_subtitles: bool = False):
+                 subtitle: str = "", cta: str = "", french_subtitles: bool = False,
+                 intro: bool = False):
         super().__init__()
-        self.subtitle, self.cta = subtitle, cta
+        self.subtitle, self.cta, self.intro = subtitle, cta, intro
         self.french_subtitles = french_subtitles
         self.video_url, self.out_path = video_url, out_path
         self.title, self.label, self.logo_path = title, label, logo_path
@@ -254,7 +255,8 @@ class _VideoExportThread(QThread):
                               logo_path=Path(self.logo_path) if self.logo_path else None,
                               text_opacity=self.text_opacity, title_scale=self.title_scale,
                               subtitle=self.subtitle, cta=self.cta,
-                              cancel_token=self.cancel_token, french_subtitles=cues)
+                              cancel_token=self.cancel_token, french_subtitles=cues,
+                              intro=self.intro)
         except CancelledError:
             self.cancelled.emit()
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -438,6 +440,20 @@ class StoryDialog(QDialog):
         self.vost_check.setToolTip("Transcription de la piste son, traduction par Claude (clé "
                                    "« 🔑 IA Claude » requise), incrustation en bas de la vidéo.")
         options_panel.addWidget(self.vost_check)
+
+        # Intro popcorn (logo anime + « Les infos ciné avant tout le monde 🍿 »),
+        # en incrustation au debut de la video ; choix memorise.
+        from news_story.video_composer import INTRO_TEXT, intro_paths
+
+        self.intro_check = QCheckBox("Intro popcorn au début")
+        self.intro_check.setToolTip(f"Logo popcorn animé en haut à gauche de la vidéo pendant "
+                                    f"5 secondes, avec « {INTRO_TEXT} ».")
+        saved = self._settings().value("intro/popcorn", True)
+        self.intro_check.setChecked(intro_paths() is not None
+                                    and saved not in (False, "false", "0", 0))
+        self.intro_check.setEnabled(intro_paths() is not None)
+        self.intro_check.toggled.connect(self._on_intro_toggled)
+        options_panel.addWidget(self.intro_check)
 
         # Phrase au-dessus du logo, dans la bande floue du bas de la video ;
         # memorisee par compte (meme cle que le logo).
@@ -676,6 +692,7 @@ class StoryDialog(QDialog):
         self.opacity_caption.setVisible(is_video)
         self.opacity_combo.setVisible(is_video)
         self.vost_check.setVisible(is_video)
+        self.intro_check.setVisible(is_video and self.theme in ("cinema", "trailers"))
         # Phrase sous le logo : posts image et video.
         self.cta_caption.setVisible(is_post)
         self.cta_edit.setVisible(is_post)
@@ -770,7 +787,16 @@ class StoryDialog(QDialog):
             text_opacity=self.opacity_combo.currentData() or 1.0,
             subtitle=self.subtitle_edit.toPlainText(),
             cta=self.cta_edit.text(),
+            intro=self._intro_wanted(),
         )
+
+    def _intro_wanted(self) -> bool:
+        check = getattr(self, "intro_check", None)
+        return bool(check is not None and not check.isHidden() and check.isChecked())
+
+    def _on_intro_toggled(self, checked: bool) -> None:
+        self._settings().setValue("intro/popcorn", checked)
+        self._schedule_preview()
 
     # ------------------------------------------------------------ apercu
     def _render_preview(self) -> None:
@@ -844,7 +870,8 @@ class StoryDialog(QDialog):
         self._export_thread = _VideoExportThread(
             self._video_url, path, title, label, logo, options.text_opacity,
             options.title_scale, self._cancel_token, subtitle=post_subtitle(options),
-            cta=options.cta, french_subtitles=self.vost_check.isChecked())
+            cta=options.cta, french_subtitles=self.vost_check.isChecked(),
+            intro=options.intro)
         self._export_thread.status.connect(self.status_label.setText)
         self._export_thread.ready.connect(self._on_export_ready)
         self._export_thread.failed.connect(self._on_export_failed)
