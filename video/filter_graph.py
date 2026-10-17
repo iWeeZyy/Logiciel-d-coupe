@@ -645,6 +645,13 @@ def build_ffmpeg_args(
             ["-i", intro.path, "-i", mask_asset_path()],
             intro_filt, intro_position, intro_enable, True,
         ))
+        if getattr(intro, "text_png", ""):
+            # La phrase d'accroche sous le medaillon : un calque ordinaire a
+            # une entree, borne a la meme duree.
+            from video.intro_overlay import text_overlay_spec
+
+            text_inputs, text_filt, text_position, text_enable = text_overlay_spec(intro)
+            overlays.append((text_inputs, text_filt, text_position, text_enable))
 
     for input_args, *_ in overlays:
         args += input_args

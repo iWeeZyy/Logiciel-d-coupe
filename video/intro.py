@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_VIDEO = "branding/intro_follow.mp4"
+# Phrase d'accroche posee sous le medaillon (choisie par l'utilisateur pour
+# ClipsOfStreams) ; « text » dans config/editing.json la remplace, "" la retire.
+DEFAULT_TEXT = "Les clips que tu n'as pas vus en live"
 
 
 @dataclass(frozen=True)
@@ -23,6 +26,7 @@ class Intro:
     """Une video d'intro prete a etre posee en incrustation."""
 
     video: str
+    text: str = ""
 
     @property
     def exists(self) -> bool:
@@ -62,4 +66,5 @@ def from_config(config: dict | None) -> Intro | None:
     if not path.is_file():
         return None
 
-    return Intro(video=str(path))
+    text = config.get("text", DEFAULT_TEXT)
+    return Intro(video=str(path), text=" ".join(str(text or "").split()))

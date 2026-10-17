@@ -365,6 +365,15 @@ desormais AUSSI un dictionnaire, fusionne dans le bloc du module. Les reglages
 non mentionnes survivent, et un booleen continue de ne toucher que `enabled` --
 sinon les autres cases auraient cesse de fonctionner.
 
+### Intro ClipsOfStreams : phrase d'accroche
+
+Sous le medaillon « Follow » de l'intro (case « Intro ClipsOfStreams » de
+l'accueil), la phrase « Les clips que tu n'as pas vus en live » apparait et
+disparait en fondu avec lui, sur un cartouche sombre translucide
+(`video/intro_text.py`). Elle se change dans `config/editing.json`
+(`intro.text`, `""` = aucune phrase) ; elle passe au-dessus du medaillon si
+l'intro est placee en bas de l'ecran.
+
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
 **CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de

@@ -62,6 +62,9 @@ class IntroOverlay:
     size_percent: float = DEFAULT_SIZE_PERCENT
     margin_percent: float = DEFAULT_MARGIN_PERCENT
     position: str = DEFAULT_POSITION
+    # Phrase d'accroche deja dessinee (PNG transparent plein cadre, voir
+    # video/intro_text.py) ; "" = pas de phrase.
+    text_png: str = ""
 
 
 def crop_rect(src_w: int, src_h: int) -> tuple[int, int, int, int]:
@@ -131,6 +134,34 @@ def overlay_position(intro: IntroOverlay, out_w: int, out_h: int) -> str:
     position = intro.position if intro.position in _POSITIONS else DEFAULT_POSITION
     band, side = position.split("-")
     return f"{horizontal[side]}:{vertical[band]}"
+
+
+def overlay_rect(intro: IntroOverlay, out_w: int, out_h: int) -> tuple[int, int, int, int]:
+    """(x, y, largeur, hauteur) de l'incrustation, en pixels -- le meme
+    placement que overlay_position(), calcule en nombres pour y aligner la
+    phrase d'accroche."""
+    width, height = scaled_size(intro, out_w, out_h)
+    margin = max(0, int(round(min(out_w, out_h) * intro.margin_percent / 100.0)))
+    position = intro.position if intro.position in _POSITIONS else DEFAULT_POSITION
+    band, side = position.split("-")
+    x = {"gauche": margin, "centre": (out_w - width) // 2, "droite": out_w - width - margin}[side]
+    y = margin if band == "haut" else out_h - height - margin
+    return x, y, width, height
+
+
+TEXT_FADE_IN = 0.3
+TEXT_FADE_OUT = 0.4
+
+
+def text_overlay_spec(intro: IntroOverlay) -> tuple[list[str], str, str, str]:
+    """(entree, filtre, position, condition) du calque de la phrase : l'image
+    deja dessinee, en fondu d'entree et de sortie sur la duree de l'intro."""
+    duration = max(TEXT_FADE_IN, intro.duration)
+    out_start = max(0.0, duration - TEXT_FADE_OUT)
+    filt = (f"format=rgba,fade=t=in:st=0:d={TEXT_FADE_IN}:alpha=1,"
+            f"fade=t=out:st={out_start:.3f}:d={TEXT_FADE_OUT}:alpha=1")
+    return (["-loop", "1", "-t", f"{duration:.3f}", "-i", intro.text_png], filt, "0:0",
+            f"between(t,0,{duration:.3f})")
 
 
 def overlay_spec(intro: IntroOverlay, out_w: int, out_h: int,
