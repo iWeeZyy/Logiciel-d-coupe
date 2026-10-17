@@ -39,11 +39,23 @@ _CROP_X, _CROP_Y, _CROP_W, _CROP_H = 40, 330, 1000, 1140
 
 _MASK_ASSET = "branding/intro_follow_mask.mp4"
 
-DEFAULT_SIZE_PERCENT = 35.0
-DEFAULT_MARGIN_PERCENT = 4.0
-# En haut a droite par defaut : le filigrane reste en bas au centre (voir
-# watermark.py), donc rien ne se superpose entre les deux tant que l'un des
-# deux ne change pas de coin explicitement.
+# Plus petit qu'a l'origine (35 %) et descendu sous le haut de l'ecran
+# (retour utilisateur, capture TikTok a l'appui) : colle au bord superieur,
+# le medaillon passait sous la barre de TikTok (onglets « Pour toi », loupe,
+# barre de recherche) et sous le titre que l'utilisateur pose dans TikTok
+# vers 18-27 % de la hauteur. La place libre a droite va de ~28 % (sous ce
+# titre) a ~46 % (debut de la colonne de boutons : avatar, j'aime...) :
+# ~330 px en 1080x1920, medaillon ET phrase d'accroche compris -- d'ou 25 %.
+# Marge laterale 6 % : un ecran plus allonge que 9:16 peut rogner les cotes.
+DEFAULT_SIZE_PERCENT = 25.0
+DEFAULT_MARGIN_PERCENT = 6.0
+# Haut du cadre de l'incrustation, en % de la hauteur, en sortie VERTICALE
+# seulement (les zones de TikTok n'existent pas en 16:9) ; le dessin commence
+# ~6 % plus bas dans ce cadre.
+DEFAULT_TOP_PERCENT = 26.5
+# A droite : le filigrane reste en bas au centre (voir watermark.py), donc
+# rien ne se superpose entre les deux tant que l'un des deux ne change pas de
+# coin explicitement.
 DEFAULT_POSITION = "haut-droite"
 
 _POSITIONS = ("haut-gauche", "haut-centre", "haut-droite",
@@ -62,6 +74,7 @@ class IntroOverlay:
     size_percent: float = DEFAULT_SIZE_PERCENT
     margin_percent: float = DEFAULT_MARGIN_PERCENT
     position: str = DEFAULT_POSITION
+    top_percent: float = DEFAULT_TOP_PERCENT
     # Phrase d'accroche deja dessinee (PNG transparent plein cadre, voir
     # video/intro_text.py) ; "" = pas de phrase.
     text_png: str = ""
@@ -122,6 +135,14 @@ def prepare_filter(intro: IntroOverlay, out_w: int, out_h: int,
     )
 
 
+def _top(intro: IntroOverlay, out_w: int, out_h: int, margin: int) -> int:
+    """Ordonnee du haut de l'incrustation placee en haut : sous les zones de
+    TikTok en vertical, a la marge en 16:9 ou en carre."""
+    if out_h > out_w and intro.top_percent:
+        return int(round(out_h * intro.top_percent / 100.0))
+    return margin
+
+
 def overlay_position(intro: IntroOverlay, out_w: int, out_h: int) -> str:
     """Coordonnees de l'incrustation. Meme calcul que watermark.overlay_position
     (marge sur le plus petit cote de sortie) -- duplique plutot que reutilise :
@@ -130,7 +151,7 @@ def overlay_position(intro: IntroOverlay, out_w: int, out_h: int) -> str:
     reference = min(out_w, out_h)
     margin = max(0, int(round(reference * intro.margin_percent / 100.0)))
     horizontal = {"gauche": f"{margin}", "centre": "(W-w)/2", "droite": f"W-w-{margin}"}
-    vertical = {"haut": f"{margin}", "bas": f"H-h-{margin}"}
+    vertical = {"haut": f"{_top(intro, out_w, out_h, margin)}", "bas": f"H-h-{margin}"}
     position = intro.position if intro.position in _POSITIONS else DEFAULT_POSITION
     band, side = position.split("-")
     return f"{horizontal[side]}:{vertical[band]}"
@@ -145,7 +166,7 @@ def overlay_rect(intro: IntroOverlay, out_w: int, out_h: int) -> tuple[int, int,
     position = intro.position if intro.position in _POSITIONS else DEFAULT_POSITION
     band, side = position.split("-")
     x = {"gauche": margin, "centre": (out_w - width) // 2, "droite": out_w - width - margin}[side]
-    y = margin if band == "haut" else out_h - height - margin
+    y = _top(intro, out_w, out_h, margin) if band == "haut" else out_h - height - margin
     return x, y, width, height
 
 

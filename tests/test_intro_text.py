@@ -31,8 +31,8 @@ def test_la_config_livree_porte_la_phrase():
 def test_rectangle_aligne_sur_la_position_ffmpeg():
     intro = _intro()
     x, y, w, h = overlay_rect(intro, 1080, 1920)
-    assert (x, y, w) == (1080 - 378 - 43, 43, 378)
-    assert overlay_position(intro, 1080, 1920) == f"W-w-43:43"
+    assert (x, y, w) == (1080 - 270 - 65, 509, 270)
+    assert overlay_position(intro, 1080, 1920) == "W-w-65:509"
 
 
 def test_sous_le_medaillon_ou_au_dessus_en_bas_d_ecran():
@@ -67,5 +67,5 @@ def test_dessin_de_la_phrase(tmp_path):
     with Image.open(out) as image:
         assert image.size == (1080, 1920)
         box = image.getchannel("A").getbbox()
-    assert box is not None and box[1] > 43 + 300 and box[3] < 700   # sous le medaillon
+    assert box is not None and box[1] > 509 + 220 and box[3] < 0.46 * 1920   # sous le medaillon
     assert box[0] >= 0 and box[2] <= 1080

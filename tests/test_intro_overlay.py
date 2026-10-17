@@ -37,15 +37,15 @@ def test_the_crop_scales_proportionally_for_a_differently_sized_asset():
 def test_the_size_is_a_percentage_of_the_smaller_output_side():
     intro = _intro()
 
-    # 35% de 1080 (le petit cote, meme en paysage) = 378, arrondi pair.
-    assert scaled_size(intro, 1080, 1920)[0] == 378
-    assert scaled_size(intro, 1920, 1080)[0] == 378
+    # 25% de 1080 (le petit cote, meme en paysage) = 270, arrondi pair.
+    assert scaled_size(intro, 1080, 1920)[0] == 270
+    assert scaled_size(intro, 1920, 1080)[0] == 270
 
 
 def test_the_height_is_computed_explicitly_from_the_crop_aspect_ratio():
     intro = _intro()
 
-    # Cadre 1000x1140 (ratio 1.14) mis a l'echelle sur une largeur de 378 :
+    # Cadre 1000x1140 (ratio 1.14) mis a l'echelle sur une largeur de 270 :
     # meme ratio applique explicitement (arrondi pair), jamais un "-1" ffmpeg.
     width, height = scaled_size(intro, 1080, 1920)
     expected = round(width * 1140 / 1000)
@@ -95,7 +95,20 @@ def test_transparency_comes_from_alphamerge_with_the_precomputed_mask():
 def test_the_default_position_is_top_right_so_it_never_meets_the_watermark():
     intro = _intro()
 
-    assert overlay_position(intro, 1080, 1920) == "W-w-43:43"
+    # En vertical : a 27 % de la hauteur, sous la barre de TikTok et sous le
+    # titre pose dans TikTok (capture utilisateur), au-dessus des boutons.
+    assert overlay_position(intro, 1080, 1920) == "W-w-65:509"
+    # En 16:9, pas de zones TikTok : collee a la marge.
+    assert overlay_position(intro, 1920, 1080) == "W-w-65:65"
+
+
+def test_medallion_and_phrase_stay_clear_of_tiktok_zones_in_vertical():
+    from video.intro_overlay import overlay_rect
+
+    x, y, w, h = overlay_rect(_intro(), 1080, 1920)
+    drawing_top, drawing_bottom = y + 0.065 * h, y + 0.855 * h  # mesures sur le masque
+    assert drawing_top >= 0.275 * 1920                          # sous la barre et le titre
+    assert drawing_bottom + 2 * 38 + 14 <= 0.455 * 1920         # phrase comprise, avant les boutons
 
 
 def test_each_position_has_its_own_expression():
@@ -167,7 +180,7 @@ def test_the_intro_overlay_carries_a_time_bounded_enable_expression():
     args = _args(intro=_intro(duration=7.0))
     graph = args[args.index("-filter_complex") + 1]
 
-    assert "overlay=W-w-43:43:enable='between(t,0,7.000)'" in graph
+    assert "overlay=W-w-65:509:enable='between(t,0,7.000)'" in graph
 
 
 def test_the_intro_is_composited_after_the_watermark_so_it_stays_on_top():

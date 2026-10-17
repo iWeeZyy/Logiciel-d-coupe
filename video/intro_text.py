@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_TEXT_SIZE_RATIO = 0.032      # taille de police / plus petit cote de sortie (34 px en 1080)
+_TEXT_SIZE_RATIO = 0.030      # taille de police / plus petit cote de sortie (32 px en 1080)
 _CONTENT_TOP = 0.14           # haut du dessin dans le cadre du medaillon
 _CONTENT_BOTTOM = 0.86        # bas du dessin (+ marge)
 _PAD = 14

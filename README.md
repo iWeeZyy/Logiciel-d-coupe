@@ -374,6 +374,12 @@ disparait en fondu avec lui, sur un cartouche sombre translucide
 (`intro.text`, `""` = aucune phrase) ; elle passe au-dessus du medaillon si
 l'intro est placee en bas de l'ecran.
 
+**Placement (sortie verticale)** : medaillon a 25 % de la largeur, haut du
+cadre a 26,5 % de la hauteur, a droite -- sous la barre de TikTok et sous le
+titre pose dans TikTok, au-dessus de la colonne de boutons (constate sur une
+capture : colle en haut, il etait cache par la barre de recherche). En 16:9,
+il reste colle a la marge.
+
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
 **CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de
