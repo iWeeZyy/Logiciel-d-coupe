@@ -395,6 +395,21 @@ affiche la duree de chaque partie et signale celles sous la minute, et les
 clips produits avec l'intro (elle reviendrait au milieu). Une legende .txt est
 ecrite a cote de chaque video.
 
+**Transitions** : 0,4 s entre deux clips, tirees au hasard parmi des
+transitions sobres (fondu, fondu au noir, flou, leger zoom, glisses doux),
+jamais deux fois la meme de suite ; le son fond de l'un a l'autre.
+
+**🏆 Compilation des plus vus (Radar)** : choisit les clips Twitch les plus
+vus d'un streamer sur la periode, UN SEUL PAR MOMENT -- deux clips de la meme
+scene (meme VOD et passages qui se chevauchent, d'apres `vod_offset` ; sans
+VOD, crees a moins de 2 minutes d'intervalle ou meme titre) ne passent jamais
+tous les deux (`radar/compilation_pick.py`) ; la liste, doublons ecartes et
+leur raison compris, est montree avant. Puis tout s'enchaine : telechargement,
+traitement de chaque clip par le pipeline habituel (memes options que
+« Analyser le contenu », sans l'intro), montage. Les clips traites restent
+dans « Mes projets ». `vod_offset` n'est enregistre que depuis cette version :
+rescanner le Radar pour en profiter.
+
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
 **CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de

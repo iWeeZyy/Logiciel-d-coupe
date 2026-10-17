@@ -63,19 +63,20 @@ class _Thread(QThread):
     done = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, paths, out_dir, name, parts, countdown, intro, token):
+    def __init__(self, paths, out_dir, name, parts, countdown, intro, transitions, token):
         super().__init__()
-        self.args = (paths, out_dir, name, parts, countdown, intro)
+        self.args = (paths, out_dir, name, parts, countdown, intro, transitions)
         self.token = token
 
     def run(self) -> None:
         from utils.errors import CancelledError
         from video.compilation import compose
 
-        paths, out_dir, name, parts, countdown, intro = self.args
+        paths, out_dir, name, parts, countdown, intro, transitions = self.args
         try:
             written = compose(paths, out_dir, name=name, parts=parts, countdown=countdown,
-                              intro=intro, on_progress=self.status.emit, cancel_token=self.token)
+                              intro=intro, transitions=transitions,
+                              on_progress=self.status.emit, cancel_token=self.token)
         except CancelledError:
             self.failed.emit("")
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -135,6 +136,10 @@ class CompilationDialog(QDialog):
         self.countdown_check = QCheckBox("Compte à rebours (#5 → #1)")
         self.countdown_check.setChecked(True)
         row.addWidget(self.countdown_check)
+        self.transitions_check = QCheckBox("Transitions")
+        self.transitions_check.setChecked(True)
+        self.transitions_check.toggled.connect(self._refresh_summary)
+        row.addWidget(self.transitions_check)
         self.intro_check = QCheckBox("Intro « Follow » au début")
         self.intro_check.setChecked(True)
         row.addWidget(self.intro_check)
@@ -177,7 +182,8 @@ class CompilationDialog(QDialog):
             return
         lines = [f"{i}. {c.label} ({_fmt(c.duration)})" for i, c in enumerate(clips, 1)]
         try:
-            parts = plan(clips, self.parts_combo.currentData() or 1)
+            parts = plan(clips, self.parts_combo.currentData() or 1,
+                         transitions=self.transitions_check.isChecked())
         except CompilationError as error:
             lines.append(str(error))
         else:
@@ -204,7 +210,7 @@ class CompilationDialog(QDialog):
         self.create_btn.setEnabled(False)
         self._thread = _Thread(list(self._order), folder, safe, self.parts_combo.currentData() or 1,
                                self.countdown_check.isChecked(), self.intro_check.isChecked(),
-                               self._token)
+                               self.transitions_check.isChecked(), self._token)
         self._thread.status.connect(self.status_label.setText)
         self._thread.done.connect(self._on_done)
         self._thread.failed.connect(self._on_failed)

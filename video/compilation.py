@@ -40,9 +40,44 @@ END_CARD_SECONDS = 3.0
 END_CARD_TOP_PERCENT = 58.0         # au-dessus des sous-titres et de la legende TikTok
 MIN_MONETIZABLE_S = 61.0            # « plus d'une minute »
 
+# Transitions entre clips (demande : « en aleatoire mais pas trop kitsch »).
+# Seulement des transitions sobres de ffmpeg (xfade) : fondus, flou, glisses
+# doux, leger zoom. Ecartees volontairement : coeurs, pixels, spirales,
+# volets en diagonale, « squeeze »… qui font montage de 2008.
+TRANSITIONS = ("fade", "fadeblack", "hblur", "zoomin",
+               "smoothleft", "smoothright", "smoothup", "smoothdown")
+TRANSITION_S = 0.4
+
 # Pas de fleche « → » : la police du logiciel n'a pas ce glyphe (carre vide).
 NEXT_PART_TEXT = ("La suite dans la PARTIE 2", "Abonne-toi pour ne pas la rater")
 LAST_PART_TEXT = ("Abonne-toi pour la prochaine compil", "")
+
+
+def pick_transitions(count: int, rng=None) -> list[str]:
+    """`count` transitions tirees au hasard, jamais deux fois la meme de
+    suite. `rng` : random.Random (tests reproductibles)."""
+    import random
+
+    rng = rng or random.Random()
+    chosen: list[str] = []
+    for _ in range(max(0, count)):
+        options = [t for t in TRANSITIONS if not chosen or t != chosen[-1]]
+        chosen.append(rng.choice(options))
+    return chosen
+
+
+def segment_windows(durations: list[float], transition: float) -> list[tuple[float, float]]:
+    """(debut, fin) de chaque clip dans la video montee, transitions
+    deduites : un clip commence quand la transition vers lui commence ; son
+    numero ne s'affiche qu'une fois la transition finie, et disparait quand
+    la suivante commence."""
+    windows, start = [], 0.0
+    for i, duration in enumerate(durations):
+        shown_from = start + (transition if i else 0.0)
+        shown_to = start + duration - (transition if i < len(durations) - 1 else 0.0)
+        windows.append((shown_from, max(shown_from + 0.1, shown_to)))
+        start += duration - transition
+    return windows
 
 
 class CompilationError(Exception):
@@ -81,10 +116,12 @@ class Part:
     total: int                      # nombre de parties
     clips: list = field(default_factory=list)       # list[Clip]
     numbers: list = field(default_factory=list)     # numero affiche par clip
+    fade: float = 0.0               # duree d'une transition (0 = bout a bout)
 
     @property
     def duration(self) -> float:
-        return sum(c.duration for c in self.clips)
+        """Duree montee : chaque transition fait se chevaucher deux clips."""
+        return sum(c.duration for c in self.clips) - self.fade * max(0, len(self.clips) - 1)
 
 
 # ------------------------------------------------------------------ plan
@@ -110,18 +147,20 @@ def split_point(durations: list[float]) -> int:
     return best
 
 
-def plan(clips: list[Clip], parts: int = 1, countdown: bool = True) -> list[Part]:
+def plan(clips: list[Clip], parts: int = 1, countdown: bool = True,
+         transitions: bool = True) -> list[Part]:
     """Parties de la compilation, dans l'ordre des clips donnes. La
     numerotation court sur toute la compilation (la partie 2 reprend la ou
     s'arrete la partie 1)."""
     if len(clips) < 2:
         raise CompilationError("Choisis au moins 2 clips pour une compilation.")
     numbers = numbering(len(clips), countdown)
+    fade = TRANSITION_S if transitions else 0.0
     if parts <= 1:
-        return [Part(1, 1, list(clips), numbers)]
+        return [Part(1, 1, list(clips), numbers, fade)]
     cut = split_point([c.duration for c in clips])
-    return [Part(1, 2, list(clips[:cut]), numbers[:cut]),
-            Part(2, 2, list(clips[cut:]), numbers[cut:])]
+    return [Part(1, 2, list(clips[:cut]), numbers[:cut], fade),
+            Part(2, 2, list(clips[cut:]), numbers[cut:], fade)]
 
 
 # ---------------------------------------------------------------- images
@@ -213,16 +252,20 @@ class PartInputs:
     badges: tuple                   # tuple[Sticker] : un numero par clip
     end_card: Sticker | None = None
     intro: object = None            # video.intro_overlay.IntroOverlay, ou None
+    transitions: tuple = ()         # une transition par jonction (len(clips) - 1), ou vide
 
 
 def ffmpeg_args(part: PartInputs, out_path, out_w: int = OUT_W, out_h: int = OUT_H) -> list[str]:
     """Arguments ffmpeg (sans le binaire) d'une partie. Fonction pure.
 
     Chaque clip est mis au format de sortie (sans deformation), a cadence et
-    son communs, puis concatene ; les numeros, l'ecran de fin et l'intro sont
-    incrustes ensuite, chacun borne a sa fenetre de temps."""
+    son communs, puis enchaine -- par une transition (xfade + fondu du son)
+    si `part.transitions` en donne, sinon bout a bout ; les numeros, l'ecran
+    de fin et l'intro sont incrustes ensuite, chacun borne a sa fenetre."""
     clips = part.clips
-    total = sum(c.duration for c in clips)
+    transitions = list(part.transitions)[:max(0, len(clips) - 1)]
+    fade = TRANSITION_S if transitions and len(transitions) == len(clips) - 1 else 0.0
+    total = sum(c.duration for c in clips) - fade * (len(clips) - 1)
     inputs: list[str] = []
     graph: list[str] = []
     for clip in clips:
@@ -237,14 +280,30 @@ def ffmpeg_args(part: PartInputs, out_path, out_w: int = OUT_W, out_h: int = OUT
             index += 1
     labels = []
     for i, clip in enumerate(clips):
+        # tpad/apad : la duree lue (conteneur) peut depasser d'une image la
+        # piste reelle ; une transition calee sur cette duree attendrait une
+        # image qui n'existe pas. On complete, puis on coupe pile.
         graph.append(f"[{i}:v]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
                      f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FPS},"
-                     f"format=yuv420p,trim=duration={clip.duration:.3f},setpts=PTS-STARTPTS[v{i}]")
+                     f"format=yuv420p,tpad=stop_mode=clone:stop_duration=1,"
+                     f"trim=duration={clip.duration:.3f},setpts=PTS-STARTPTS[v{i}]")
         audio = f"{silent[i]}:a" if i in silent else f"{i}:a"
-        graph.append(f"[{audio}]aresample=48000,aformat=channel_layouts=stereo,"
+        graph.append(f"[{audio}]aresample=48000,aformat=channel_layouts=stereo,apad,"
                      f"atrim=duration={clip.duration:.3f},asetpts=PTS-STARTPTS[a{i}]")
         labels.append(f"[v{i}][a{i}]")
-    graph.append(f"{''.join(labels)}concat=n={len(clips)}:v=1:a=1[cv][ca]")
+    if fade:
+        video, audio, length = "v0", "a0", clips[0].duration
+        for i, transition in enumerate(transitions, 1):
+            offset = length - fade
+            graph.append(f"[{video}][v{i}]xfade=transition={transition}:duration={fade}:"
+                         f"offset={offset:.3f}[xv{i}]")
+            graph.append(f"[{audio}][a{i}]acrossfade=d={fade}:c1=tri:c2=tri[xa{i}]")
+            video, audio = f"xv{i}", f"xa{i}"
+            length += clips[i].duration - fade
+        graph.append(f"[{video}]null[cv]")
+        graph.append(f"[{audio}]anull[ca]")
+    else:
+        graph.append(f"{''.join(labels)}concat=n={len(clips)}:v=1:a=1[cv][ca]")
 
     current, step = "cv", 0
 
@@ -265,10 +324,9 @@ def ffmpeg_args(part: PartInputs, out_path, out_w: int = OUT_W, out_h: int = OUT
                 f"between(t,{start:.3f},{start + length - 0.001:.3f})", ":eof_action=pass")
         index += 1
 
-    start = 0.0
-    for clip, badge in zip(clips, part.badges):
-        sticker(badge, start, clip.duration, BADGE_FADE, "b")
-        start += clip.duration
+    windows = segment_windows([c.duration for c in clips], fade)
+    for (shown_from, shown_to), badge in zip(windows, part.badges):
+        sticker(badge, shown_from, shown_to - shown_from, BADGE_FADE, "b")
     if part.end_card is not None:
         card_start = max(0.0, total - END_CARD_SECONDS)
         sticker(part.end_card, card_start, total - card_start, 0.25, "e")
@@ -337,8 +395,8 @@ def read_clips(paths: list[str]) -> list[Clip]:
 
 
 def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int = 1,
-            countdown: bool = True, intro: bool = True, on_progress=None,
-            cancel_token=None) -> list[tuple[Path, float]]:
+            countdown: bool = True, intro: bool = True, transitions: bool = True,
+            on_progress=None, cancel_token=None, rng=None) -> list[tuple[Path, float]]:
     """Ecrit la (ou les) partie(s) dans `out_dir` ; renvoie [(fichier, duree)].
     Leve CompilationError / FfmpegError / CancelledError."""
     import tempfile
@@ -348,7 +406,7 @@ def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int 
     say = on_progress or (lambda message: None)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    plan_parts = plan(read_clips(paths), parts, countdown)
+    plan_parts = plan(read_clips(paths), parts, countdown, transitions)
     written = []
     with tempfile.TemporaryDirectory(prefix="clipfarming_compilation_") as tmp:
         work = Path(tmp)
@@ -366,7 +424,8 @@ def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int 
                 badges=badges, end_card=card,
                 # Intro au debut de CHAQUE partie : chacune est une video a part
                 # entiere, vue par des gens qui n'ont pas vu l'autre.
-                intro=intro_overlay)
+                intro=intro_overlay,
+                transitions=tuple(pick_transitions(len(part.clips) - 1, rng)) if transitions else ())
             suffix = f" - partie {part.index}" if part.total > 1 else ""
             out = out_dir / f"{name}{suffix}.mp4"
             say(f"Montage de la partie {part.index}/{part.total}…" if part.total > 1

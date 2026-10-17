@@ -175,6 +175,13 @@ class RadarPage(QWidget):
         self.scan_btn.clicked.connect(self._start_scan)
         header.addWidget(self.scan_btn)
 
+        # Compilation des clips Twitch les plus vus, sans doublon de moment
+        # (gui/radar/auto_compilation_dialog.py).
+        self.compilation_btn = QPushButton("🏆  Compilation des plus vus")
+        self.compilation_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.compilation_btn.clicked.connect(self._open_auto_compilation)
+        header.addWidget(self.compilation_btn)
+
         self.cancel_btn = QPushButton("Annuler")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(self._cancel_scan)
@@ -605,6 +612,17 @@ class RadarPage(QWidget):
 
         QMessageBox.information(self, "Vérification des droits", RIGHTS_NOTICE)
         self._open_analysis([opportunity])
+
+    def _open_auto_compilation(self) -> None:
+        from gui.radar.auto_compilation_dialog import AutoCompilationDialog
+
+        creators = {c.key: c for c in self.store.list_creators(platform=PLATFORM_TWITCH,
+                                                                active_only=True)}
+        if not creators:
+            QMessageBox.information(self, "Compilation",
+                                    "Ajoute d'abord un streamer dans l'onglet Twitch, puis scanne.")
+            return
+        AutoCompilationDialog(self.store, creators, parent=self).exec()
 
     # ------------------------------------------------------------- scan
     def _max_results_per_creator(self) -> int | None:

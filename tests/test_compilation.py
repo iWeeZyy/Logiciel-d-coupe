@@ -26,7 +26,7 @@ class TestPlan:
         parts = comp.plan(_clips(30, 30, 30, 30), parts=2)
         assert [p.numbers for p in parts] == [[4, 3], [2, 1]]
         assert [p.index for p in parts] == [1, 2] and parts[0].total == 2
-        assert parts[0].duration == 60
+        assert abs(parts[0].duration - 59.6) < 1e-9             # une transition de 0,4 s
 
     def test_au_moins_deux_clips(self):
         with pytest.raises(comp.CompilationError):
@@ -133,7 +133,7 @@ def test_fenetre():
             dialog.list.item(row).setCheckState(Qt.CheckState.Checked)
         assert dialog._order == ["/x/1.mp4", "/x/0.mp4", "/x/2.mp4"]
         text = dialog.order_label.text()
-        assert text.startswith("1. Clip 1") and "1 min 45 s" in text and "intro" in text
+        assert text.startswith("1. Clip 1") and "1 min 44 s" in text and "intro" in text
         dialog.parts_combo.setCurrentIndex(1)
         assert "Partie 2" in dialog.order_label.text()
         dialog.reject()

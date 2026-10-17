@@ -55,6 +55,26 @@ def _deep_update(target: dict, override: dict) -> None:
             target[key] = value
 
 
+def apply_editing_overrides(settings, editing_overrides) -> None:
+    """Modules choisis pour CE traitement, par-dessus config/editing.json.
+    Partage par start_analysis et la compilation automatique du Radar."""
+    if not editing_overrides:
+        return
+    editing = {k: _deep_copy_block(v) for k, v in settings.editing.items()}
+    for module, override in editing_overrides.items():
+        if not isinstance(editing.get(module), dict):
+            continue
+        if isinstance(override, dict):
+            # Un module peut porter plus que son interrupteur : le
+            # filigrane doit dire AUSSI quelle chaine signe la video.
+            # Les cles inconnues du module sont ignorees par lui, donc
+            # cette fusion ne peut rien casser de ce qu'il lit deja.
+            _deep_update(editing[module], override)
+        else:
+            editing[module]["enabled"] = bool(override)
+    settings.editing = editing
+
+
 class AnalysisThread(QThread):
     progress = Signal(object)       # ProgressEvent
     finished_ok = Signal(list)      # list[ClipResult]
@@ -288,20 +308,7 @@ class AppController(QObject):
         cli_args.overwrite = True
 
         settings = load_settings(cli_args)
-        if editing_overrides:
-            editing = {k: _deep_copy_block(v) for k, v in settings.editing.items()}
-            for module, override in editing_overrides.items():
-                if not isinstance(editing.get(module), dict):
-                    continue
-                if isinstance(override, dict):
-                    # Un module peut porter plus que son interrupteur : le
-                    # filigrane doit dire AUSSI quelle chaine signe la video.
-                    # Les cles inconnues du module sont ignorees par lui, donc
-                    # cette fusion ne peut rien casser de ce qu'il lit deja.
-                    _deep_update(editing[module], override)
-                else:
-                    editing[module]["enabled"] = bool(override)
-            settings.editing = editing
+        apply_editing_overrides(settings, editing_overrides)
 
         project_store.write_manifest(
             project_folder, name=name, source_label=source_label, source_kind=source_kind,

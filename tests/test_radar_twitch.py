@@ -113,13 +113,15 @@ def test_clips_keep_the_name_of_whoever_created_them():
     adapter = FakeTwitch({"clips": {"data": [{
         "id": "C1", "title": "Le moment", "url": "https://clips.twitch.tv/C1",
         "created_at": _iso(0.75), "duration": 28.5, "view_count": 8400,
-        "creator_name": "UnSpectateur", "video_id": "V9",
+        "creator_name": "UnSpectateur", "video_id": "V9", "vod_offset": 3605,
     }]}})
 
     clips = [o for o in adapter.scan(_creator(), _iso(24)) if o.kind == KIND_CLIP]
 
     assert clips[0].view_count == 8400 and clips[0].duration_s == 28
     assert clips[0].extra["clip_creator"] == "UnSpectateur"
+    # Position dans la VOD : sert a reconnaitre deux clips du meme moment.
+    assert clips[0].extra["vod_offset"] == 3605
 
 
 def test_vods_older_than_the_period_are_filtered_out():

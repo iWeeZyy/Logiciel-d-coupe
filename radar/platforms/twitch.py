@@ -440,6 +440,12 @@ class TwitchAdapter(PlatformAdapter):
                     # l'information compte pour le credit.
                     "clip_creator": clip.get("creator_name", ""),
                     "source_video_id": clip.get("video_id", ""),
+                    # Position du clip dans la VOD (s) : deux clips du meme
+                    # moment, coupes par deux spectateurs, s'y chevauchent --
+                    # c'est ce qui les fait reconnaitre comme doublons dans
+                    # une compilation (radar/compilation_pick.py). None
+                    # quand la VOD n'existe plus.
+                    "vod_offset": clip.get("vod_offset"),
                 },
             ))
         return out
