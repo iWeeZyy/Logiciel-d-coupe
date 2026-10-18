@@ -39,6 +39,38 @@ class TestChaineYouTube:
         monkeypatch.setattr(youtube_channel, "fetch", lambda source, n, title_re=None: wanted)
         assert feed_fetcher.fetch_source(_YT) == wanted
 
+    def test_flux_filtre_complete_par_l_onglet_videos(self, monkeypatch):
+        """Flux RSS = 15 dernieres publications, Shorts compris : 2 bandes-
+        annonces seulement chez Netflix France. L'onglet Videos complete."""
+        def entry(vid, title, date):
+            return (f"<entry><yt:videoId>{vid}</yt:videoId><title>{title}</title>"
+                    f"<link rel='alternate' href='https://www.youtube.com/watch?v={vid}'/>"
+                    f"<published>{date}</published></entry>")
+
+        xml = ("<feed xmlns='http://www.w3.org/2005/Atom' "
+               "xmlns:yt='http://www.youtube.com/xml/schemas/2015'>"
+               + entry("SSSSSSSSSSS", "oups la boulette", "2026-10-16T10:00:00+00:00")
+               + entry("AAAAAAAAAAA", "Ninho | Bande-annonce officielle VF", "2026-10-15T16:00:00+00:00")
+               + "</feed>")
+
+        class Ok:
+            content = xml.encode()
+
+            def raise_for_status(self):
+                pass
+
+        page = [Article(source_key="nf", source_label="Netflix France", title="Ninho | Bande-annonce officielle VF",
+                        url="https://www.youtube.com/watch?v=AAAAAAAAAAA", published_at="2026-10-15T00:00:00+00:00"),
+                Article(source_key="nf", source_label="Netflix France", title="The Body | Bande-annonce officielle VF",
+                        url="https://www.youtube.com/watch?v=BBBBBBBBBBB")]
+        monkeypatch.setattr(requests, "get", lambda *a, **k: Ok())
+        monkeypatch.setattr(youtube_channel, "fetch", lambda source, n, title_re=None: page)
+        source = NewsSource(key="nf", label="Netflix France", theme="trailers", feed_url=_YT.feed_url,
+                            title_filter="bande[- ]?annonce|teaser|trailer")
+        got = feed_fetcher.fetch_source(source)
+        assert [a.url[-11:] for a in got] == ["AAAAAAAAAAA", "BBBBBBBBBBB"]
+        assert got[0].published_at.startswith("2026-10-15T16:00")   # date exacte du flux
+
     def test_un_flux_ordinaire_en_echec_reste_vide(self, monkeypatch):
         def not_found(*a, **k):
             raise requests.exceptions.HTTPError("404")

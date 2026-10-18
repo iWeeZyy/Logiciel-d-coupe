@@ -142,6 +142,8 @@ def fetch_source(source: NewsSource, timeout_s: float = DEFAULT_TIMEOUT_S,
     articles = parse_feed(response.content, source, max_articles=max_articles)
     if not articles:
         articles = _youtube_fallback(source, max_articles)
+    elif source.title_filter:
+        articles = _complete_from_channel(articles, source, max_articles)
     if source.featured_url and articles:
         from gaming_news.featured import fetch_page, rank_featured
 
@@ -162,6 +164,18 @@ def _youtube_fallback(source: NewsSource, max_articles: int) -> list[Article]:
     if articles:
         logger.info(f"« {source.label} » lu depuis la page de la chaîne ({len(articles)} vidéos).")
     return articles
+
+
+def _complete_from_channel(articles: list[Article], source: NewsSource,
+                           max_articles: int) -> list[Article]:
+    """Le flux RSS d'une chaine ne liste que ses 15 dernieres publications,
+    Shorts compris : Netflix France (2026-10-18) n'y gardait que 2
+    bandes-annonces sur 15, contre 13 sur les 30 videos de son onglet
+    « Videos ». Ce dernier complete le flux ; les videos deja presentes
+    gardent la date exacte du flux (celle de la page est approximative)."""
+    seen = {a.url for a in articles}
+    extra = [a for a in _youtube_fallback(source, max_articles) if a.url not in seen]
+    return (articles + extra)[:max_articles]
 
 
 def parse_feed(raw_xml: bytes | str, source: NewsSource,

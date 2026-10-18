@@ -836,7 +836,10 @@ sous-titrée (`news_story/vost.py`).
 plus récentes, datées, de la page « Les plus récentes » d'AlloCiné et des
 chaînes YouTube (FilmsActu, Netflix, Prime Video, studios). Quand le flux
 RSS d'une chaîne ne répond plus (404 constaté le 2026-10-14 sur toutes), sa
-page est lue avec yt-dlp (`gaming_news/youtube_channel.py`). Dans « Créer un
+page est lue avec yt-dlp (`gaming_news/youtube_channel.py`). Le flux RSS ne
+liste que les 15 dernières publications, Shorts compris : pour une chaîne
+filtrée sur les bandes-annonces (Netflix France : 2 sur 15), l'onglet
+« Vidéos » (30 dernières, sans Shorts) le complète. Dans « Créer un
 visuel », la date de sortie se place sous le titre et le synopsis de la fiche
 AlloCiné (titre exact uniquement) remplace la description de la vidéo dans la
 légende (`news_story/release_date.py`).
