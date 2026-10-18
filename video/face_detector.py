@@ -1,4 +1,15 @@
-"""Detection locale de visages (OpenCV DNN, Res10 SSD) pour guider le recadrage 9:16.
+"""Detection locale de visages (OpenCV : YuNet, repli Res10 SSD) pour guider le recadrage 9:16.
+
+YUNET D'ABORD (assets/models/face_detection_yunet_2023mar.onnx, 230 Ko,
+licence MIT, livre avec l'application -- aucun telechargement). Constat sur
+un vrai clip Twitch signale par l'utilisateur (« le visage n'est pas suivi ») :
+streamer filme de loin dans sa piece, perruque, lunettes de soleil, souvent de
+profil -- Res10 ne le trouvait que sur 6 images sur 60 (le suivi abandonnait,
+cadrage fixe), YuNet sur 52/60 ; sur un autre clip, 34/40 contre 40/40. Res10
+redimensionne TOUTE l'image en 300x300 : un visage pris de loin y fait une
+vingtaine de pixels et disparait. YuNet travaille sur l'image ramenee a
+960 px de large. Res10 reste le repli (OpenCV sans FaceDetectorYN, modele
+absent).
 
 Modele telecharge une seule fois (~28 Ko de description + ~10,7 Mo de poids)
 puis mis en cache dans .cache/models/ -- reutilisable hors ligne ensuite,
@@ -52,6 +63,78 @@ def _download(url: str, dest: Path) -> bool:
     except Exception as e:
         logger.warning(f"Telechargement du modele de detection de visage echoue ({url}) : {e}")
         return False
+
+
+_YUNET_ASSET = "face_detection_yunet_2023mar.onnx"
+_YUNET_INPUT_W = 960          # largeur d'analyse : un visage lointain reste visible
+_YUNET_NMS = 0.3
+
+
+def yunet_model_path() -> Path:
+    from core.paths import app_base_dir
+
+    return app_base_dir() / "assets" / "models" / _YUNET_ASSET
+
+
+class YuNetDetector:
+    """Detecteur YuNet (cv2.FaceDetectorYN), cree paresseusement a la taille
+    de la premiere image."""
+
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self._detector = None
+
+    def detect(self, frame, confidence_threshold: float, max_faces: int) -> list[FaceBox]:
+        import cv2
+
+        h, w = frame.shape[:2]
+        if not w or not h:
+            return []
+        scale = min(1.0, _YUNET_INPUT_W / w)
+        size = (max(1, int(round(w * scale))), max(1, int(round(h * scale))))
+        image = cv2.resize(frame, size) if scale < 1.0 else frame
+        if self._detector is None:
+            self._detector = cv2.FaceDetectorYN.create(self.model_path, "", size,
+                                                       confidence_threshold, _YUNET_NMS, 5000)
+        else:
+            self._detector.setInputSize(size)
+            self._detector.setScoreThreshold(confidence_threshold)
+        _, faces = self._detector.detect(image)
+        boxes: list[FaceBox] = []
+        for face in faces if faces is not None else []:
+            x, y, fw, fh = (float(v) for v in face[:4])
+            x1, y1 = max(0.0, x / size[0]), max(0.0, y / size[1])
+            x2, y2 = min(1.0, (x + fw) / size[0]), min(1.0, (y + fh) / size[1])
+            if x2 - x1 <= 0.005 or y2 - y1 <= 0.005:
+                continue
+            boxes.append(FaceBox(x=x1, y=y1, w=x2 - x1, h=y2 - y1, confidence=float(face[-1])))
+        boxes.sort(key=lambda b: b.area, reverse=True)
+        return boxes[:max_faces]
+
+
+def load_face_detector():
+    """Le detecteur a utiliser : YuNet s'il est disponible, sinon le reseau
+    Res10 (telecharge au premier usage), sinon None -- l'appelant retombe
+    alors sur un cadrage centre, jamais sur une erreur."""
+    try:
+        import cv2
+    except ImportError:
+        logger.warning("opencv-python non installe -- detection de visages indisponible.")
+        return None
+    path = yunet_model_path()
+    if hasattr(cv2, "FaceDetectorYN") and path.is_file():
+        try:
+            detector = YuNetDetector(str(path))
+            import numpy as np
+
+            detector.detect(np.zeros((64, 64, 3), dtype=np.uint8), 0.6, 1)   # charge le modele
+            return detector
+        except Exception as e:  # noqa: BLE001 -- repli sur Res10
+            logger.warning(f"YuNet indisponible ({e}) -- detecteur Res10 utilise.")
+    model = ensure_face_model()
+    if model is None:
+        return None
+    return cv2.dnn.readNetFromCaffe(*model)
 
 
 def ensure_face_model() -> tuple[str, str] | None:
@@ -114,6 +197,9 @@ def detect_faces_in_frame(net, frame, confidence_threshold: float = 0.6,
     cadrage d'une image d'article dans news_story) -- il n'y avait avant cette
     extraction QUE la copie video ici et une copie quasi identique dans
     thumbnailer.py, aucune des deux appelable sur une image independante."""
+    if isinstance(net, YuNetDetector):
+        return net.detect(frame, confidence_threshold, max_faces)
+
     import cv2
 
     blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0, (300, 300),
@@ -154,18 +240,10 @@ def detect_faces_in_image(image_bgr, confidence_threshold: float = 0.6,
     Liste vide si le modele ou OpenCV sont indisponibles : l'appelant retombe
     alors sur un cadrage centre, jamais sur une erreur (meme principe que
     detect_face_track)."""
-    model = ensure_face_model()
-    if model is None:
+    net = load_face_detector()
+    if net is None:
         logger.info("Detecteur de visage indisponible -- cadrage centre utilise.")
         return []
-
-    try:
-        import cv2
-    except ImportError:
-        logger.warning("opencv-python non installe -- cadrage centre utilise.")
-        return []
-
-    net = cv2.dnn.readNetFromCaffe(*model)
     return detect_faces_in_frame(net, image_bgr, confidence_threshold, max_faces)
 
 
@@ -220,19 +298,11 @@ def detect_face_track(
     """Position des visages au fil du clip. Liste vide si le modele, OpenCV ou
     la video ne sont pas exploitables -- l'appelant retombe alors sur un
     cadrage fixe, jamais sur une erreur."""
-    model = ensure_face_model()
-    if model is None:
+    net = load_face_detector()
+    if net is None:
         logger.info("Detecteur de visage indisponible -- cadrage fixe utilise.")
         return []
-
-    try:
-        import cv2
-    except ImportError:
-        logger.warning("opencv-python non installe -- cadrage fixe utilise.")
-        return []
-
-    prototxt_path, model_path = model
-    net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
+    import cv2
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():

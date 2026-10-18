@@ -410,14 +410,21 @@ traitement de chaque clip par le pipeline habituel (memes options que
 dans « Mes projets ». `vod_offset` n'est enregistre que depuis cette version :
 rescanner le Radar pour en profiter.
 
-**Cadrage choisi pour chaque clip** (case cochee par defaut) : une
-compilation melange des moments face camera et des moments de jeu ou le
-streamer n'est qu'une petite webcam. Une passe de detection rapide decide
-(`editing/subject.suggest_fit`) : visage principal sous 2,5 % de l'image =
-incrustation -> comme un clip seul en « Webcam en haut + Gameplay en bas » :
-la version portrait que Twitch genere lui-meme, puis le cadrage classique
-(rangee dans `clips/portrait/`, le paysage du meme clip portant le meme nom) ;
-sans version portrait pour ce clip, cadrage classique. Sinon, visage suivi.
+**Cadrage** : celui choisi dans les options, comme pour un clip seul. Par
+defaut « Recadrer sur le sujet », visage suivi (une webcam incrustee est
+suivie elle aussi quand c'est le seul visage). « Webcam en haut + Gameplay en
+bas » prend, comme un clip seul, la version portrait que Twitch genere
+(rangee dans `clips/portrait/`, le paysage du meme clip portant le meme nom).
+Un choix automatique par taille de visage a ete essaye puis retire : sur de
+vrais clips (streamer filme de loin dans sa piece), le visage fait ~1,3 % de
+l'image, comme une webcam incrustee -- il envoyait ces clips vers la version
+portrait floutee de Twitch au lieu de suivre le visage.
+
+**Detection des visages : YuNet** (`video/face_detector.py`,
+`assets/models/face_detection_yunet_2023mar.onnx`, licence MIT, livre avec
+l'application), Res10 en repli. Sur un clip reel (streamer de loin, perruque,
+lunettes de soleil), Res10 trouvait le visage sur 6 images sur 60 -- cadrage
+fixe -- YuNet sur 52 : visage suivi sur 87 % du clip.
 
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 

@@ -25,7 +25,7 @@ from editing.thumbnail import (
     score_frames,
 )
 from video.cropper import TARGET_H, TARGET_W, CenterHint, compute_crop_rect
-from video.face_detector import FaceBox, detect_largest_face, ensure_face_model
+from video.face_detector import FaceBox, detect_largest_face, load_face_detector
 from video.text_render import draw_outlined_text, fit_font_for_lines
 
 logger = get_logger()
@@ -148,8 +148,7 @@ def generate_thumbnails(
         logger.warning("Pillow non installe -- miniatures non generees.")
         return []
 
-    model = ensure_face_model()
-    net = cv2.dnn.readNetFromCaffe(*model) if model else None
+    net = load_face_detector()
     try:
         cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
         if cascade.empty():

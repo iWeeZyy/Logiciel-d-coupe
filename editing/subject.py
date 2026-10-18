@@ -240,34 +240,3 @@ def keep_webcam_faces(samples, radius: float = CLUSTER_RADIUS,
         )
         filtered.append(replace(sample, faces=faces, mouth_activity=activity))
     return filtered
-
-
-# ------------------------------------------------- cadrage choisi par clip
-#
-# Compilations (gui/radar/auto_compilation_dialog.py) : signale par
-# l'utilisateur, les visages n'y etaient « pas suivis comme dans un clip
-# seul ». Cause : une compilation melange des moments face camera et des
-# moments de jeu ou le streamer n'est qu'une petite webcam dans un coin. Le
-# mode « Recadrer sur le sujet » ecarte volontairement cette incrustation
-# (voir plus haut) et cadre le jeu ; pour un clip seul, l'utilisateur choisit
-# lui-meme « Webcam en haut + Gameplay en bas », ce qu'une compilation de
-# plusieurs clips ne peut pas faire a sa place sans ce choix automatique.
-
-# Aire (fraction de l'image) au-dessous de laquelle le visage principal est
-# une incrustation : une webcam dans un coin d'une image 16:9 donne un visage
-# d'environ 0,5 a 1,5 % de l'image ; un streamer face camera, 4 a 15 %.
-WEBCAM_FACE_MAX_AREA = 0.025
-
-FIT_CHOICE_CROP = "crop"
-FIT_CHOICE_SPLIT = "split"
-
-
-def suggest_fit(samples) -> str:
-    """« split » (webcam en haut + jeu en bas) quand le seul visage present
-    de facon fiable est petit -- une incrustation sur le jeu ; « crop »
-    (recadrer sur le sujet, avec suivi) sinon, y compris sans visage."""
-    tracks = [t for t in build_tracks(list(samples)) if t.presence >= MIN_WEBCAM_PRESENCE]
-    if not tracks:
-        return FIT_CHOICE_CROP
-    largest = max(tracks, key=lambda t: t.area)
-    return FIT_CHOICE_SPLIT if largest.area < WEBCAM_FACE_MAX_AREA else FIT_CHOICE_CROP

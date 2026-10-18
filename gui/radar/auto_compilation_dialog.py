@@ -70,9 +70,6 @@ def _produce_clip(opportunity, production: dict, cancel_token, on_status=lambda 
     source = media.resolve(opportunity, cancel_token=cancel_token)
     source_path = source.path
     fit_mode = production.get("fit_mode")
-    if production.get("auto_fit") and production.get("aspect") == "9:16":
-        on_status(f"Cadrage : {title}")
-        fit_mode = choose_fit(source_path, opportunity.duration_s)
     from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
 
     if fit_mode == FIT_SPLIT_WEBCAM:
@@ -139,21 +136,6 @@ def portrait_variant(opportunity, cancel_token) -> str | None:
         get_logger().warning(f"Version portrait indisponible ({error}).")
         return None
     return path if height > width else None
-
-
-def choose_fit(video_path: str, duration_s) -> str:
-    """Cadrage de CE clip : « Webcam en haut + Gameplay en bas » quand le
-    streamer n'est qu'une petite webcam sur le jeu, « Recadrer sur le sujet »
-    (visage suivi) quand il est face camera -- voir editing/subject.py
-    (suggest_fit). Une passe de detection rapide (1 image par seconde)."""
-    from editing.subject import FIT_CHOICE_SPLIT, suggest_fit
-    from video.face_detector import detect_face_track
-    from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
-
-    end = float(duration_s or 60)
-    samples = detect_face_track(video_path, 0.0, end, sample_interval_s=1.0,
-                                max_samples=40, max_faces=3)
-    return FIT_SPLIT_WEBCAM if suggest_fit(samples) == FIT_CHOICE_SPLIT else FIT_CROP
 
 
 class _Worker(QThread):
@@ -272,13 +254,6 @@ class AutoCompilationDialog(QDialog):
         layout.addLayout(options)
 
         layout.addWidget(QLabel("Traitement de chaque clip"))
-        # Une compilation melange des moments face camera et des moments de
-        # jeu (petite webcam) : le cadrage est choisi pour CHAQUE clip.
-        self.auto_fit_check = QCheckBox(
-            "Cadrage automatique par clip : webcam en haut + jeu en bas si le streamer est "
-            "une petite webcam, visage suivi s'il est face caméra")
-        self.auto_fit_check.setChecked(True)
-        layout.addWidget(self.auto_fit_check)
         self.production_options = ProductionOptionsBox(columns=3)
         layout.addWidget(self.production_options)
 
@@ -363,8 +338,7 @@ class AutoCompilationDialog(QDialog):
         overrides["intro"] = False          # posee une seule fois par la compilation
         production = {"aspect": options.aspect(), "fill_mode": options.fill_mode(),
                       "fit_mode": options.fit_mode(), "subtitle_style": options.subtitle_style(),
-                      "editing_overrides": overrides,
-                      "auto_fit": self.auto_fit_check.isChecked()}
+                      "editing_overrides": overrides}
         name = " ".join(self.name_edit.text().split()) or "Compilation"
         safe = "".join(ch for ch in name if ch not in '<>:"/\\|?*').strip() or "Compilation"
         self.create_btn.setEnabled(False)

@@ -125,33 +125,15 @@ def test_production_d_un_clip(tmp_path, monkeypatch):
     assert (__import__("pathlib").Path(path).parents[1] / "project.json").is_file()
 
 
-class TestCadrageParClip:
-    """Signale : dans les compilations, visages « pas suivis comme dans un
-    clip seul » -- les moments de jeu (petite webcam) y etaient recadres sur
-    le jeu. Le cadrage est desormais choisi pour chaque clip."""
 
-    @staticmethod
-    def _samples(*boxes, n=10):
-        from video.face_detector import FaceBox, FaceSample
+class TestCadrage:
+    """Signale : visages « pas suivis » dans les compilations. Le cadrage est
+    celui des options (comme un clip seul) ; la version portrait de Twitch
+    n'est prise que si l'utilisateur choisit « Webcam en haut + Gameplay en
+    bas ». Un choix automatique par taille de visage a ete retire : un
+    streamer filme de loin a un visage aussi petit qu'une webcam incrustee."""
 
-        return [FaceSample(t=float(i), faces=tuple(FaceBox(x, y, w, h, 0.9) for x, y, w, h in boxes))
-                for i in range(n)]
-
-    def test_petite_webcam_sur_le_jeu(self):
-        from editing.subject import FIT_CHOICE_SPLIT, suggest_fit
-
-        assert suggest_fit(self._samples((0.05, 0.65, 0.07, 0.15))) == FIT_CHOICE_SPLIT   # ~1 %
-
-    def test_face_camera_ou_sans_visage(self):
-        from editing.subject import FIT_CHOICE_CROP, suggest_fit
-
-        assert suggest_fit(self._samples((0.4, 0.2, 0.16, 0.3))) == FIT_CHOICE_CROP       # ~5 %
-        assert suggest_fit(self._samples()) == FIT_CHOICE_CROP
-        # Un invite face camera ET une incrustation : le grand visage decide.
-        assert suggest_fit(self._samples((0.4, 0.2, 0.16, 0.3),
-                                         (0.05, 0.7, 0.06, 0.12))) == FIT_CHOICE_CROP
-
-    def _produce(self, tmp_path, monkeypatch, portrait):
+    def _produce(self, tmp_path, monkeypatch, fit, portrait):
         import pipeline
         from gui import settings_store
         from gui.radar import auto_compilation_dialog as dialog_module
@@ -161,8 +143,9 @@ class TestCadrageParClip:
         landscape.write_bytes(b"x")
         monkeypatch.setattr(media, "resolve", lambda opp, **kw: SimpleNamespace(path=str(landscape)))
         monkeypatch.setattr(settings_store, "projects_dir", lambda: tmp_path / "projets")
-        monkeypatch.setattr(dialog_module, "choose_fit", lambda path, d: "webcam_gameplay")
-        monkeypatch.setattr(dialog_module, "portrait_variant", lambda opp, token: portrait)
+        asked = []
+        monkeypatch.setattr(dialog_module, "portrait_variant",
+                            lambda opp, token: asked.append(1) or portrait)
         seen = {}
 
         def fake_run(settings, cancel_token=None, on_progress=None):
@@ -171,16 +154,20 @@ class TestCadrageParClip:
 
         monkeypatch.setattr(pipeline, "run", fake_run)
         dialog_module._produce_clip(_clip("top", 9000),
-                                    {"aspect": "9:16", "fit_mode": "recadrer", "auto_fit": True,
+                                    {"aspect": "9:16", "fit_mode": fit,
                                      "editing_overrides": {"intro": False}}, None)
-        return seen, landscape
+        return seen, landscape, asked
 
-    def test_webcam_version_portrait_twitch_comme_un_clip_seul(self, tmp_path, monkeypatch):
-        seen, _ = self._produce(tmp_path, monkeypatch, portrait="/clips/portrait/top.mp4")
+    def test_par_defaut_visage_suivi_sur_la_video_d_origine(self, tmp_path, monkeypatch):
+        seen, landscape, asked = self._produce(tmp_path, monkeypatch, "recadrer", "/p.mp4")
+        assert seen == {"input": str(landscape), "fit": "recadrer"} and not asked
+
+    def test_webcam_choisie_version_portrait_twitch(self, tmp_path, monkeypatch):
+        seen, _, _ = self._produce(tmp_path, monkeypatch, "webcam_gameplay", "/clips/portrait/top.mp4")
         assert seen == {"input": "/clips/portrait/top.mp4", "fit": "recadrer"}
 
-    def test_sans_version_portrait_cadrage_classique(self, tmp_path, monkeypatch):
-        seen, landscape = self._produce(tmp_path, monkeypatch, portrait=None)
+    def test_webcam_choisie_sans_version_portrait(self, tmp_path, monkeypatch):
+        seen, landscape, _ = self._produce(tmp_path, monkeypatch, "webcam_gameplay", None)
         assert seen == {"input": str(landscape), "fit": "recadrer"}
 
     def test_version_portrait_dans_un_dossier_a_part(self, tmp_path, monkeypatch):
@@ -201,4 +188,4 @@ class TestCadrageParClip:
         assert dialog_module.portrait_variant(_clip("top", 1), None) == "/x/top.mp4"
         assert calls == {"out_dir": str(tmp_path / "portrait"), "portrait": True}
         monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (1920, 1080))
-        assert dialog_module.portrait_variant(_clip("top", 1), None) is None   # pas de variante
+        assert dialog_module.portrait_variant(_clip("top", 1), None) is None
