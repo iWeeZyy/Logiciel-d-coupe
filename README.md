@@ -410,6 +410,15 @@ traitement de chaque clip par le pipeline habituel (memes options que
 dans « Mes projets ». `vod_offset` n'est enregistre que depuis cette version :
 rescanner le Radar pour en profiter.
 
+**Cadrage choisi pour chaque clip** (case cochee par defaut) : une
+compilation melange des moments face camera et des moments de jeu ou le
+streamer n'est qu'une petite webcam. Une passe de detection rapide decide
+(`editing/subject.suggest_fit`) : visage principal sous 2,5 % de l'image =
+incrustation -> comme un clip seul en « Webcam en haut + Gameplay en bas » :
+la version portrait que Twitch genere lui-meme, puis le cadrage classique
+(rangee dans `clips/portrait/`, le paysage du meme clip portant le meme nom) ;
+sans version portrait pour ce clip, cadrage classique. Sinon, visage suivi.
+
 ### Voice Studio ZeroGPU — banc d'essai (optionnel, isole)
 
 **CE QUI EST SUR, ET CE QUI NE L'EST PAS.** Cette section melange des faits de

@@ -123,3 +123,82 @@ def test_production_d_un_clip(tmp_path, monkeypatch):
     assert path.endswith("clips/clip_01.mp4") and str(tmp_path / "projets") in path
     assert seen == {"intro": False, "whole": True}
     assert (__import__("pathlib").Path(path).parents[1] / "project.json").is_file()
+
+
+class TestCadrageParClip:
+    """Signale : dans les compilations, visages « pas suivis comme dans un
+    clip seul » -- les moments de jeu (petite webcam) y etaient recadres sur
+    le jeu. Le cadrage est desormais choisi pour chaque clip."""
+
+    @staticmethod
+    def _samples(*boxes, n=10):
+        from video.face_detector import FaceBox, FaceSample
+
+        return [FaceSample(t=float(i), faces=tuple(FaceBox(x, y, w, h, 0.9) for x, y, w, h in boxes))
+                for i in range(n)]
+
+    def test_petite_webcam_sur_le_jeu(self):
+        from editing.subject import FIT_CHOICE_SPLIT, suggest_fit
+
+        assert suggest_fit(self._samples((0.05, 0.65, 0.07, 0.15))) == FIT_CHOICE_SPLIT   # ~1 %
+
+    def test_face_camera_ou_sans_visage(self):
+        from editing.subject import FIT_CHOICE_CROP, suggest_fit
+
+        assert suggest_fit(self._samples((0.4, 0.2, 0.16, 0.3))) == FIT_CHOICE_CROP       # ~5 %
+        assert suggest_fit(self._samples()) == FIT_CHOICE_CROP
+        # Un invite face camera ET une incrustation : le grand visage decide.
+        assert suggest_fit(self._samples((0.4, 0.2, 0.16, 0.3),
+                                         (0.05, 0.7, 0.06, 0.12))) == FIT_CHOICE_CROP
+
+    def _produce(self, tmp_path, monkeypatch, portrait):
+        import pipeline
+        from gui import settings_store
+        from gui.radar import auto_compilation_dialog as dialog_module
+        from radar.analysis import media
+
+        landscape = tmp_path / "paysage.mp4"
+        landscape.write_bytes(b"x")
+        monkeypatch.setattr(media, "resolve", lambda opp, **kw: SimpleNamespace(path=str(landscape)))
+        monkeypatch.setattr(settings_store, "projects_dir", lambda: tmp_path / "projets")
+        monkeypatch.setattr(dialog_module, "choose_fit", lambda path, d: "webcam_gameplay")
+        monkeypatch.setattr(dialog_module, "portrait_variant", lambda opp, token: portrait)
+        seen = {}
+
+        def fake_run(settings, cancel_token=None, on_progress=None):
+            seen.update(input=settings.input, fit=settings.fit_mode)
+            return [SimpleNamespace(file_name="clips/clip_01.mp4")]
+
+        monkeypatch.setattr(pipeline, "run", fake_run)
+        dialog_module._produce_clip(_clip("top", 9000),
+                                    {"aspect": "9:16", "fit_mode": "recadrer", "auto_fit": True,
+                                     "editing_overrides": {"intro": False}}, None)
+        return seen, landscape
+
+    def test_webcam_version_portrait_twitch_comme_un_clip_seul(self, tmp_path, monkeypatch):
+        seen, _ = self._produce(tmp_path, monkeypatch, portrait="/clips/portrait/top.mp4")
+        assert seen == {"input": "/clips/portrait/top.mp4", "fit": "recadrer"}
+
+    def test_sans_version_portrait_cadrage_classique(self, tmp_path, monkeypatch):
+        seen, landscape = self._produce(tmp_path, monkeypatch, portrait=None)
+        assert seen == {"input": str(landscape), "fit": "recadrer"}
+
+    def test_version_portrait_dans_un_dossier_a_part(self, tmp_path, monkeypatch):
+        from gui.radar import auto_compilation_dialog as dialog_module
+        from radar import clip_download
+        from radar.analysis import media
+        from video import ffmpeg_utils
+
+        calls = {}
+
+        def fake_download(url, out_dir, **kw):
+            calls.update(out_dir=out_dir, portrait=kw.get("prefer_portrait"))
+            return "/x/top.mp4"
+
+        monkeypatch.setattr(media, "clips_dir", lambda: tmp_path)
+        monkeypatch.setattr(clip_download, "download_clip", fake_download)
+        monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (1080, 1920))
+        assert dialog_module.portrait_variant(_clip("top", 1), None) == "/x/top.mp4"
+        assert calls == {"out_dir": str(tmp_path / "portrait"), "portrait": True}
+        monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (1920, 1080))
+        assert dialog_module.portrait_variant(_clip("top", 1), None) is None   # pas de variante

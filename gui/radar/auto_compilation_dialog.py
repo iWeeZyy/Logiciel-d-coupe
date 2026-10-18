@@ -68,18 +68,34 @@ def _produce_clip(opportunity, production: dict, cancel_token, on_status=lambda 
     title = opportunity.title or opportunity.content_id
     on_status(f"Téléchargement : {title}")
     source = media.resolve(opportunity, cancel_token=cancel_token)
+    source_path = source.path
+    fit_mode = production.get("fit_mode")
+    if production.get("auto_fit") and production.get("aspect") == "9:16":
+        on_status(f"Cadrage : {title}")
+        fit_mode = choose_fit(source_path, opportunity.duration_s)
+    from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
+
+    if fit_mode == FIT_SPLIT_WEBCAM:
+        # Exactement comme un clip seul (gui/controller.py, AnalysisThread) :
+        # « Webcam en haut + Gameplay en bas » = la version PORTRAIT que
+        # Twitch genere lui-meme, puis le cadrage classique dessus -- notre
+        # propre decoupage en deux bandes cadrait la webcam trop large.
+        # Sans cette version pour ce clip, cadrage classique sur le paysage.
+        on_status(f"Version portrait Twitch : {title}")
+        source_path = portrait_variant(opportunity, cancel_token) or source_path
+        fit_mode = FIT_CROP
     name = _project_name(opportunity)
     folder = project_store.create_project_folder(name, projects_dir=settings_store.projects_dir())
     duration = opportunity.duration_s
     cli_args = SimpleNamespace(
-        input=source.path, output=str(folder), overwrite=True,
+        input=source_path, output=str(folder), overwrite=True,
         clip_duration=max(5, int(duration)) if duration else 45, nb_clips=1, whole_source=True,
         model=settings_store.get("default_model") or "small", language=None,
         pre_roll=None, post_roll=None, min_gap=None,
         subtitle_style=production.get("subtitle_style") or settings_store.get("default_subtitle_style"),
         device=settings_store.get("default_device"), no_cache=False, debug_scores=False,
         aspect=production.get("aspect"), fill_mode=production.get("fill_mode"),
-        fit_mode=production.get("fit_mode"),
+        fit_mode=fit_mode,
     )
     settings = load_settings(cli_args)
     apply_editing_overrides(settings, production.get("editing_overrides") or {})
@@ -99,6 +115,45 @@ def _produce_clip(opportunity, production: dict, cancel_token, on_status=lambda 
     if not results:
         raise RuntimeError(f"Aucun clip produit pour « {title} ».")
     return str(Path(folder) / results[0].file_name)
+
+
+def portrait_variant(opportunity, cancel_token) -> str | None:
+    """La version portrait (webcam en haut, jeu en bas) que Twitch genere pour
+    ce clip, ou None s'il n'en a pas. Rangee dans un sous-dossier : le rendu
+    paysage du meme clip porte le meme nom de fichier, et yt-dlp le
+    prendrait pour la version deja telechargee."""
+    from core.logging_setup import get_logger
+    from radar.analysis.media import clips_dir
+    from radar.clip_download import download_clip
+    from utils.errors import CancelledError
+    from video.ffmpeg_utils import video_resolution
+
+    try:
+        path = download_clip(opportunity.url or opportunity.content_id,
+                             str(clips_dir() / "portrait"), cancel_token=cancel_token,
+                             prefer_portrait=True)
+        width, height = video_resolution(path)
+    except CancelledError:
+        raise
+    except Exception as error:  # noqa: BLE001 -- repli : cadrage classique sur le paysage
+        get_logger().warning(f"Version portrait indisponible ({error}).")
+        return None
+    return path if height > width else None
+
+
+def choose_fit(video_path: str, duration_s) -> str:
+    """Cadrage de CE clip : « Webcam en haut + Gameplay en bas » quand le
+    streamer n'est qu'une petite webcam sur le jeu, « Recadrer sur le sujet »
+    (visage suivi) quand il est face camera -- voir editing/subject.py
+    (suggest_fit). Une passe de detection rapide (1 image par seconde)."""
+    from editing.subject import FIT_CHOICE_SPLIT, suggest_fit
+    from video.face_detector import detect_face_track
+    from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
+
+    end = float(duration_s or 60)
+    samples = detect_face_track(video_path, 0.0, end, sample_interval_s=1.0,
+                                max_samples=40, max_faces=3)
+    return FIT_SPLIT_WEBCAM if suggest_fit(samples) == FIT_CHOICE_SPLIT else FIT_CROP
 
 
 class _Worker(QThread):
@@ -217,6 +272,13 @@ class AutoCompilationDialog(QDialog):
         layout.addLayout(options)
 
         layout.addWidget(QLabel("Traitement de chaque clip"))
+        # Une compilation melange des moments face camera et des moments de
+        # jeu (petite webcam) : le cadrage est choisi pour CHAQUE clip.
+        self.auto_fit_check = QCheckBox(
+            "Cadrage automatique par clip : webcam en haut + jeu en bas si le streamer est "
+            "une petite webcam, visage suivi s'il est face caméra")
+        self.auto_fit_check.setChecked(True)
+        layout.addWidget(self.auto_fit_check)
         self.production_options = ProductionOptionsBox(columns=3)
         layout.addWidget(self.production_options)
 
@@ -301,7 +363,8 @@ class AutoCompilationDialog(QDialog):
         overrides["intro"] = False          # posee une seule fois par la compilation
         production = {"aspect": options.aspect(), "fill_mode": options.fill_mode(),
                       "fit_mode": options.fit_mode(), "subtitle_style": options.subtitle_style(),
-                      "editing_overrides": overrides}
+                      "editing_overrides": overrides,
+                      "auto_fit": self.auto_fit_check.isChecked()}
         name = " ".join(self.name_edit.text().split()) or "Compilation"
         safe = "".join(ch for ch in name if ch not in '<>:"/\\|?*').strip() or "Compilation"
         self.create_btn.setEnabled(False)
