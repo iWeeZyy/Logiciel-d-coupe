@@ -97,13 +97,24 @@ class TestParoleEtPlanLarge:
     FIVE = [FaceSample(t=t / 2, faces=tuple(_box(cx) for cx in (0.12, 0.28, 0.45, 0.66, 0.82)),
                        mouth_activity=(0.0,) * 5) for t in range(20)]
 
-    def test_plan_large_quand_personne_ne_parle(self):
+    TWO = [FaceSample(t=t / 2, faces=(_box(0.2), _box(0.8)), mouth_activity=(0.0, 0.0))
+           for t in range(20)]
+
+    def test_plus_de_deux_toujours_en_plan_large(self):
+        from editing.framing import wide_intervals
+        from editing.speaker import SpeakerDecision
+
+        decisions = [SpeakerDecision(0.0, 10.0, 1, 0.8)]
+        wide = wide_intervals(self.FIVE, decisions, [(0.0, 10.0)], crop_width_frac=0.16)
+        assert len(wide) == 1 and wide[0][0] == 0.0 and wide[0][1] >= 9.5
+
+    def test_a_deux_plan_large_quand_personne_ne_parle(self):
         from editing.framing import wide_intervals
         from editing.speaker import SpeakerDecision
 
         decisions = [SpeakerDecision(0.0, 10.0, 1, 0.8)]
         speech = [(0.0, 3.0), (7.0, 10.0)]                 # silence de 3 a 7 s
-        wide = wide_intervals(self.FIVE, decisions, speech, crop_width_frac=0.16)
+        wide = wide_intervals(self.TWO, decisions, speech, crop_width_frac=0.16)
         assert len(wide) == 1 and 3.0 <= wide[0][0] <= 3.5 and 6.0 <= wide[0][1] <= 7.0
 
     def test_seul_ou_groupe_qui_tient_dans_le_cadre_jamais_de_plan_large(self):
@@ -119,7 +130,7 @@ class TestParoleEtPlanLarge:
 
         decisions = [SpeakerDecision(0.0, 10.0, 1, 0.8)]
         speech = [(0.0, 4.0), (4.6, 10.0)]                 # silence de 0,6 s seulement
-        assert wide_intervals(self.FIVE, decisions, speech, crop_width_frac=0.16) == ()
+        assert wide_intervals(self.TWO, decisions, speech, crop_width_frac=0.16) == ()
 
     def test_changement_de_personne_est_un_cut(self):
         from editing.framing import FramingKeyframe, _decimate, smooth_trajectory

@@ -244,15 +244,17 @@ def group_span(samples, intervals, margin: float = 0.05) -> tuple[float, float]:
 
 
 def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: float,
-                   min_shot_s: float = 1.0, half_step_s: float = 0.25):
+                   min_shot_s: float = 1.0, half_step_s: float = 0.25,
+                   min_tight_s: float = 2.0):
     """Moments en plan large (fonction pure, temps SOURCE).
 
     Demande de l'utilisateur : cadrer la personne qui parle, et quand
     personne ne parle -- ou qu'on ne sait pas qui -- montrer TOUS les
-    participants en entier. Un echantillon est « large » quand il montre
-    plusieurs visages qui ne tiennent pas dans le cadre 9:16, et que soit
-    aucune parole ne l'entoure (`speech_spans`, mots de la transcription),
-    soit aucun locuteur n'est identifie. Les plans de moins de `min_shot_s`
+    participants en entier ; a plus de deux, toujours le plan large. Un
+    echantillon est « large » quand il montre plusieurs visages qui ne
+    tiennent pas dans le cadre 9:16, et qu'il y en a plus de deux, ou
+    qu'aucune parole ne l'entoure (`speech_spans`, mots de la transcription),
+    ou qu'aucun locuteur n'est identifie. Les plans de moins de `min_shot_s`
     (larges comme serres) sont absorbes : un cadre qui clignote est pire
     qu'un cadre imparfait."""
     from editing.speaker import speaker_at
@@ -268,7 +270,10 @@ def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: fl
             left = min(f.x for f in faces)
             right = max(f.x + f.w for f in faces)
             if right - left > crop_width_frac:
-                wide = (not speaking(sample.t)
+                # Plus de deux personnes : toujours en plan large (demande de
+                # l'utilisateur). A deux : celle qui parle, plan large dans
+                # les silences ou si on ne sait pas qui parle.
+                wide = (len(faces) > 2 or not speaking(sample.t)
                         or speaker_at(speaker_decisions or [], sample.t) is None)
         flags.append((sample.t, wide))
     if not flags:
@@ -289,7 +294,9 @@ def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: fl
     # Trous serres trop courts : on reste en large ; plans larges trop courts : ecartes.
     merged = []
     for a, b in raw:
-        if merged and a - merged[-1][1] < min_shot_s:
+        # Retour en serre de moins de `min_tight_s` entre deux plans larges :
+        # le plus souvent un visage perdu une seconde par la detection.
+        if merged and a - merged[-1][1] < min_tight_s:
             merged[-1] = (merged[-1][0], b)
         else:
             merged.append((a, b))
@@ -338,8 +345,13 @@ def build_framing_plan(
     smoothed = smooth_trajectory(targets, smoothing_alpha, max_speed_frac_per_s, deadzone_frac)
     wide = ()
     if crop_width_frac is not None and speech_spans is not None:
-        wide = wide_intervals(with_faces, speaker_decisions, speech_spans, crop_width_frac)
-    wide_span = group_span(with_faces, wide) if wide else (0.0, 1.0)
+        # Les participants seulement : une incrustation webcam ou un visage
+        # sur un ecran ne fait pas basculer en plan large (editing/subject.py).
+        from editing.subject import keep_subject_faces
+
+        participants = (subject_filter or keep_subject_faces)(with_faces) or with_faces
+        wide = wide_intervals(participants, speaker_decisions, speech_spans, crop_width_frac)
+    wide_span = group_span(participants, wide) if wide else (0.0, 1.0)
 
     span_x = max(k.cx for k in smoothed) - min(k.cx for k in smoothed)
     span_y = max(k.cy for k in smoothed) - min(k.cy for k in smoothed)

@@ -491,8 +491,12 @@ Squeezie, 2026-10-31) :
   pas dans le cadre : PLAN LARGE, le groupe entier (du premier au dernier
   participant, toute la hauteur) pose sur fond flou
   (`editing/framing.wide_intervals`, `video/filter_graph._with_wide_shots`).
-  Plans de moins d'une seconde absorbes. Limite : cinq personnes cote a cote
-  en entier dans un cadre vertical tiennent dans une bande etroite.
+  A PLUS DE DEUX participants (deuxieme demande du meme jour), toujours le
+  plan large ; un retour en serre de moins de 2 s entre deux plans larges (un
+  visage perdu par la detection) est absorbe, un plan large de moins d'1 s
+  aussi. Les visages comptes sont ceux des participants (une incrustation
+  webcam n'en fait pas partie). Limite : cinq personnes cote a cote en entier
+  dans un cadre vertical tiennent dans une bande etroite.
 - *Streamer a suivre* (`video/face_identity.py`, non active par defaut) : avec une photo de
   reference (cle `faces` de la configuration de la compilation, ex.
   `"faces": {"squeezie": ["visages/squeezie.png"]}`), chaque visage est
