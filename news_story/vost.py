@@ -38,6 +38,21 @@ class Cue:
     text: str
 
 
+_ALREADY_SUBTITLED_RE = None
+
+
+def already_subtitled(video_title: str) -> bool:
+    """« VO STFR », « VOSTFR », « VOST » dans le titre : la bande-annonce porte
+    deja des sous-titres francais incrustes -- en ajouter d'autres les
+    superposerait."""
+    import re
+
+    global _ALREADY_SUBTITLED_RE
+    if _ALREADY_SUBTITLED_RE is None:
+        _ALREADY_SUBTITLED_RE = re.compile(r"\b(vostfr|vost|stfr)\b", re.IGNORECASE)
+    return bool(_ALREADY_SUBTITLED_RE.search(video_title or ""))
+
+
 def needs_subtitles(language: str | None, cues: list[Cue]) -> bool:
     """Pas de sous-titres pour une bande-annonce deja en francais, ni sans
     paroles (musique seule)."""

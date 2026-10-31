@@ -415,7 +415,12 @@ class StoryDialog(QDialog):
         from news_story import ai_summary
 
         self.vost_check = QCheckBox("Sous-titres français si la vidéo est en VO")
-        self.vost_check.setChecked(ai_summary.is_configured())
+        from news_story.vost import already_subtitled
+
+        # Decochee pour une « VO STFR » : deja sous-titree, sinon deux
+        # couches de sous-titres se superposeraient.
+        self.vost_check.setChecked(ai_summary.is_configured()
+                                   and not already_subtitled(article.title))
         self.vost_check.setToolTip("Transcription de la piste son, traduction par Claude (clé "
                                    "« 🔑 IA Claude » requise), incrustation en bas de la vidéo.")
         options_panel.addWidget(self.vost_check)

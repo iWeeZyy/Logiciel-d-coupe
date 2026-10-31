@@ -53,6 +53,14 @@ class TestRythme:
         decision = at.decide(FEED, _done(("a", "2026-10-25")), TODAY)
         assert all(not a.title.startswith("RIVER") for a in decision.candidates)
 
+    def test_serveur_alloCine_avant_youtube(self):
+        allo = Article(source_key="allocine_latest_trailers", source_label="AlloCiné",
+                       title="RIVER Bande-annonce VF",
+                       url="https://www.allocine.fr/video/player_gen_cmedia=1&cfilm=2.html",
+                       published_at="2026-10-30T09:00:00+00:00")
+        decision = at.decide(FEED + [allo], {}, TODAY, skip_youtube=True)
+        assert [a.url for a in decision.candidates] == [allo.url]
+
     def test_force_ignore_le_rythme_pas_la_memoire(self):
         decision = at.decide(FEED, _done(("b", "2026-10-31")), TODAY, force=True)
         assert decision.article.title.startswith("SLAYGROUND")
@@ -88,12 +96,12 @@ def test_sous_github_actions(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary"))
-    monkeypatch.setattr(at, "run", lambda out_dir, force=False: {
+    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False: {
         "status": "produit", "reason": "r", "title": "T", "video": "v.mp4",
         "caption": "Légende\n#cinema"})
     assert at.main_cli(["--auto-trailer"]) == 0
     assert out.read_text(encoding="utf-8").strip() == "produit=true"
-    monkeypatch.setattr(at, "run", lambda out_dir, force=False: {"status": "rien", "reason": "x"})
+    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False: {"status": "rien", "reason": "x"})
     assert at.main_cli([]) == 0
     assert out.read_text(encoding="utf-8").strip().endswith("produit=false")
 
@@ -110,3 +118,12 @@ def test_qualite_minimale(tmp_path, monkeypatch):
                                   logo_path=None, text_opacity=1.0, title_scale=1.0,
                                   min_height=720)
     assert not Path(tmp_path / "o.mp4").exists()
+
+
+def test_deja_sous_titree_pas_de_seconde_couche():
+    from news_story.vost import already_subtitled
+
+    assert already_subtitled("Paper Tiger Teaser VO STFR")
+    assert already_subtitled("MALFAISANTE | Bande-annonce officielle VOST")
+    assert not already_subtitled("Karma Bande-annonce VF")
+    assert not already_subtitled("Jusqu'au bout du rêve Bande-annonce VO")

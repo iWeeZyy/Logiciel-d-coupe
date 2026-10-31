@@ -85,9 +85,24 @@ def _is_vo(article) -> bool:
     return bool(re.search(r"\b(vost|vostfr|vo)\b", (article.title or "").lower()))
 
 
+def on_youtube(article) -> bool:
+    """La video est sur YouTube -- qui refuse les serveurs (« Sign in to
+    confirm you're not a bot », constate le 2026-10-31 sur GitHub Actions et
+    ailleurs). Les bandes-annonces AlloCine passent par Dailymotion, qui
+    sert du 1080p aux serveurs GitHub (verifie le meme jour)."""
+    from news_story.image_fetcher import youtube_video_id
+
+    return bool(youtube_video_id(article.url))
+
+
+def _preference(article) -> tuple:
+    """Plus petit = mieux : pas YouTube, puis VF avant VO."""
+    return (on_youtube(article), _is_vo(article))
+
+
 def one_per_film(articles) -> list:
-    """Une seule version par film, dans l'ordre donne ; la VF avant la VOST
-    (pas de traduction a faire)."""
+    """Une seule version par film, a la place de la premiere rencontree ;
+    AlloCine avant YouTube, la VF avant la VO (pas de traduction a faire)."""
     best: dict = {}
     order: list = []
     for article in articles:
@@ -95,12 +110,13 @@ def one_per_film(articles) -> list:
         if key not in best:
             best[key] = article
             order.append(key)
-        elif _is_vo(best[key]) and not _is_vo(article):
+        elif _preference(article) < _preference(best[key]):
             best[key] = article
     return [best[key] for key in order]
 
 
-def decide(articles, done: dict, today: date, force: bool = False) -> Decision:
+def decide(articles, done: dict, today: date, force: bool = False,
+           skip_youtube: bool = False) -> Decision:
     """Quelle bande-annonce faire aujourd'hui (fonction pure).
 
     Les plus recentes d'abord ; une bande-annonce sans date passe apres les
@@ -113,6 +129,8 @@ def decide(articles, done: dict, today: date, force: bool = False) -> Decision:
     fresh.sort(key=lambda a: (_published_day(a) is not None, _published_day(a) or date.min),
                reverse=True)
     fresh = one_per_film(fresh)
+    if skip_youtube:
+        fresh = [a for a in fresh if not on_youtube(a)]
     if not fresh:
         return Decision(reason="Aucune bande-annonce nouvelle dans le fil.")
     last = last_post_day(done)
@@ -194,7 +212,8 @@ def produce(article, out_dir: Path, on_status=logger.info):
 
 
 def run(out_dir: Path, *, force: bool = False, today: date | None = None,
-        fetch=fetch_trailers, producer=produce, on_status=logger.info) -> dict:
+        fetch=fetch_trailers, producer=produce, on_status=logger.info,
+        skip_youtube: bool = False) -> dict:
     """{"status": "produit"|"rien"|"erreur", "reason", "title", "video",
     "caption"}. Ne leve pas."""
     from news_story import published
@@ -204,7 +223,8 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         articles = fetch()
     except Exception as e:  # noqa: BLE001 -- rapporte
         return {"status": "erreur", "reason": f"Fil Bandes-annonces illisible : {e}"}
-    decision = decide(articles, published.load(), today, force=force)
+    decision = decide(articles, published.load(), today, force=force,
+                      skip_youtube=skip_youtube)
     on_status(decision.reason)
     if decision.article is None:
         return {"status": "rien", "reason": decision.reason}
@@ -242,9 +262,11 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--out", type=Path, default=Path("bande_annonce"))
     parser.add_argument("--force", action="store_true",
                         help="ignorer le rythme (essai) ; jamais une deja publiee")
+    parser.add_argument("--sans-youtube", action="store_true",
+                        help="ecarter les videos YouTube (serveur : YouTube les bloque)")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
-    result = run(args.out, force=args.force)
+    result = run(args.out, force=args.force, skip_youtube=args.sans_youtube)
     print(f"Résultat : {result['status']} — {result.get('reason', '')}", flush=True)
     for line in result.get("skipped") or []:
         print(f"⚠ écartée : {line}", flush=True)

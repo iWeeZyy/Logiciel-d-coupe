@@ -93,7 +93,10 @@ jobs:
           FORCE: ${{ inputs.force && '--force' || '' }}
         run: |
           cp "$GITHUB_WORKSPACE/appelant/news_publiees.json" news_publiees.json 2>/dev/null || true
-          python gui_main.py --auto-trailer --out "$RUNNER_TEMP/bande-annonce" $FORCE
+          # --sans-youtube : YouTube refuse les serveurs GitHub (« Sign in to
+          # confirm you're not a bot », essai du 2026-10-31) ; les videos
+          # AlloCine (Dailymotion) y sont servies en 1080p.
+          python gui_main.py --auto-trailer --sans-youtube --out "$RUNNER_TEMP/bande-annonce" $FORCE
 
       - name: Memoire des publications
         if: steps.run.outputs.produit == 'true'
