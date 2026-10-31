@@ -73,6 +73,10 @@ def test_numero_dessine_recadre(tmp_path):
 def test_legende():
     text = comp.caption_text("Top 5 de Squeezie", 1, 2)
     assert "Partie 1/2" in text and "partie 2" in text and "#twitch" in text
+    tags = comp.caption_text("Top 5", creator="Anyme023").splitlines()[-1]
+    assert tags == "#clip #twitch #stream #anyme023 #drole"
+    assert comp.caption_text("Top 5").splitlines()[-1] == "#clip #twitch #stream #drole"
+    assert comp.creator_hashtag("Joyca é!") == "#joycae"
 
 
 def test_clips_disponibles(tmp_path):

@@ -166,7 +166,7 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
                    on_progress=on_status, cancel_token=cancel_token)
 
 
-def write_captions(written, title: str) -> list[Path]:
+def write_captions(written, title: str, creator: str = "") -> list[Path]:
     """La legende .txt a cote de chaque partie ; renvoie leurs chemins."""
     from video.compilation import caption_text
 
@@ -174,6 +174,7 @@ def write_captions(written, title: str) -> list[Path]:
     captions = []
     for index, (path, _duration) in enumerate(written, 1):
         caption = Path(path).with_suffix(".txt")
-        caption.write_text(caption_text(title, index, len(written)), encoding="utf-8")
+        caption.write_text(caption_text(title, index, len(written), creator=creator),
+                           encoding="utf-8")
         captions.append(caption)
     return captions

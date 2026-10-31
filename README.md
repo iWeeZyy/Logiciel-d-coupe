@@ -453,6 +453,10 @@ module Qt n'est importe sur ce chemin (verifie par un test).
 - Essai reel GitHub (2026-10-31, Anyme023, 5 clips) : clips Twitch telecharges
   sans blocage depuis les serveurs GitHub, compilation en 12 min, run complet
   13 min 20 s (~15 minutes Actions decomptees).
+- Legende : hashtags #clip #twitch #stream #<createur> #drole
+  (`video/compilation.py`, `caption_text`) ; sous GitHub Actions elle est aussi
+  ecrite dans le journal et le resume du run, lisible sans telecharger
+  l'artefact.
 - Essai reel local (2026-10-31, 4 coeurs CPU, vrais clips Anyme023
   telecharges, Radar simule faute d'identifiants Twitch ici) : 3 clips en
   10 min, ~3 min par clip, video 1080x1920 de 2 min 13 s.

@@ -125,6 +125,7 @@ class Report:
     refused: list = field(default_factory=list)      # [(login, raison)]
     errors: list = field(default_factory=list)       # [message]
     notes: list = field(default_factory=list)        # [message]
+    captions: list = field(default_factory=list)     # [(login, texte de la legende)]
 
     def lines(self) -> list[str]:
         out = []
@@ -150,6 +151,8 @@ def _signal_github(report: Report) -> None:
         with open(summary, "a", encoding="utf-8") as f:
             f.write("## Compilation des plus vus de la semaine\n\n")
             f.write("\n".join(f"- {line}" for line in report.lines()) + "\n")
+            for login, text in report.captions:
+                f.write(f"\n### Légende — {login}\n\n```\n{text}\n```\n")
 
 
 # -------------------------------------------------------------------- run
@@ -262,7 +265,8 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, adapter=None,
             logger.exception(f"Compilation de {auth.login} impossible")
             report.errors.append(f"{auth.login} : compilation impossible ({e})")
             continue
-        captions = write_captions(written, title)
+        captions = write_captions(written, title, creator=creator.label)
+        report.captions += [(auth.login, c.read_text(encoding="utf-8")) for c in captions]
         report.produced.append((auth.login, [p for p, _ in written] + [str(c) for c in captions]))
     return report
 
@@ -296,6 +300,10 @@ def main_cli(argv=None) -> int:
     (args.out / REPORT_NAME).write_text("\n".join(report.lines()) + "\n", encoding="utf-8")
     for line in report.lines():
         print(line, flush=True)
+    # La legende en clair dans le journal : elle se lit (et se copie) sans
+    # telecharger l'artefact.
+    for login, text in report.captions:
+        print(f"===== LÉGENDE {login} =====\n{text}\n===== FIN LÉGENDE =====", flush=True)
     _signal_github(report)
     return 0 if report.produced else 1
 

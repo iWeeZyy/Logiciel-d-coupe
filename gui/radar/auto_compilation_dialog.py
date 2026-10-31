@@ -268,7 +268,8 @@ class AutoCompilationDialog(QDialog):
         self._release_thread()
         self.create_btn.setEnabled(True)
         self.status_label.setText("")
-        write_captions(written, self.name_edit.text())
+        creator = self.creator_combo.currentText() if self.creator_combo.currentData() else ""
+        write_captions(written, self.name_edit.text(), creator=creator)
         lines = []
         for path, duration in written:
             note = "" if duration >= MIN_MONETIZABLE_S else " (moins d'une minute)"

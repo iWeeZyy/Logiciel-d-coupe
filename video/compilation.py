@@ -437,8 +437,22 @@ def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int 
     return written
 
 
-def caption_text(title: str, part_index: int = 1, part_total: int = 1) -> str:
-    """Legende proposee pour TikTok (modifiable)."""
+HASHTAGS = ("#clip", "#twitch", "#stream")      # puis le createur, puis #drole
+
+
+def creator_hashtag(creator: str) -> str:
+    """« Anyme023 » -> « #anyme023 » ; "" si rien d'utilisable."""
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", creator or "").encode("ascii", "ignore").decode()
+    tag = "".join(ch for ch in text.lower() if ch.isalnum() or ch == "_")
+    return f"#{tag}" if tag else ""
+
+
+def caption_text(title: str, part_index: int = 1, part_total: int = 1,
+                 creator: str = "") -> str:
+    """Legende proposee pour TikTok (modifiable). Hashtags demandes par
+    l'utilisateur : #clip #twitch #stream, le createur, #drole."""
     title = " ".join((title or "").split()) or "Les meilleurs moments de stream"
     lines = [f"{title} 🔥" + (f" (Partie {part_index}/{part_total})" if part_total > 1 else "")]
     if part_total > 1 and part_index < part_total:
@@ -446,5 +460,5 @@ def caption_text(title: str, part_index: int = 1, part_total: int = 1) -> str:
     else:
         lines.append("Abonne-toi pour la prochaine compil 👀")
     lines.append("Lequel est ton préféré ? 👇")
-    lines.append("#stream #twitch #clips")
+    lines.append(" ".join([*HASHTAGS, creator_hashtag(creator), "#drole"]).replace("  ", " "))
     return "\n\n".join(lines)

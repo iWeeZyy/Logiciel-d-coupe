@@ -194,7 +194,8 @@ def test_point_d_entree(tmp_path, monkeypatch):
     assert code == 0 and calls
     report = (tmp_path / "out" / "rapport.txt").read_text(encoding="utf-8")
     assert "✓ anyme023" in report and "REFUSÉ inconnu" in report
-    assert "REFUSÉ inconnu" in summary.read_text(encoding="utf-8")
+    text = summary.read_text(encoding="utf-8")
+    assert "REFUSÉ inconnu" in text and "#anyme023 #drole" in text
 
 
 def test_sans_ecran_et_sans_qt(tmp_path):
