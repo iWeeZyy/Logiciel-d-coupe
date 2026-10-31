@@ -242,3 +242,13 @@ class TestWebcamDansUnCoin:
         assert h < 1.0                                              # zoom
         webcam_left = 0.5 - (3.5 * 0.084 + 0.01) * 1080 * 1.6 / 1920 / 2
         assert cx + width / 2 <= webcam_left + 1e-6 or cx - width / 2 >= 1 - webcam_left - 1e-6
+
+
+def test_plateau_en_bande_large_jamais_webcam(monkeypatch):
+    import pipeline
+    from video import ffmpeg_utils
+
+    monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (2560, 720))
+    assert pipeline._ultra_wide("x.mp4")
+    monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (1920, 1080))
+    assert not pipeline._ultra_wide("x.mp4")

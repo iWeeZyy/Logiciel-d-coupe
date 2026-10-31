@@ -752,7 +752,8 @@ def _analyse_framing(
     )
 
     webcam_plan = None
-    if not split_webcam and tracking and framing_cfg.get("auto_split_webcam", True):
+    if (not split_webcam and tracking and framing_cfg.get("auto_split_webcam", True)
+            and not _ultra_wide(video_path)):
         # Jeu ou evenement a l'ecran avec la webcam du streamer dans un coin :
         # « Webcam en haut, jeu en bas » automatiquement (choix de
         # l'utilisateur, 2026-10-31). Le rendu bascule de lui-meme quand
@@ -805,6 +806,18 @@ def _analyse_framing(
                 pass
 
     return face_hint, plan, webcam_plan
+
+
+def _ultra_wide(video_path: str, limit: float = 2.0) -> bool:
+    """Image (deja privee de ses bandes noires) plus de deux fois plus large
+    que haute : un plateau filme en « cinema », pas un ecran de jeu avec une
+    webcam d'angle -- les personnes assises aux extremites passaient pour une
+    incrustation (compilation de Squeezie, 2026-10-31)."""
+    try:
+        w, h = ffmpeg_utils.video_resolution(video_path)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(h) and w / h > limit
 
 
 def _crop_width_frac(video_path: str, settings) -> float | None:
