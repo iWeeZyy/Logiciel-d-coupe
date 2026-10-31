@@ -188,3 +188,57 @@ class TestPersonneACadrer:
         wide = wide_intervals(samples, [], [(0.0, 9.0)], crop_width_frac=0.3)
         assert len(wide) == 1 and 2.5 <= wide[0][0] <= 3.0 and 5.5 <= wide[0][1] <= 6.0
         assert group_span(samples, wide) == (0.0, 1.0)
+
+
+class TestWebcamDansUnCoin:
+    """Jeu ou evenement + webcam dans un coin -> « Webcam en haut, jeu en
+    bas » (choix de l'utilisateur) ; visages du contenu ignores."""
+
+    @staticmethod
+    def _clip(extra=(), n=20, webcam=(0.10, 0.71, 0.045), presence=1.0):
+        cx, cy, size = webcam
+        out = []
+        for i in range(n):
+            faces = []
+            if i < n * presence:
+                faces.append(FaceBox(x=cx - size / 2, y=cy - size / 2, w=size, h=size,
+                                     confidence=0.9))
+            for fx, fy, fs, every in extra:
+                if i % every == 0:
+                    faces.append(FaceBox(x=fx - fs / 2, y=fy - fs / 2, w=fs, h=fs, confidence=0.9))
+            out.append(FaceSample(t=i / 2, faces=tuple(faces), mouth_activity=(0.0,) * len(faces)))
+        return out
+
+    def test_webcam_reconnue_malgre_les_cameras_des_joueurs(self):
+        from editing.subject import corner_webcam
+
+        hud = [(0.81, 0.83, 0.04, 2), (0.20, 0.84, 0.04, 2), (0.5, 0.4, 0.3, 7)]
+        track = corner_webcam(self._clip(extra=hud))
+        assert track is not None and abs(track.cx - 0.10) < 0.02
+
+    def test_pas_de_webcam(self):
+        from editing.subject import corner_webcam
+
+        assert corner_webcam(self._clip(webcam=(0.5, 0.5, 0.2))) is None          # au centre, grand
+        assert corner_webcam(self._clip(webcam=(0.9, 0.3, 0.02))) is None         # minuscule
+        assert corner_webcam(self._clip(presence=0.3)) is None                    # trop rare
+
+    def test_visage_passager_du_contenu_ignore(self):
+        from editing.subject import keep_persistent_faces
+
+        samples = self._clip(extra=[(0.5, 0.4, 0.3, 10)])          # gros plan 1 image sur 10
+        kept = keep_persistent_faces(samples)
+        assert all(all(f.w < 0.3 for f in s.faces) for s in kept)
+
+    def test_jeu_sans_la_webcam(self):
+        from editing.subject import FaceTrack, game_window
+
+        aspect = 1080 / (1920 * 0.65)
+        corner = FaceTrack(cx=0.09, cy=0.71, area=0.002, peak_area=0.002, count=9, presence=1.0)
+        assert game_window(corner, 1280, 720, aspect, 0.06) == (0.5, 0.5, 1.0)   # deja hors champ
+        middle = FaceTrack(cx=0.5, cy=0.85, area=0.004, peak_area=0.004, count=9, presence=1.0)
+        cx, cy, h = game_window(middle, 1920, 1080, aspect, 0.084)
+        width = h * 1080 * aspect / 1920
+        assert h < 1.0                                              # zoom
+        webcam_left = 0.5 - (3.5 * 0.084 + 0.01) * 1080 * 1.6 / 1920 / 2
+        assert cx + width / 2 <= webcam_left + 1e-6 or cx - width / 2 >= 1 - webcam_left - 1e-6

@@ -240,3 +240,118 @@ def keep_webcam_faces(samples, radius: float = CLUSTER_RADIUS,
         )
         filtered.append(replace(sample, faces=faces, mouth_activity=activity))
     return filtered
+
+
+# Visage « durable » : present sur au moins ce quart du clip. En dessous, c'est
+# le plus souvent un visage du CONTENU montre par le streamer (une
+# retransmission, une video, un plan d'evenement qui passe), pas une personne
+# a cadrer -- signale le 2026-10-31 : un gros plan d'une seconde dans la
+# retransmission d'un evenement volait le cadrage.
+MIN_PERSISTENT_PRESENCE = 0.25
+
+# Incrustation webcam « dans un coin » : centre dans le tiers exterieur en
+# largeur ET hors de la bande centrale en hauteur, et petit visage (une webcam
+# d'angle fait quelques pour mille de l'image ; une personne filmee de pres,
+# plusieurs pour cent).
+CORNER_X = 0.33
+CORNER_Y = 0.40
+MAX_CORNER_FACE_AREA = 0.02
+# ... mais pas minuscule : un detail de l'habillage du stream (personnage d'un
+# logo) faisait 0,0004 et etait vu en continu dans un coin ; une vraie webcam
+# fait 0,002 a 0,005 (mesure sur Kamet0, 720p et 1080p).
+MIN_CORNER_FACE_AREA = 0.0012
+
+
+def keep_persistent_faces(samples, min_presence: float = MIN_PERSISTENT_PRESENCE,
+                          radius: float = CLUSTER_RADIUS):
+    """Les memes echantillons, prives des visages passagers (voir
+    MIN_PERSISTENT_PRESENCE). Un echantillon peut se retrouver sans visage :
+    le cadrage montre alors l'image entiere."""
+    samples = list(samples)
+    tracks = [t for t in build_tracks(samples, radius=radius) if t.presence >= min_presence]
+
+    def lasting(box) -> bool:
+        return any(((t.cx - box.cx) ** 2 + (t.cy - box.cy) ** 2) ** 0.5 < radius for t in tracks)
+
+    out = []
+    for sample in samples:
+        faces = tuple(getattr(sample, "faces", ()) or ())
+        kept = tuple(b for b in faces if lasting(b))
+        if len(kept) == len(faces):
+            out.append(sample)
+            continue
+        activity = tuple(a for b, a in zip(faces, sample.mouth_activity or ()) if lasting(b))
+        out.append(replace(sample, faces=kept, mouth_activity=activity))
+    return out
+
+
+def corner_webcam(samples, radius: float = CLUSTER_RADIUS,
+                  min_presence: float = 0.5) -> FaceTrack | None:
+    """L'incrustation webcam d'un stream de jeu ou d'evenement : un petit
+    visage dans un coin, present au moins la moitie du clip. Les AUTRES
+    visages n'y changent rien : sur une retransmission (camera des joueurs
+    dans l'interface du match, gros plan d'un joueur), ils font partie du
+    contenu montre (verifie sur trois clips de Kamet0 le 2026-10-31 : sa
+    webcam en bas a gauche, presente sur 59 a 100 % des images, a cote de
+    cameras de joueurs presentes sur la moitie du clip). S'il y en a
+    plusieurs, la plus presente. None sinon -- le cadrage habituel
+    s'applique."""
+    candidates = []
+    for track in build_tracks(samples, radius=radius):
+        in_corner = ((track.cx < CORNER_X or track.cx > 1 - CORNER_X)
+                     and (track.cy < CORNER_Y or track.cy > 1 - CORNER_Y))
+        if (in_corner and MIN_CORNER_FACE_AREA <= track.area <= MAX_CORNER_FACE_AREA
+                and track.presence >= min_presence):
+            candidates.append(track)
+    return max(candidates, key=lambda t: t.presence, default=None)
+
+
+def game_window(webcam: FaceTrack, src_w: int, src_h: int, band_aspect: float,
+                face_h: float, box_faces: float = 3.5, box_ratio: float = 1.6,
+                margin: float = 0.01):
+    """Fenetre du JEU (bande du bas du mode webcam+jeu) qui ne contient PAS
+    l'incrustation webcam -- deja en haut, on ne la veut pas deux fois
+    (demande de l'utilisateur, 2026-10-31). Fonction pure.
+
+    L'incrustation est estimee autour du visage : `box_faces` hauteurs de
+    visage de haut, `box_ratio` fois plus large que haute (en pixels). La
+    plus grande fenetre a l'aspect de la bande est cherchee de part et
+    d'autre de l'incrustation (a cote, au-dessus, en dessous) ; si la fenetre
+    centree ne la touche pas, on la garde telle quelle (aucun zoom).
+
+    Renvoie (cx, cy, h) en fractions de la source : centre et hauteur."""
+    box_h = min(1.0, box_faces * face_h) + margin
+    box_w = min(1.0, box_h * src_h * box_ratio / src_w) + margin
+    left, right = webcam.cx - box_w / 2, webcam.cx + box_w / 2
+    top, bottom = webcam.cy - box_h / 2, webcam.cy + box_h / 2
+
+    def size(h_frac: float) -> tuple[float, float]:
+        """(largeur, hauteur) en fractions, a l'aspect de la bande."""
+        w_frac = h_frac * src_h * band_aspect / src_w
+        if w_frac > 1.0:
+            return 1.0, src_w / (band_aspect * src_h)
+        return w_frac, h_frac
+
+    w, h = size(1.0)
+    x0 = 0.5 - w / 2
+    if x0 + w <= left or x0 >= right or h <= top or 0.0 >= bottom:
+        return 0.5, 0.5, h                                   # deja hors de la webcam
+
+    options = []
+    # A cote (toute la hauteur si possible) : a droite ou a gauche de l'incrustation.
+    for lo, hi in ((max(0.0, right), 1.0), (0.0, min(1.0, left))):
+        avail = hi - lo
+        if avail > 0:
+            hh = min(1.0, avail * src_w / (band_aspect * src_h))
+            ww, hh = size(hh)
+            options.append((hh, (lo + hi) / 2, 0.5))
+    # Au-dessus ou en dessous (la fenetre retrecit en hauteur).
+    for lo, hi in ((0.0, max(0.0, top)), (min(1.0, bottom), 1.0)):
+        avail = hi - lo
+        if avail > 0:
+            ww, hh = size(avail)
+            options.append((hh, 0.5, (lo + hi) / 2))
+    if not options:
+        return 0.5, 0.5, h
+    hh, cx, cy = max(options)
+    return cx, cy, hh

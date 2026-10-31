@@ -500,7 +500,21 @@ Squeezie, 2026-10-31) :
   PERSONNE A CADRER (scene, capture d'ecran, affiche ; troisieme demande du
   meme jour) : l'image entiere sur fond flou, pour tout le clip quand il n'a
   pas assez de visages, ou pendant les passages sans visage -- plus jamais un
-  recadrage au hasard.
+  recadrage au hasard. Seules les personnes DURABLES (presentes sur au moins
+  un quart du clip) se cadrent : un visage qui passe dans le contenu montre
+  (retransmission d'un evenement, video) n'en est pas une
+  (`editing/subject.keep_persistent_faces`).
+- *Webcam dans un coin* (jeu ou evenement + webcam du streamer ; choix de
+  l'utilisateur) : « Webcam en haut, jeu en bas » automatiquement
+  (`editing/subject.corner_webcam` : petit visage, 0,0012 a 0,02 de l'image,
+  dans un coin, present au moins la moitie du clip, quels que soient les
+  visages du contenu -- cameras des joueurs dans l'interface d'un match).
+  Bande du haut : la webcam seule (3,5 hauteurs de visage), pas la plus
+  grande fenetre possible qui englobait le jeu. Bande du bas : le jeu SANS
+  l'incrustation, centre, ou a cote / au-dessus d'elle en zoomant si besoin
+  (`editing/subject.game_window`) -- jamais la webcam deux fois. Verifie sur
+  des clips de Kamet0 (LoL, webcam en bas a gauche) ; aucun faux positif sur
+  les clips de Squeezie apres le seuil de taille minimale.
 - *Streamer a suivre* (`video/face_identity.py`, non active par defaut) : avec une photo de
   reference (cle `faces` de la configuration de la compilation, ex.
   `"faces": {"squeezie": ["visages/squeezie.png"]}`), chaque visage est

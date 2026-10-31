@@ -113,6 +113,18 @@ def _fixed_crop_rect(src_w: int, src_h: int, target_aspect: float,
     return x, y, crop_w, crop_h
 
 
+def _window_size(src_w: int, src_h: int, target_aspect: float,
+                 window_h: float = 0.0) -> tuple[int, int]:
+    """Taille de la fenetre : la plus grande a `target_aspect`, ou, si
+    `window_h` (fraction de la hauteur source) est donne, celle-la."""
+    if window_h and 0 < window_h < 1:
+        crop_h = _even(max(2, round(src_h * window_h)))
+        crop_w = _even(round(crop_h * target_aspect))
+        if crop_w <= src_w:
+            return crop_w, crop_h
+    return base_crop_size(src_w, src_h, target_aspect)
+
+
 def _crop_stage(plan: FramingPlan | None, face_hint, edit_list: EditList,
                 src_w: int, src_h: int, target_aspect: float) -> tuple[str, int, int]:
     """Le filtre `crop=...` (sans mise a l'echelle) pour UNE fenetre a
@@ -120,8 +132,9 @@ def _crop_stage(plan: FramingPlan | None, face_hint, edit_list: EditList,
     le cadrage classique et chacune des deux bandes du mode portrait
     webcam+gameplay, seul `target_aspect` differant entre les trois."""
     moving = plan is not None and not plan.is_static and len(plan.keyframes) >= 2
+    window_h = getattr(plan, "window_h", 0.0) if plan is not None else 0.0
     if moving:
-        crop_w, crop_h = base_crop_size(src_w, src_h, target_aspect)
+        crop_w, crop_h = _window_size(src_w, src_h, target_aspect, window_h)
         xs, ys = _framing_points(plan, edit_list, src_w, src_h, crop_w, crop_h)
         x_expr = piecewise_expression(xs)
         y_expr = piecewise_expression(ys)
@@ -131,6 +144,13 @@ def _crop_stage(plan: FramingPlan | None, face_hint, edit_list: EditList,
     if plan is not None and plan.keyframes:
         kf = plan.keyframes[0]
         hint = CenterHint(kf.cx, kf.cy)
+    if window_h:
+        crop_w, crop_h = _window_size(src_w, src_h, target_aspect, window_h)
+        cx = hint.x_center_frac if hint is not None else 0.5
+        cy = hint.y_center_frac if hint is not None else 0.5
+        x = _even(int(max(0, min(cx * src_w - crop_w / 2, src_w - crop_w))))
+        y = _even(int(max(0, min(cy * src_h - crop_h / 2, src_h - crop_h))))
+        return f"crop={crop_w}:{crop_h}:{x}:{y}", crop_w, crop_h
     x, y, crop_w, crop_h = _fixed_crop_rect(src_w, src_h, target_aspect, hint)
     return f"crop={crop_w}:{crop_h}:{x}:{y}", crop_w, crop_h
 

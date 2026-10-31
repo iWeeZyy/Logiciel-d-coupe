@@ -54,6 +54,9 @@ class FramingPlan:
     # Etendue horizontale du groupe pendant ces plans (fractions de l'image) :
     # le plan large montre tous les participants, sans les bords inutiles.
     wide_span: tuple[float, float] = (0.0, 1.0)
+    # Bande webcam du mode portrait : hauteur de la fenetre en fraction de la
+    # source (0 = la plus grande fenetre possible, comportement d'avant).
+    window_h: float = 0.0
 
     @property
     def is_static(self) -> bool:
@@ -350,6 +353,13 @@ def build_framing_plan(
     if not samples:
         return whole_image(0.0, "aucune detection de visage")
 
+    if crop_width_frac is not None:
+        # En 9:16, seules les personnes DURABLES se cadrent : un visage qui
+        # passe dans le contenu montre (retransmission, video) n'en est pas une.
+        from editing.subject import keep_persistent_faces
+
+        samples = keep_persistent_faces(samples)
+
     with_faces = [s for s in samples if s.faces]
     ratio = len(with_faces) / len(samples)
     if ratio < min_samples_ratio or len(with_faces) < 3:
@@ -409,6 +419,7 @@ def build_webcam_framing_plan(
     deadzone_frac: float = 0.02,
     max_keyframes: int = 60,
     static_movement_threshold: float = 0.03,
+    webcam=None,
 ) -> FramingPlan | None:
     """Trajectoire de cadrage pour la bande WEBCAM du mode portrait (voir
     video/filter_graph.py, FIT_SPLIT_WEBCAM), ou None si aucune webcam ne se
@@ -428,7 +439,27 @@ def build_webcam_framing_plan(
     from editing.subject import build_tracks, keep_webcam_faces, webcam_track
 
     with_faces = [s for s in samples if s.faces]
-    webcam = webcam_track(build_tracks(with_faces))
+    subject_filter = keep_webcam_faces
+    if webcam is not None:
+        # Webcam d'angle deja designee (editing/subject.corner_webcam) : on
+        # cadre CELLE-LA. `webcam_track` prendrait le plus petit visage
+        # durable -- sur une retransmission, la camera d'un joueur dans
+        # l'interface du match (constate sur un clip de Kamet0).
+        from dataclasses import replace as _replace
+
+        from editing.subject import CLUSTER_RADIUS
+
+        def subject_filter(items):
+            out = []
+            for item in items:
+                faces = [b for b in item.faces
+                         if ((b.cx - webcam.cx) ** 2 + (b.cy - webcam.cy) ** 2) ** 0.5
+                         < CLUSTER_RADIUS]
+                out.append(_replace(item, faces=tuple(faces),
+                                    mouth_activity=(0.0,) * len(faces)))
+            return out
+    else:
+        webcam = webcam_track(build_tracks(with_faces))
     if webcam is None:
         return None
 
@@ -445,7 +476,7 @@ def build_webcam_framing_plan(
         deadzone_frac=deadzone_frac,
         max_keyframes=max_keyframes,
         static_movement_threshold=static_movement_threshold,
-        subject_filter=keep_webcam_faces,
+        subject_filter=subject_filter,
     )
     if plan.keyframes:
         return plan

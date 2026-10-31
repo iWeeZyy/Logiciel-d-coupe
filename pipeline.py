@@ -39,7 +39,7 @@ from core.steps import (
 )
 from editing.captions import CaptionGroup, build_captions, choose_margin_v, score_emphasis
 from editing.context import ContextResult, adjust_clip_bounds, resolve_overlaps
-from editing.framing import FramingPlan, build_framing_plan, build_webcam_framing_plan
+from editing.framing import FramingKeyframe, FramingPlan, build_framing_plan, build_webcam_framing_plan
 from editing.metadata import build_metadata
 from editing.sentences import build_sentences, sentences_in_range
 from editing.silence_cut import MontagePlan, build_montage_plan
@@ -417,7 +417,9 @@ def run(
                     target_size=settings.target_size(),
                     watermark=watermark,
                     fill=settings.fill_mode,
-                    fit=settings.fit_mode,
+                    # Webcam d'angle detectee : mode portrait webcam+jeu
+                    # pour ce clip (voir _analyse_framing).
+                    fit=(FIT_SPLIT_WEBCAM if webcam_plan is not None else settings.fit_mode),
                     intro=intro,
                     webcam_plan=webcam_plan,
                 )
@@ -750,6 +752,23 @@ def _analyse_framing(
     )
 
     webcam_plan = None
+    if not split_webcam and tracking and framing_cfg.get("auto_split_webcam", True):
+        # Jeu ou evenement a l'ecran avec la webcam du streamer dans un coin :
+        # « Webcam en haut, jeu en bas » automatiquement (choix de
+        # l'utilisateur, 2026-10-31). Le rendu bascule de lui-meme quand
+        # webcam_plan est fourni (voir l'appel a build_clip).
+        from editing.subject import corner_webcam
+
+        webcam = corner_webcam(samples)
+        if webcam is not None:
+            logger.info("Webcam dans un coin : « Webcam en haut, jeu en bas ».")
+            split_webcam = True
+            # Bande du bas : le jeu, centre -- pas le visage de la webcam
+            # (elle est deja en haut) ni les visages du contenu.
+            plan = FramingPlan((FramingKeyframe(t=0.0, cx=0.5, cy=0.5),), "static", 1.0,
+                               ("webcam dans un coin : jeu centre sous la webcam",))
+    else:
+        webcam = None
     if split_webcam:
         webcam_plan = build_webcam_framing_plan(
             samples,
@@ -759,7 +778,31 @@ def _analyse_framing(
             deadzone_frac=float(framing_cfg.get("deadzone_frac", 0.02)),
             max_keyframes=int(framing_cfg.get("max_keyframes", 60)),
             static_movement_threshold=float(framing_cfg.get("static_movement_threshold", 0.03)),
+            webcam=webcam,
         )
+        if webcam is not None and webcam_plan is not None:
+            # Bande du haut = la webcam SEULE (tete et epaules, ~3,5 hauteurs
+            # de visage), pas la plus grande fenetre possible qui englobait
+            # le jeu autour (constate sur un clip de Kamet0).
+            from dataclasses import replace
+
+            try:
+                src_w, src_h = ffmpeg_utils.video_resolution(video_path)
+                face_h = (webcam.area * src_w / src_h) ** 0.5
+                webcam_plan = replace(webcam_plan, window_h=min(0.9, 3.5 * face_h))
+                # Bande du bas : le jeu SANS l'incrustation (deja en haut),
+                # quitte a zoomer un peu.
+                from editing.subject import game_window
+                from video.filter_graph import WEBCAM_HEIGHT_FRAC
+
+                out_w, out_h = settings.target_size()
+                band_aspect = out_w / (out_h * (1 - WEBCAM_HEIGHT_FRAC))
+                gx, gy, gh = game_window(webcam, src_w, src_h, band_aspect, face_h)
+                plan = FramingPlan((FramingKeyframe(t=0.0, cx=gx, cy=gy),), "static", 1.0,
+                                   ("webcam dans un coin : jeu sans l'incrustation",),
+                                   window_h=gh if gh < 0.999 else 0.0)
+            except Exception:  # noqa: BLE001 -- sans dimensions : fenetre par defaut
+                pass
 
     return face_hint, plan, webcam_plan
 
