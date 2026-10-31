@@ -258,8 +258,9 @@ CORNER_Y = 0.40
 MAX_CORNER_FACE_AREA = 0.02
 # ... mais pas minuscule : un detail de l'habillage du stream (personnage d'un
 # logo) faisait 0,0004 et etait vu en continu dans un coin ; une vraie webcam
-# fait 0,002 a 0,005 (mesure sur Kamet0, 720p et 1080p).
-MIN_CORNER_FACE_AREA = 0.0012
+# fait 0,002 a 0,005 (mesure sur Kamet0, 720p et 1080p) -- 0,001 pour
+# Squeezie assis loin de sa camera, image entiere d'un site commente.
+MIN_CORNER_FACE_AREA = 0.0008
 
 
 def keep_persistent_faces(samples, min_presence: float = MIN_PERSISTENT_PRESENCE,
@@ -304,6 +305,32 @@ def corner_webcam(samples, radius: float = CLUSTER_RADIUS,
                 and track.presence >= min_presence):
             candidates.append(track)
     return max(candidates, key=lambda t: t.presence, default=None)
+
+
+def webcam_box(webcam: FaceTrack, src_w: int, src_h: int, face_h: float,
+               box_faces: float = 3.5, box_ratio: float = 1.6,
+               margin: float = 0.01) -> tuple[float, float, float, float]:
+    """Boite estimee de l'incrustation webcam autour du visage (memes
+    proportions que game_window) : (x0, y0, x1, y1) en fractions. Pure."""
+    box_h = min(1.0, box_faces * face_h) + margin
+    box_w = min(1.0, box_h * src_h * box_ratio / src_w) + margin
+    return (max(0.0, webcam.cx - box_w / 2), max(0.0, webcam.cy - box_h / 2),
+            min(1.0, webcam.cx + box_w / 2), min(1.0, webcam.cy + box_h / 2))
+
+
+def corner_box(webcam: FaceTrack, box: tuple[float, float, float, float]):
+    """La boite estimee prolongee jusqu'au coin de l'ecran ou est la webcam
+    (une incrustation est collee a son coin). Pure."""
+    x0, y0, x1, y1 = box
+    if webcam.cx < 0.5:
+        x0 = 0.0
+    else:
+        x1 = 1.0
+    if webcam.cy < 0.5:
+        y0 = 0.0
+    else:
+        y1 = 1.0
+    return x0, y0, x1, y1
 
 
 def game_window(webcam: FaceTrack, src_w: int, src_h: int, band_aspect: float,

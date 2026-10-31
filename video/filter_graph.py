@@ -519,6 +519,22 @@ def build_video_chain(
             chain.append(subtitle_filter(ass_path))
         return ",".join(chain)
 
+    box = getattr(framing_plan, "box", None) if framing_plan is not None else None
+    if box is not None and src_w > 0 and src_h > 0:
+        # Une zone (la webcam) posee entiere, centree, sur le meme fond que
+        # le mode « image entiere ».
+        x0, y0, x1, y1 = box
+        bw = _even(max(2, round((x1 - x0) * src_w)))
+        bh = _even(max(2, round((y1 - y0) * src_h)))
+        bx = _even(int(max(0, min(x0 * src_w, src_w - bw))))
+        by = _even(int(max(0, min(y0 * src_h, src_h - bh))))
+        tenue = min(out_w / bw, out_h / bh)
+        chain = [f"crop={bw}:{bh}:{bx}:{by}", landscape_fill_chain(out_w, out_h, fill, _sharpen(tenue))]
+        chain.extend(_delire_filters(delire_plan))
+        if ass_path:
+            chain.append(subtitle_filter(ass_path))
+        return ",".join(chain)
+
     moving = framing_plan is not None and not framing_plan.is_static and len(framing_plan.keyframes) >= 2
     zooming = zoom_track is not None and not zoom_track.is_empty
 

@@ -57,7 +57,33 @@ def content_span(bright_fractions: list[list[float]]) -> tuple[int, int]:
     frames = len(bright_fractions)
     bars = [sum(1 for f in bright_fractions if f[i] < BAR_MAX_BRIGHT) >= BAR_MIN_FRAMES * frames
             for i in range(size)]
-    return _run(bars)
+    start, end = _run(bars)
+    if not _true_bars(bars, start, end):
+        return 0, size
+    return start, end
+
+
+SIDE_MIN_BARS = 0.75        # chaque cote retire : au moins 75 % de lignes « bande »
+SIDES_MIN_RATIO = 0.5       # bandes symetriques : la plus petite >= moitie de l'autre
+
+
+def _true_bars(bars: list[bool], start: int, end: int) -> bool:
+    """De vraies bandes « cinema » : une de CHAQUE cote, collees au bord,
+    presque entierement sombres, de tailles comparables. Sinon c'est une
+    zone sombre DE l'image -- colonne d'un site en mode sombre, scene de
+    nuit d'une retransmission -- qu'on couperait avec la webcam (constate
+    sur un clip de Squeezie et un de Kamet0, 2026-10-31)."""
+    size = len(bars)
+    if (start, end) == (0, size):
+        return True
+    sides = (bars[:start], bars[end:])
+    for side in sides:
+        if not side or not side[0 if side is sides[0] else -1]:
+            return False
+        if sum(side) / len(side) < SIDE_MIN_BARS:
+            return False
+    small, large = sorted(len(side) for side in sides)
+    return small >= SIDES_MIN_RATIO * large
 
 
 def detect_content_box(video_path: str, samples: int = SAMPLES) -> Box | None:

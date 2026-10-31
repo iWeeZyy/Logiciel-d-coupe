@@ -252,3 +252,57 @@ def test_plateau_en_bande_large_jamais_webcam(monkeypatch):
     assert pipeline._ultra_wide("x.mp4")
     monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (1920, 1080))
     assert not pipeline._ultra_wide("x.mp4")
+
+
+def test_zone_sombre_d_un_seul_cote_n_est_pas_une_bande():
+    # Colonne sombre d'un site en mode sombre, ou scene de nuit d'un cote.
+    frame = [0.9] * 6 + [0.0] * 4
+    assert content_span([frame] * 6) == (0, 10)
+
+
+def test_colonne_sombre_au_milieu_ne_coupe_pas_l_image():
+    frame = [0.9] * 4 + [0.0] * 3 + [0.9] * 3
+    assert content_span([frame] * 6) == (0, 10)
+
+
+def test_fond_fixe_mesure():
+    import numpy as np
+
+    from video.motion import is_static, mean_difference
+
+    still = [np.full((9, 16), 100.0)] * 4
+    assert is_static(mean_difference(still))
+    moving = [np.full((9, 16), float(v)) for v in (0, 60, 120, 180)]
+    assert not is_static(mean_difference(moving))
+    # La webcam bouge, le reste non : masquee, le fond reste fixe.
+    frames = [np.full((9, 16), 100.0) for _ in range(4)]
+    for i, f in enumerate(frames):
+        f[:3, :4] = i * 80
+    mask = np.ones((9, 16), dtype=bool)
+    mask[:3, :4] = False
+    assert is_static(mean_difference(frames, mask))
+    assert not is_static(None)
+
+
+def test_webcam_seule_quand_le_fond_est_fixe():
+    from editing.framing import FramingKeyframe, FramingPlan
+    from editing.subject import FaceTrack, corner_box, webcam_box
+    from video.filter_graph import build_video_chain
+    from video.motion import nearest_edge
+
+    cam = FaceTrack(cx=0.1, cy=0.15, area=0.0022, peak_area=0.0022, count=10, presence=1.0)
+    face_h = (cam.area * 1920 / 1080) ** 0.5
+    x0, y0, x1, y1 = corner_box(cam, webcam_box(cam, 1920, 1080, face_h))
+    assert (x0, y0) == (0.0, 0.0) and x1 > cam.cx and y1 > cam.cy
+    # Le premier bord franc depuis le visage, pas le plus franc (l'affiche).
+    assert nearest_edge([10, 20, 100, 30, 210]) == 2
+    assert nearest_edge([5, 10, 20]) is None
+    plan = FramingPlan((FramingKeyframe(0.0, 0.1, 0.15),), "static", 1.0, box=(0.0, 0.0, 0.26, 0.26))
+    from editing.timeline import EditList
+
+    chain = build_video_chain(edit_list=EditList.identity(0, 10), framing_plan=plan,
+                              zoom_track=None, src_w=1920, src_h=1080, fps=30,
+                              target_size=(1080, 1920), fill="flou")
+    # La webcam (498x280 px) recadree puis posee entiere sur fond flou.
+    assert chain.startswith("crop=498:280:0:0,split=2")
+    assert "gblur" in chain

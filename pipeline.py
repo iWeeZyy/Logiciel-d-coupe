@@ -802,6 +802,24 @@ def _analyse_framing(
                 plan = FramingPlan((FramingKeyframe(t=0.0, cx=gx, cy=gy),), "static", 1.0,
                                    ("webcam dans un coin : jeu sans l'incrustation",),
                                    window_h=gh if gh < 0.999 else 0.0)
+                # Fond FIXE (affiche, tweet, site commente) : pas de jeu a
+                # montrer en bas -- recentrage sur la webcam (demande de
+                # l'utilisateur, 2026-10-31).
+                from editing.subject import corner_box, webcam_box
+                from video.motion import background_motion, is_static, webcam_rect
+
+                estimate = webcam_box(webcam, src_w, src_h, face_h)
+                motion = background_motion(video_path, candidate.start, candidate.end,
+                                           exclude=estimate)
+                if is_static(motion):
+                    rect = (webcam_rect(video_path, candidate.start, candidate.end,
+                                        webcam.cx, webcam.cy, face_h)
+                            or corner_box(webcam, estimate))
+                    logger.info(f"Fond fixe ({motion:.1f}) : la webcam seule, entière, "
+                                f"au centre ({', '.join(f'{v:.2f}' for v in rect)}).")
+                    plan = FramingPlan((FramingKeyframe(t=0.0, cx=webcam.cx, cy=webcam.cy),),
+                                       "static", 1.0, ("fond fixe : la webcam seule",), box=rect)
+                    webcam_plan = None
             except Exception:  # noqa: BLE001 -- sans dimensions : fenetre par defaut
                 pass
 

@@ -57,6 +57,9 @@ class FramingPlan:
     # Bande webcam du mode portrait : hauteur de la fenetre en fraction de la
     # source (0 = la plus grande fenetre possible, comportement d'avant).
     window_h: float = 0.0
+    # Zone a montrer ENTIERE, centree sur fond flou (x0, y0, x1, y1 en
+    # fractions) : la webcam seule quand le reste de l'image est fixe.
+    box: tuple[float, float, float, float] | None = None
 
     @property
     def is_static(self) -> bool:
