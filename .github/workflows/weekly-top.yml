@@ -24,6 +24,10 @@ on:
         description: "Un seul streamer (essai a la main) ; vide = toute la liste"
         type: string
         default: ""
+      accept-long:
+        description: "Produire meme si la compilation depasse 2 min 45 (confirme par l'utilisateur)"
+        type: boolean
+        default: false
       app-ref:
         description: "Version du logiciel (branche ou tag de Logiciel-d-coupe)"
         type: string
@@ -105,10 +109,13 @@ jobs:
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           CONFIG_PATH: ${{ inputs.config-path }}
           ONLY: ${{ inputs.only }}
+          ACCEPT_LONG: ${{ inputs.accept-long }}
         run: |
+          extra=()
+          [ "$ACCEPT_LONG" = "true" ] && extra+=(--accepter-duree)
           python gui_main.py --weekly-top \
             --config "$GITHUB_WORKSPACE/appelant/$CONFIG_PATH" --only "$ONLY" \
-            --out "$RUNNER_TEMP/compilation" --work-dir "$RUNNER_TEMP/travail"
+            --out "$RUNNER_TEMP/compilation" --work-dir "$RUNNER_TEMP/travail" "${extra[@]}"
 
       - name: Quelques images de controle
         if: always()

@@ -35,6 +35,39 @@ def safe_name(name: str) -> str:
     return "".join(ch for ch in name if ch not in '<>:"/\\|?*').strip() or "Compilation"
 
 
+# Reels Instagram : au-dela de 3 minutes, plus recommandes aux nouvelles
+# audiences. L'utilisateur fixe 2 min 30 ; jamais un clip coupe ; 15 s ou plus
+# au-dela, on lui demande (2026-10-31).
+MAX_TOTAL_S = 150.0
+ASK_ABOVE_S = 15.0          # depassement a partir duquel on demande
+MIN_CLIPS = 3               # un top 3 ; davantage seulement si les clips sont courts
+UNKNOWN_CLIP_S = 60.0       # duree max d'un clip Twitch, si elle n'est pas connue
+
+
+def clip_length(opportunity) -> float:
+    return float(opportunity.duration_s or UNKNOWN_CLIP_S)
+
+
+def fit_count(opportunities, budget: float = MAX_TOTAL_S, minimum: int = MIN_CLIPS) -> list:
+    """Les clips retenus, ENTIERS, dans l'ordre du classement : les
+    `minimum` premiers, puis les suivants tant que le total tient dans
+    `budget` (fonction pure). Un clip qui ne tient pas arrete la liste -- on
+    ne saute pas a un suivant plus court mais moins vu, ce ne serait plus un
+    top."""
+    kept, total = [], 0.0
+    for index, opportunity in enumerate(opportunities):
+        length = clip_length(opportunity)
+        if index >= minimum and total + length > budget:
+            break
+        kept.append(opportunity)
+        total += length
+    return kept
+
+
+def total_length(opportunities) -> float:
+    return sum(clip_length(o) for o in opportunities)
+
+
 def candidates(store, creator_key: str | None, days: int, now=None, limit: int = 300):
     """Clips Twitch de la periode, les plus vus d'abord."""
     from radar.display import ORDER_VIEWS

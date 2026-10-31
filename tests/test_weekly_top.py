@@ -216,3 +216,45 @@ def test_sans_ecran_et_sans_qt(tmp_path):
     assert result.returncode == 1, result.stderr        # rien a compiler -> 1
     assert "Qt importe" not in result.stderr
     assert (tmp_path / "out" / "rapport.txt").is_file()
+
+
+def test_top_3_ou_plus_si_clips_courts():
+    from types import SimpleNamespace as O
+
+    from radar.top_compilation import MAX_TOTAL_S, fit_count
+
+    assert MAX_TOTAL_S == 150
+    longs = [O(duration_s=d) for d in (50, 45, 40, 20, 10)]
+    assert len(fit_count(longs)) == 3
+    courts = [O(duration_s=d) for d in (25, 30, 20, 28, 26)]
+    assert len(fit_count(courts)) == 5
+    # Un clip qui ne tient pas arrete la liste (on ne saute pas au suivant).
+    mixte = [O(duration_s=d) for d in (30, 30, 30, 70, 10)]
+    assert len(fit_count(mixte)) == 3
+    # Trois longs : trois quand meme, ENTIERS (la confirmation decide).
+    assert len(fit_count([O(duration_s=60)] * 5)) == 3
+
+
+def test_trop_long_demande_confirmation(tmp_path):
+    # Clips de 30 s ; plafond 60 s : un top 3 fait 90 s, soit 30 s de trop.
+    calls = []
+    report = weekly_top.run(_config(max_seconds=60), tmp_path / "out", tmp_path / "work",
+                            adapter=_FakeTwitch(), builder=_builder(calls),
+                            today=TODAY, now=NOW)
+    assert not calls
+    assert any("CONFIRMATION REQUISE" in e and "1 min 30 s" in e for e in report.errors)
+    report = weekly_top.run(_config(max_seconds=60), tmp_path / "out2", tmp_path / "work2",
+                            adapter=_FakeTwitch(), builder=_builder(calls),
+                            today=TODAY, now=NOW, accept_long=True)
+    assert calls and all(len(c["ids"]) == 3 for c in calls)
+    assert not any("CONFIRMATION" in e for e in report.errors)
+
+
+def test_moins_de_15_s_de_trop_passe(tmp_path):
+    # Plafond 80 s : 3 x 30 = 90 s, 10 s de trop -- produit sans demander.
+    calls = []
+    report = weekly_top.run(_config(max_seconds=80), tmp_path / "out", tmp_path / "work",
+                            adapter=_FakeTwitch(), builder=_builder(calls),
+                            today=TODAY, now=NOW)
+    assert calls and not any("CONFIRMATION" in e for e in report.errors)
+    assert any("vidéo de 1 min 15 s" in n for n in report.notes)

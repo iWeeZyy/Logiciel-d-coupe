@@ -200,7 +200,7 @@ def _make_engine(store, adapter=None):
 
 
 def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=None,
-        adapter=None,
+        adapter=None, accept_long: bool = False,
         builder=None, today: date | None = None, now: datetime | None = None,
         on_status=logger.info) -> Report:
     """Une compilation par streamer autorise. Ne leve que si la configuration
@@ -210,7 +210,12 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
     from radar.creators import CreatorManager
     from radar.store import RadarStore
     from radar.top_compilation import (
+        ASK_ABOVE_S,
+        MAX_TOTAL_S,
+        MIN_CLIPS,
         build,
+        fit_count,
+        total_length,
         default_title,
         safe_name,
         select,
@@ -281,6 +286,19 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
             continue
         if len(kept) < count:
             report.notes.append(f"{auth.login} : seulement {len(kept)} clips différents.")
+        # Top 3, ou plus si les clips sont courts : 2 min 30 au plus, clips
+        # jamais coupes. 15 s ou plus au-dela : on demande avant de monter.
+        max_seconds = float(config.get("max_seconds", MAX_TOTAL_S))
+        kept = fit_count(kept, max_seconds, minimum=int(config.get("min_count", MIN_CLIPS)))
+        length = total_length(kept)
+        if length >= max_seconds + ASK_ABOVE_S and not accept_long:
+            detail = ", ".join(f"{o.title} ({o.duration_s or '?'} s)" for o in kept)
+            report.errors.append(
+                f"{auth.login} : CONFIRMATION REQUISE — {len(kept)} clips = "
+                f"{int(length // 60)} min {int(length % 60):02d} s, plus de "
+                f"{int(max_seconds // 60)} min {int(max_seconds % 60):02d} s. "
+                f"Clips : {detail}. Relancer avec la confirmation pour produire.")
+            continue
         title = default_title(len(kept), creator.label, PERIOD_LABEL)
         for i, o in enumerate(kept, 1):
             on_status(f"  {i}. {o.title} — {o.view_count} vues, {o.duration_s} s")
@@ -297,6 +315,11 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
             report.errors.append(f"{auth.login} : compilation impossible ({e})")
             continue
         captions = write_captions(written, title, creator=creator.label)
+        for _path, seconds in written:
+            line = f"{auth.login} : vidéo de {int(seconds // 60)} min {int(seconds % 60):02d} s"
+            too_long = seconds >= max_seconds + ASK_ABOVE_S and not accept_long
+            (report.errors if too_long else report.notes).append(
+                line + (" — au-delà de la durée maximale" if too_long else ""))
         report.captions += [(auth.login, c.read_text(encoding="utf-8")) for c in captions]
         report.produced.append((auth.login, [p for p, _ in written] + [str(c) for c in captions]))
     return report
@@ -314,20 +337,22 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--work-dir", type=Path, default=None)
     parser.add_argument("--only", default="",
                         help="un seul streamer (essai) ; il doit etre autorise")
+    parser.add_argument("--accepter-duree", dest="accept_long", action="store_true",
+                        help="produire meme si la compilation depasse la duree maximale")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
     started = datetime.now(timezone.utc)
     try:
         config = load_config(args.config)
         report = run(config, args.out, args.work_dir or args.out.parent / "_travail",
-                     only=args.only or None,
+                     only=args.only or None, accept_long=args.accept_long,
                      config_dir=(args.config or default_config_path()).parent)
     except Exception as e:  # noqa: BLE001 -- tache de fond : on journalise
         logger.error(f"Compilation de la semaine : {e}")
         print(f"::error::{e}" if os.environ.get("GITHUB_ACTIONS") == "true" else str(e))
         return 1
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
-    report.notes.append(f"Durée : {int(elapsed // 60)} min {int(elapsed % 60):02d} s")
+    report.notes.append(f"Temps de calcul : {int(elapsed // 60)} min {int(elapsed % 60):02d} s")
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / REPORT_NAME).write_text("\n".join(report.lines()) + "\n", encoding="utf-8")
     for line in report.lines():

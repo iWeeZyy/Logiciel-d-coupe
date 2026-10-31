@@ -21,6 +21,10 @@ on:
         description: "Le streamer à compiler (login Twitch, ex. anyme023)"
         type: string
         required: true
+      accepter_duree:
+        description: "Produire même si la compilation dépasse 2 min 45 (sinon elle s'arrête et le signale)"
+        type: boolean
+        default: false
 
 concurrency:
   group: weekly-top
@@ -37,6 +41,7 @@ jobs:
       config-path: weekly_compilation.json
       retention-days: 3
       only: ${{ inputs.streamer }}
+      accept-long: ${{ inputs.accepter_duree }}
     secrets:
       TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
       TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}

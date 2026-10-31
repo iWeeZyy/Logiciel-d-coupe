@@ -431,9 +431,16 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   confirmation.
 - **Configuration** : `config/weekly_compilation.json` est un modele VIDE ;
   la vraie liste vit dans le depot prive (ci-dessous). Cles : `streamers`,
-  `authorized`, `count` (2-8), `parts` (1-2), `countdown`, `transitions`,
-  `intro`, `production` (aspect, fit_mode, modules, watermark…, par defaut
-  ceux de la fenetre).
+  `authorized`, `count` (2-8, le maximum), `min_count` (3), `max_seconds`
+  (150), `parts` (1-2), `countdown`, `transitions`, `intro`, `production`
+  (aspect, fit_mode, modules, watermark…, par defaut ceux de la fenetre).
+- **Duree** : 2 min 30 au plus (les Reels de plus de 3 minutes ne sont plus
+  recommandes aux nouvelles audiences). Un top 3, et plus de clips
+  seulement s'ils tiennent dans la duree (`radar/top_compilation.fit_count`,
+  dans l'ordre des vues, sans sauter un clip). Un clip n'est JAMAIS coupe :
+  si le top 3 depasse de 15 s ou plus (2 min 45), rien n'est monte, le
+  rapport dit « CONFIRMATION REQUISE » avec la liste et les durees ; on
+  relance avec `--accepter-duree` (case « accepter_duree » du workflow).
 - **GitHub Actions** : `.github/workflows/weekly-top.yml` est un workflow
   REUTILISABLE (`workflow_call`), qui ne se lance jamais seul ici. Le depot
   etant public, ses artefacts seraient telechargeables par n'importe qui : il
