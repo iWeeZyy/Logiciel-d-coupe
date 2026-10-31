@@ -483,7 +483,17 @@ Squeezie, 2026-10-31) :
   parle ; quand personne ne se detache et que le groupe est plus large que le
   cadre 9:16, le cadrage reste sur la derniere personne suivie (sinon le plus
   grand visage) au lieu de cadrer le vide entre deux personnes.
-- *Streamer a suivre* (`video/face_identity.py`) : avec une photo de
+- *Parole et plan large* (demande du 2026-10-31) : le cadre suit la personne
+  qui parle (fenetre de decision 2 s, maintien 1 s) et passe de l'une a
+  l'autre par un CUT, pas par un lent panoramique (`FramingKeyframe.cut`).
+  Quand personne ne parle (aucun mot de la transcription autour de l'instant)
+  ou qu'on ne sait pas qui parle, et que plusieurs participants ne tiennent
+  pas dans le cadre : PLAN LARGE, le groupe entier (du premier au dernier
+  participant, toute la hauteur) pose sur fond flou
+  (`editing/framing.wide_intervals`, `video/filter_graph._with_wide_shots`).
+  Plans de moins d'une seconde absorbes. Limite : cinq personnes cote a cote
+  en entier dans un cadre vertical tiennent dans une bande etroite.
+- *Streamer a suivre* (`video/face_identity.py`, non active par defaut) : avec une photo de
   reference (cle `faces` de la configuration de la compilation, ex.
   `"faces": {"squeezie": ["visages/squeezie.png"]}`), chaque visage est
   compare a la photo (SFace, OpenCV Zoo, Apache 2.0, 39 Mo telecharges une

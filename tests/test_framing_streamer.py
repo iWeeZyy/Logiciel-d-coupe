@@ -88,3 +88,62 @@ def test_largeur_du_cadre():
         assert pipeline._crop_width_frac("x.mp4", settings) is None
     finally:
         ffmpeg_utils.video_resolution = original
+
+
+class TestParoleEtPlanLarge:
+    """Demande : cadrer la personne qui parle (bascule rapide), et quand
+    personne ne parle, un plan large sur tous les participants."""
+
+    FIVE = [FaceSample(t=t / 2, faces=tuple(_box(cx) for cx in (0.12, 0.28, 0.45, 0.66, 0.82)),
+                       mouth_activity=(0.0,) * 5) for t in range(20)]
+
+    def test_plan_large_quand_personne_ne_parle(self):
+        from editing.framing import wide_intervals
+        from editing.speaker import SpeakerDecision
+
+        decisions = [SpeakerDecision(0.0, 10.0, 1, 0.8)]
+        speech = [(0.0, 3.0), (7.0, 10.0)]                 # silence de 3 a 7 s
+        wide = wide_intervals(self.FIVE, decisions, speech, crop_width_frac=0.16)
+        assert len(wide) == 1 and 3.0 <= wide[0][0] <= 3.5 and 6.0 <= wide[0][1] <= 7.0
+
+    def test_seul_ou_groupe_qui_tient_dans_le_cadre_jamais_de_plan_large(self):
+        from editing.framing import wide_intervals
+
+        alone = [FaceSample(t=t / 2, faces=(_box(0.5),), mouth_activity=(0.0,)) for t in range(20)]
+        assert wide_intervals(alone, [], [], crop_width_frac=0.16) == ()
+        assert wide_intervals(self.FIVE, [], [], crop_width_frac=1.0) == ()
+
+    def test_plans_trop_courts_absorbes(self):
+        from editing.framing import wide_intervals
+        from editing.speaker import SpeakerDecision
+
+        decisions = [SpeakerDecision(0.0, 10.0, 1, 0.8)]
+        speech = [(0.0, 4.0), (4.6, 10.0)]                 # silence de 0,6 s seulement
+        assert wide_intervals(self.FIVE, decisions, speech, crop_width_frac=0.16) == ()
+
+    def test_changement_de_personne_est_un_cut(self):
+        from editing.framing import FramingKeyframe, _decimate, smooth_trajectory
+
+        targets = [FramingKeyframe(0.0, 0.2, 0.4), FramingKeyframe(0.5, 0.2, 0.4),
+                   FramingKeyframe(1.0, 0.8, 0.4, cut=True), FramingKeyframe(1.5, 0.8, 0.4)]
+        smoothed = smooth_trajectory(targets)
+        jump = [k for k in smoothed if k.cut][0]
+        before = smoothed[smoothed.index(jump) - 1]
+        assert jump.cx == 0.8 and before.cx == 0.2 and jump.t - before.t < 0.05
+        many = smoothed * 20
+        assert sum(k.cut for k in _decimate(many, 10)) == sum(k.cut for k in many)
+
+    def test_plan_large_cadre_le_groupe(self):
+        from editing.framing import group_span
+
+        x0, x1 = group_span(self.FIVE, [(0.0, 10.0)])
+        assert x0 < 0.12 and x1 > 0.82 and 0.0 <= x0 and x1 <= 1.0
+
+    def test_expression_ffmpeg(self):
+        from video.filter_graph import wide_enable_expression
+
+        class Same:
+            def to_output_time_clamped(self, t):
+                return t
+
+        assert wide_enable_expression([(1, 2.5)], Same()) == "between(t\\,1.000\\,2.500)"

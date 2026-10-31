@@ -25,6 +25,7 @@ from editing.speaker import SpeakerDecision, order_faces_left_to_right, speaker_
 from video.face_detector import FaceSample
 
 MODE_STATIC = "static"
+_CUT_S = 0.04              # duree d'un cut : un peu plus d'une image a 30 i/s
 MODE_TRACK = "track"
 MODE_BOTH = "both"
 
@@ -36,6 +37,9 @@ class FramingKeyframe:
     t: float
     cx: float
     cy: float
+    # Changement de personne : le cadre y SAUTE (un cut, comme en realisation
+    # tele) au lieu de glisser lentement d'un visage a l'autre.
+    cut: bool = False
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,12 @@ class FramingPlan:
     mode: str
     confidence: float
     reasons: tuple[str, ...] = ()
+    # Intervalles (temps SOURCE) en plan large : plusieurs personnes, et
+    # personne ne parle (ou on ne sait pas qui). Voir wide_intervals().
+    wide: tuple[tuple[float, float], ...] = ()
+    # Etendue horizontale du groupe pendant ces plans (fractions de l'image) :
+    # le plan large montre tous les participants, sans les bords inutiles.
+    wide_span: tuple[float, float] = (0.0, 1.0)
 
     @property
     def is_static(self) -> bool:
@@ -54,6 +64,7 @@ class FramingPlan:
             "mode": self.mode,
             "confidence": round(self.confidence, 3),
             "keyframes": len(self.keyframes),
+            "wide_shots": len(self.wide),
             "reasons": list(self.reasons),
         }
 
@@ -142,8 +153,13 @@ def choose_targets(
             cx, cy = ordered[0][0].cx, ordered[0][0].cy
             modes.append(MODE_TRACK)
 
+        # Une autre personne que celle suivie jusqu'ici : cut (seulement si
+        # on connait la largeur du cadre, sinon comportement d'avant).
+        cut = (crop_width_frac is not None and last_cx is not None
+               and abs(cx - last_cx) > crop_width_frac / 2)
         last_cx = cx
-        targets.append(FramingKeyframe(t=sample.t, cx=_clamp01(cx), cy=_clamp01(cy - (0.5 - vertical_bias))))
+        targets.append(FramingKeyframe(t=sample.t, cx=_clamp01(cx),
+                                       cy=_clamp01(cy - (0.5 - vertical_bias)), cut=cut))
 
     mode = MODE_BOTH if modes.count(MODE_BOTH) > len(modes) / 2 else MODE_TRACK
     return targets, (mode if targets else MODE_STATIC)
@@ -163,6 +179,15 @@ def smooth_trajectory(
     for previous_target, target in zip(targets, targets[1:]):
         last = smoothed[-1]
         dt = max(1e-3, target.t - previous_target.t)
+
+        if target.cut:
+            # Cut : on tient l'ancien cadre jusqu'a l'instant d'avant, puis on
+            # saute -- deux points rapproches que l'interpolation ffmpeg rend
+            # comme une coupe franche.
+            smoothed.append(FramingKeyframe(t=max(last.t, target.t - _CUT_S), cx=last.cx,
+                                            cy=last.cy))
+            smoothed.append(target)
+            continue
 
         cx, cy = target.cx, target.cy
         if abs(cx - last.cx) < deadzone_frac:
@@ -186,14 +211,89 @@ def _decimate(keyframes: list[FramingKeyframe], max_keyframes: int) -> list[Fram
     """Ramene la trajectoire sous une limite de points : l'expression ffmpeg
     construite ensuite grandit lineairement avec leur nombre, et une expression
     de plusieurs milliers de caracteres devient couteuse a evaluer pour chaque
-    image."""
+    image. Les deux points d'un cut sont toujours gardes : sans eux, la coupe
+    redeviendrait un glissement."""
     if len(keyframes) <= max_keyframes:
         return keyframes
-    step = len(keyframes) / max_keyframes
-    kept = [keyframes[int(i * step)] for i in range(max_keyframes)]
-    if kept[-1] is not keyframes[-1]:
-        kept[-1] = keyframes[-1]
-    return kept
+    must = set()
+    for i, kf in enumerate(keyframes):
+        if kf.cut:
+            must.update({i, i - 1})
+    must.update({0, len(keyframes) - 1})
+    budget = max(0, max_keyframes - len(must))
+    step = len(keyframes) / budget if budget else len(keyframes) + 1
+    chosen = must | {int(i * step) for i in range(budget)}
+    return [keyframes[i] for i in sorted(i for i in chosen if 0 <= i < len(keyframes))]
+
+
+def group_span(samples, intervals, margin: float = 0.05) -> tuple[float, float]:
+    """Du bord gauche du participant le plus a gauche au bord droit du plus a
+    droite, pendant les plans larges, avec une marge (fonction pure). Le
+    visage seul ne suffit pas a « voir la personne en entier » : la marge
+    couvre les epaules."""
+    lefts, rights = [], []
+    for sample in samples:
+        if not any(a <= sample.t <= b for a, b in intervals):
+            continue
+        for face in getattr(sample, "faces", ()) or ():
+            lefts.append(face.x - face.w)
+            rights.append(face.x + 2 * face.w)
+    if not lefts:
+        return 0.0, 1.0
+    return max(0.0, min(lefts) - margin), min(1.0, max(rights) + margin)
+
+
+def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: float,
+                   min_shot_s: float = 1.0, half_step_s: float = 0.25):
+    """Moments en plan large (fonction pure, temps SOURCE).
+
+    Demande de l'utilisateur : cadrer la personne qui parle, et quand
+    personne ne parle -- ou qu'on ne sait pas qui -- montrer TOUS les
+    participants en entier. Un echantillon est « large » quand il montre
+    plusieurs visages qui ne tiennent pas dans le cadre 9:16, et que soit
+    aucune parole ne l'entoure (`speech_spans`, mots de la transcription),
+    soit aucun locuteur n'est identifie. Les plans de moins de `min_shot_s`
+    (larges comme serres) sont absorbes : un cadre qui clignote est pire
+    qu'un cadre imparfait."""
+    from editing.speaker import speaker_at
+
+    def speaking(t: float) -> bool:
+        return any(a < t + half_step_s and b > t - half_step_s for a, b in speech_spans)
+
+    flags = []
+    for sample in samples:
+        faces = list(getattr(sample, "faces", ()) or ())
+        wide = False
+        if len(faces) >= 2:
+            left = min(f.x for f in faces)
+            right = max(f.x + f.w for f in faces)
+            if right - left > crop_width_frac:
+                wide = (not speaking(sample.t)
+                        or speaker_at(speaker_decisions or [], sample.t) is None)
+        flags.append((sample.t, wide))
+    if not flags:
+        return ()
+
+    # Suites d'echantillons « larges » -> intervalles.
+    raw, start, last = [], None, None
+    for t, wide in flags:
+        if wide and start is None:
+            start = t
+        if not wide and start is not None:
+            raw.append((start - half_step_s, last + half_step_s))
+            start = None
+        last = t
+    if start is not None:
+        raw.append((start - half_step_s, last + half_step_s))
+
+    # Trous serres trop courts : on reste en large ; plans larges trop courts : ecartes.
+    merged = []
+    for a, b in raw:
+        if merged and a - merged[-1][1] < min_shot_s:
+            merged[-1] = (merged[-1][0], b)
+        else:
+            merged.append((a, b))
+    return tuple((max(0.0, a), b) for a, b in merged if b - a >= min_shot_s)
 
 
 def build_framing_plan(
@@ -210,6 +310,7 @@ def build_framing_plan(
     static_movement_threshold: float = 0.03,
     subject_filter=None,
     crop_width_frac: float | None = None,
+    speech_spans=None,
 ) -> FramingPlan:
     """Trajectoire de cadrage, ou plan statique si le suivi n'est pas fiable.
 
@@ -235,6 +336,10 @@ def build_framing_plan(
         return FramingPlan((), MODE_STATIC, 0.0, ("aucune cible exploitable",))
 
     smoothed = smooth_trajectory(targets, smoothing_alpha, max_speed_frac_per_s, deadzone_frac)
+    wide = ()
+    if crop_width_frac is not None and speech_spans is not None:
+        wide = wide_intervals(with_faces, speaker_decisions, speech_spans, crop_width_frac)
+    wide_span = group_span(with_faces, wide) if wide else (0.0, 1.0)
 
     span_x = max(k.cx for k in smoothed) - min(k.cx for k in smoothed)
     span_y = max(k.cy for k in smoothed) - min(k.cy for k in smoothed)
@@ -244,17 +349,21 @@ def build_framing_plan(
         middle = smoothed[len(smoothed) // 2]
         return FramingPlan(
             (FramingKeyframe(t=smoothed[0].t, cx=middle.cx, cy=middle.cy),),
-            MODE_STATIC, round(ratio, 3), ("sujet immobile -- cadrage fixe",),
+            MODE_STATIC, round(ratio, 3), ("sujet immobile -- cadrage fixe",), wide=wide,
+            wide_span=wide_span,
         )
 
     reasons = [f"visage suivi sur {ratio:.0%} des images analysees"]
+    if wide:
+        reasons.append(f"{len(wide)} plan(s) large(s) quand personne ne parle")
     if mode == MODE_BOTH:
         reasons.append("deux personnes cadrees ensemble (locuteur non identifie de facon sure)")
     elif speaker_decisions and any(d.face_index is not None for d in speaker_decisions):
         reasons.append("cadrage centre sur le locuteur actif")
 
     return FramingPlan(
-        tuple(_decimate(smoothed, max_keyframes)), mode, round(ratio, 3), tuple(reasons)
+        tuple(_decimate(smoothed, max_keyframes)), mode, round(ratio, 3), tuple(reasons),
+        wide=wide, wide_span=wide_span,
     )
 
 

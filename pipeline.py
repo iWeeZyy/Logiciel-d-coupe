@@ -743,6 +743,9 @@ def _analyse_framing(
         max_keyframes=int(framing_cfg.get("max_keyframes", 60)),
         static_movement_threshold=float(framing_cfg.get("static_movement_threshold", 0.03)),
         crop_width_frac=_crop_width_frac(video_path, settings),
+        # Paroles du clip (mots de la transcription) : sans parole, plan
+        # large sur tous les participants (editing/framing.wide_intervals).
+        speech_spans=[(w.start, w.end) for w in (candidate.words or [])],
     )
 
     webcam_plan = None

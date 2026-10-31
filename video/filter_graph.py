@@ -389,6 +389,37 @@ def _split_webcam_chain(
     )
 
 
+def wide_enable_expression(intervals, edit_list: EditList) -> str:
+    """`enable` ffmpeg des plans larges, en temps de SORTIE (fonction pure)."""
+    parts = []
+    for a, b in intervals:
+        a_out = edit_list.to_output_time_clamped(a)
+        b_out = edit_list.to_output_time_clamped(b)
+        if b_out - a_out > 1e-3:
+            parts.append(f"between(t\\,{a_out:.3f}\\,{b_out:.3f})")
+    return "+".join(parts) or "0"
+
+
+def _with_wide_shots(tight: str, intervals, edit_list: EditList, src_w: int, src_h: int,
+                     out_w: int, out_h: int, fill: str, span=(0.0, 1.0)) -> str:
+    """Le cadre serre (sur la personne qui parle), remplace pendant les
+    `intervals` par un PLAN LARGE : toute l'image, posee entiere sur un fond
+    flou (le meme que le format « image entiere »). Demande de l'utilisateur :
+    quand personne ne parle, voir tous les participants en entier. Deux
+    branches de la meme source, superposees par periodes -- des cuts nets."""
+    # Le groupe seul (span), toute la hauteur : les participants aussi grands
+    # que possible tout en restant tous dans le cadre.
+    x0 = _even(int(max(0.0, span[0]) * src_w))
+    group_w = _even(int((min(1.0, span[1]) - max(0.0, span[0])) * src_w))
+    group_w = max(2, min(group_w, src_w - x0))
+    tenue = min(out_w / group_w, out_h / src_h) if group_w and src_h else 0
+    wide_chain = (f"crop={group_w}:{src_h}:{x0}:0,"
+                  + landscape_fill_chain(out_w, out_h, FILL_BLUR, _sharpen(tenue)))
+    enable = wide_enable_expression(intervals, edit_list)
+    return (f"split=2[fgtight][fgwide];[fgtight]{tight}[vtight];[fgwide]{wide_chain}[vwide];"
+            f"[vtight][vwide]overlay=0:0:enable='{enable}'")
+
+
 def build_video_chain(
     *,
     edit_list: EditList,
@@ -513,6 +544,12 @@ def build_video_chain(
     accentuation = _sharpen(out_w / fenetre_w if fenetre_w else 0)
     if accentuation:
         chain.append(accentuation)
+
+    wide = getattr(framing_plan, "wide", ()) if framing_plan is not None else ()
+    if wide:
+        chain = [_with_wide_shots(",".join(chain), wide, edit_list, src_w, src_h,
+                                  out_w, out_h, fill,
+                                  getattr(framing_plan, "wide_span", (0.0, 1.0)))]
 
     chain.extend(_delire_filters(delire_plan))
 

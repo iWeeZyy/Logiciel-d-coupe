@@ -98,10 +98,10 @@
     "active_speaker": {
       "_comment": "Interview/podcast : correle le mouvement de la bouche de chaque visage avec l'energie audio. Heuristique, pas un modele dedie -- sous le seuil de confiance, les deux visages sont cadres ensemble plutot que de parier sur le mauvais.",
       "enabled": true,
-      "window_s": 3.0,
+      "window_s": 2.0,
       "min_correlation": 0.25,
       "margin": 0.12,
-      "min_hold_s": 2.0
+      "min_hold_s": 1.0
     }
   },
   "watermark": {
