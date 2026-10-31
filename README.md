@@ -895,6 +895,36 @@ visuel », la date de sortie se place sous le titre et le synopsis de la fiche
 AlloCiné (titre exact uniquement) remplace la description de la vidéo dans la
 légende (`news_story/release_date.py`).
 
+**Bande-annonce ActuaFilms automatique (sans PC)** :
+`python gui_main.py --auto-trailer [--force] [--sans-youtube]`
+(`news_story/auto_trailer.py`). Rythme « selon les sorties » : jamais deux
+bandes-annonces a moins de 2 jours ; ensuite la plus recente sortie depuis la
+derniere ; au bout de 3 jours sans nouveaute, la plus recente pas encore
+publiee. Une seule version par film (« RIVER VF » et « RIVER VOST » = un
+film ; AlloCine avant YouTube, VF avant VO), et toutes ses versions sont
+marquees publiees ensemble (`news_story/published.py`, le meme fichier que
+sur le PC). La fenetre « Créer un visuel » est ouverte SANS ECRAN (Qt
+offscreen) sur la bande-annonce choisie : video, date de sortie, synopsis,
+legende et reglages par defaut sont lus dans la fenetre elle-meme
+(`StoryDialog.video_job()`), et la video est faite par
+`news_story/video_export.py`, extrait du bouton « Exporter » -- un seul code.
+Une source de moins de 720p est refusee (pas de post flou). Une
+bande-annonce « VO STFR » / « VOST » est deja sous-titree : la case des
+sous-titres francais est decochee par defaut (`vost.already_subtitled`),
+dans la fenetre comme en automatique.
+
+- GitHub Actions : `.github/workflows/auto-trailer.yml` (reutilisable,
+  appele par `docs/auto-trailer-caller.yml` depuis le depot prive, lance
+  chaque jour par Claude). YouTube refuse les serveurs GitHub (« Sign in to
+  confirm you're not a bot », essai du 2026-10-31 sur 5 bandes-annonces) :
+  sur le serveur, `--sans-youtube` ne garde que les videos AlloCine, servies
+  par Dailymotion en 1080p aux serveurs GitHub (verifie le meme jour ; depuis
+  d'autres serveurs, Dailymotion n'offrait que du 288p). Memoire des
+  publications gardee dans le depot prive ; cle Claude en secret prive.
+- Essai reel (2026-10-31) : « Entretien avec un requin » (AlloCine), video
+  1080x1920 de 1 min 23 s avec date de sortie, intro popcorn et synopsis en
+  legende, run de 3 min 30 s.
+
 **Intro popcorn** : dans « Créer un visuel » d'une bande-annonce (modèle
 vidéo), la case « Intro popcorn au début » (cochée par défaut, mémorisée)
 incruste le logo popcorn animé en haut à gauche de la vidéo pendant ses 5
@@ -903,15 +933,6 @@ fondu d'entrée et de sortie, crépitement mixé au son. L'animation fournie
 (Kling) est détourée par `tools/build_popcorn_intro.py` : le rond brun et son
 contenu, retrouvés image par image, plus les grains qui sautent hors du rond
 (suivis par leur contour) ; fichiers produits dans `assets/branding/intro_popcorn*`.
-
-**Intro popcorn** : dans « Créer un visuel » d'une bande-annonce (modèle
-vidéo), la case « Intro popcorn au début » (cochée par défaut, mémorisée)
-incruste le logo popcorn animé en haut à gauche de la vidéo pendant ses 5
-premières secondes, avec « Les infos ciné avant tout le monde 🍿 » dessous,
-fondu d'entrée et de sortie, crépitement mixé au son. L'animation fournie
-(Kling) est détourée par `tools/build_popcorn_intro.py` (le rond brun et son
-contenu seulement, retrouvé image par image) ; les fichiers produits sont
-dans `assets/branding/intro_popcorn*`.
 
 **Presse vs public** (sorties des 4 dernières semaines, notes presse et
 spectateurs AlloCiné qui divergent) et **Nouveautés streaming** (agenda
