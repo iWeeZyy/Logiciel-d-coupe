@@ -306,3 +306,52 @@ def test_webcam_seule_quand_le_fond_est_fixe():
     # La webcam (498x280 px) recadree puis posee entiere sur fond flou.
     assert chain.startswith("crop=498:280:0:0,split=2")
     assert "gblur" in chain
+
+
+def _video_webcam(path, corner):
+    """Video synthetique : page fixe (avec un bord franc plus loin, comme une
+    affiche), webcam de 160x90 dans `corner` ou une forme bouge."""
+    import cv2
+    import numpy as np
+
+    W, H = 640, 360
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10, (W, H))
+    for i in range(30):
+        frame = np.full((H, W, 3), 30, dtype=np.uint8)
+        frame[:, 300:420] = 220                       # « affiche » : bords francs
+        cam = np.full((90, 160, 3), 150, dtype=np.uint8)
+        cam[:, :] = np.linspace(120, 180, 160, dtype=np.uint8)[None, :, None]
+        cv2.circle(cam, (60 + i, 45), 20, (90, 90, 90), -1)
+        x = 0 if "g" in corner else W - 160
+        y = 0 if "h" in corner else H - 90
+        frame[y:y + 90, x:x + 160] = cam
+        writer.write(frame)
+    writer.release()
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("corner", ["hg", "hd", "bg", "bd"])
+def test_rectangle_de_la_webcam_dans_les_quatre_coins(tmp_path, corner):
+    from video.motion import webcam_rect
+
+    path = tmp_path / f"{corner}.mp4"
+    _video_webcam(path, corner)
+    cx = 0.1 if "g" in corner else 0.9
+    cy = 0.12 if "h" in corner else 0.88
+    rect = webcam_rect(str(path), 0.0, 3.0, cx, cy, face_h=0.1)
+    assert rect is not None
+    x0, y0, x1, y1 = rect
+    expected = ((0, 0.25) if "g" in corner else (0.75, 1.0),
+                (0, 0.25) if "h" in corner else (0.75, 1.0))
+    assert abs(x0 - expected[0][0]) < 0.02 and abs(x1 - expected[0][1]) < 0.02
+    assert abs(y0 - expected[1][0]) < 0.03 and abs(y1 - expected[1][1]) < 0.03
+
+
+def test_bord_invraisemblable_rejete():
+    from video.motion import plausible_webcam
+
+    assert plausible_webcam((0, 0, 0.25, 0.25), 1920, 1080)
+    assert not plausible_webcam((0, 0, 0.05, 0.25), 1920, 1080)   # trop etroit
+    assert not plausible_webcam((0, 0, 0.7, 0.7), 1920, 1080)     # trop grand

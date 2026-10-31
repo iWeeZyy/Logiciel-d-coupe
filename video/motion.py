@@ -140,4 +140,16 @@ def webcam_rect(video_path: str, start: float, end: float, cx: float, cy: float,
         return None
     edge_y = ys[j]
     y0, y1 = (0, edge_y) if top else (edge_y, H)
-    return x0 / W, y0 / H, x1 / W, y1 / H
+    rect = (x0 / W, y0 / H, x1 / W, y1 / H)
+    return rect if plausible_webcam(rect, W, H) else None
+
+
+def plausible_webcam(rect, width: int, height: int) -> bool:
+    """Une incrustation webcam a une forme de camera (de 4:5 a 21:9 en
+    pixels) et ne couvre pas la moitie de l'ecran -- sinon le « bord »
+    trouve est un trait du decor ou du contenu, pas la webcam. Pure."""
+    x0, y0, x1, y1 = rect
+    w_px, h_px = (x1 - x0) * width, (y1 - y0) * height
+    if w_px <= 0 or h_px <= 0:
+        return False
+    return 0.8 <= w_px / h_px <= 2.4 and (x1 - x0) * (y1 - y0) <= 0.35

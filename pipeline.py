@@ -809,8 +809,10 @@ def _analyse_framing(
                 from video.motion import background_motion, is_static, webcam_rect
 
                 estimate = webcam_box(webcam, src_w, src_h, face_h)
+                # Masque genereux (jusqu'au coin) : un streamer qui gesticule
+                # hors de la boite estimee ne doit pas passer pour du jeu.
                 motion = background_motion(video_path, candidate.start, candidate.end,
-                                           exclude=estimate)
+                                           exclude=corner_box(webcam, estimate))
                 if is_static(motion):
                     rect = (webcam_rect(video_path, candidate.start, candidate.end,
                                         webcam.cx, webcam.cy, face_h)
