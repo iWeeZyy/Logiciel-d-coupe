@@ -167,8 +167,8 @@ def _make_engine(store, adapter=None):
     return engine, adapter, max_results
 
 
-def run(config: dict, out_dir: Path, work_dir: Path, *, adapter=None, builder=None,
-        today: date | None = None, now: datetime | None = None,
+def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, adapter=None,
+        builder=None, today: date | None = None, now: datetime | None = None,
         on_status=logger.info) -> Report:
     """Une compilation par streamer autorise. Ne leve que si la configuration
     est inutilisable ; l'echec d'un streamer est rapporte, les autres
@@ -188,7 +188,12 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, adapter=None, builder=No
     report = Report()
     authorizations, warnings = parse_authorizations(config.get("authorized"), today=today)
     report.notes += warnings
-    allowed, refused = check_streamers(config.get("streamers"), authorizations)
+    streamers = config.get("streamers")
+    if only:
+        # Essai a la main (bouton « Run workflow ») : un seul streamer, qui
+        # doit lui aussi etre dans la liste d'autorisations.
+        streamers = [only]
+    allowed, refused = check_streamers(streamers, authorizations)
     report.refused += refused
     for login, reason in refused:
         logger.warning(f"Streamer refusé : {login} — {reason}")
@@ -272,12 +277,15 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=Path("compilation_hebdo"))
     parser.add_argument("--work-dir", type=Path, default=None)
+    parser.add_argument("--only", default="",
+                        help="un seul streamer (essai) ; il doit etre autorise")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
     started = datetime.now(timezone.utc)
     try:
         config = load_config(args.config)
-        report = run(config, args.out, args.work_dir or args.out.parent / "_travail")
+        report = run(config, args.out, args.work_dir or args.out.parent / "_travail",
+                     only=args.only or None)
     except Exception as e:  # noqa: BLE001 -- tache de fond : on journalise
         logger.error(f"Compilation de la semaine : {e}")
         print(f"::error::{e}" if os.environ.get("GITHUB_ACTIONS") == "true" else str(e))

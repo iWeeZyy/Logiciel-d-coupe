@@ -20,6 +20,10 @@ on:
         description: "Duree de conservation de l'artefact (jours)"
         type: number
         default: 3
+      only:
+        description: "Un seul streamer (essai a la main) ; vide = toute la liste"
+        type: string
+        default: ""
       app-ref:
         description: "Version du logiciel (branche ou tag de Logiciel-d-coupe)"
         type: string
@@ -98,9 +102,11 @@ jobs:
         env:
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          CONFIG_PATH: ${{ inputs.config-path }}
+          ONLY: ${{ inputs.only }}
         run: |
           python gui_main.py --weekly-top \
-            --config "$GITHUB_WORKSPACE/appelant/${{ inputs.config-path }}" \
+            --config "$GITHUB_WORKSPACE/appelant/$CONFIG_PATH" --only "$ONLY" \
             --out "$RUNNER_TEMP/compilation" --work-dir "$RUNNER_TEMP/travail"
 
       - name: Quelques images de controle

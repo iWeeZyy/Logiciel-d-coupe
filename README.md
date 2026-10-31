@@ -445,7 +445,9 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   prive. Ubuntu, ffmpeg (libass) + polices Arial (sous-titres), dependances
   de `requirements.txt` sans l'interface ni l'IA locale, modeles Whisper en
   cache ; artefact = video(s) + legende + rapport + 3 images de controle par
-  video, conserve 3 jours. Aucune publication automatique.
+  video, conserve 3 jours. Aucune publication automatique. Le bouton « Run
+  workflow » a un champ « streamer » pour un essai sur un seul (il doit etre
+  autorise lui aussi) ; vide, toute la liste.
 - Essai reel local (2026-10-31, 4 coeurs CPU, vrais clips Anyme023
   telecharges, Radar simule faute d'identifiants Twitch ici) : 3 clips en
   10 min, ~3 min par clip, video 1080x1920 de 2 min 13 s.

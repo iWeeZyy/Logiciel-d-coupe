@@ -156,6 +156,18 @@ def test_personne_d_autorise_rien_n_est_demande(tmp_path):
     assert calls == [] and twitch.resolved == [] and len(report.refused) == 4
 
 
+def test_un_seul_streamer_pour_l_essai(tmp_path):
+    calls, twitch = [], _FakeTwitch()
+    report = weekly_top.run(_config(), tmp_path / "out", tmp_path / "work", only="@Anyme023",
+                            adapter=twitch, builder=_builder(calls), today=TODAY, now=NOW)
+    assert twitch.resolved == ["anyme023"] and len(calls) == 1 and report.refused == []
+    # Meme en essai, un streamer non autorise reste refuse.
+    calls, twitch = [], _FakeTwitch()
+    report = weekly_top.run(_config(), tmp_path / "o2", tmp_path / "w2", only="inconnu",
+                            adapter=twitch, builder=_builder(calls), today=TODAY, now=NOW)
+    assert calls == [] and twitch.resolved == [] and report.refused[0][0] == "inconnu"
+
+
 def test_configuration_invalide(tmp_path):
     with pytest.raises(RuntimeError):
         weekly_top.run(_config(count=20), tmp_path / "o", tmp_path / "w",
