@@ -497,6 +497,10 @@ Squeezie, 2026-10-31) :
   aussi. Les visages comptes sont ceux des participants (une incrustation
   webcam n'en fait pas partie). Limite : cinq personnes cote a cote en entier
   dans un cadre vertical tiennent dans une bande etroite.
+  PERSONNE A CADRER (scene, capture d'ecran, affiche ; troisieme demande du
+  meme jour) : l'image entiere sur fond flou, pour tout le clip quand il n'a
+  pas assez de visages, ou pendant les passages sans visage -- plus jamais un
+  recadrage au hasard.
 - *Streamer a suivre* (`video/face_identity.py`, non active par defaut) : avec une photo de
   reference (cle `faces` de la configuration de la compilation, ex.
   `"faces": {"squeezie": ["visages/squeezie.png"]}`), chaque visage est

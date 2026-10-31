@@ -746,6 +746,7 @@ def _analyse_framing(
         # Paroles du clip (mots de la transcription) : sans parole, plan
         # large sur tous les participants (editing/framing.wide_intervals).
         speech_spans=[(w.start, w.end) for w in (candidate.words or [])],
+        clip_span=(candidate.start, candidate.end),
     )
 
     webcam_plan = None

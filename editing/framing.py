@@ -235,7 +235,11 @@ def group_span(samples, intervals, margin: float = 0.05) -> tuple[float, float]:
     for sample in samples:
         if not any(a <= sample.t <= b for a, b in intervals):
             continue
-        for face in getattr(sample, "faces", ()) or ():
+        faces = getattr(sample, "faces", ()) or ()
+        if not faces:
+            # Un passage sans personne : rien a resserrer, l'image entiere.
+            return 0.0, 1.0
+        for face in faces:
             lefts.append(face.x - face.w)
             rights.append(face.x + 2 * face.w)
     if not lefts:
@@ -265,7 +269,10 @@ def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: fl
     flags = []
     for sample in samples:
         faces = list(getattr(sample, "faces", ()) or ())
-        wide = False
+        # Personne a cadrer (scene, capture d'ecran, affiche…) : l'image
+        # entiere sur fond flou plutot qu'un recadrage au hasard (demande de
+        # l'utilisateur).
+        wide = not faces
         if len(faces) >= 2:
             left = min(f.x for f in faces)
             right = max(f.x + f.w for f in faces)
@@ -318,22 +325,36 @@ def build_framing_plan(
     subject_filter=None,
     crop_width_frac: float | None = None,
     speech_spans=None,
+    clip_span: tuple[float, float] | None = None,
 ) -> FramingPlan:
     """Trajectoire de cadrage, ou plan statique si le suivi n'est pas fiable.
 
     `subject_filter` est transmis tel quel a `choose_targets` -- voir son
     docstring. Reste `None` (donc `keep_subject_faces`) pour tout appelant
     existant."""
+    def whole_image(ratio: float, reason: str) -> FramingPlan:
+        """Personne a cadrer : en 9:16 (`crop_width_frac` connu), l'image
+        entiere sur fond flou pendant tout le clip ; sinon cadrage fixe."""
+        if crop_width_frac is None:
+            return FramingPlan((), MODE_STATIC, ratio, (reason + " -- cadrage fixe",))
+        if clip_span is not None:
+            a, b = clip_span
+        elif samples:
+            a, b = samples[0].t - 1.0, samples[-1].t + 1.0
+        else:
+            return FramingPlan((), MODE_STATIC, ratio, (reason + " -- cadrage fixe",))
+        return FramingPlan((), MODE_STATIC, ratio,
+                           (reason + " -- image entiere sur fond flou",),
+                           wide=((max(0.0, a), b),), wide_span=(0.0, 1.0))
+
     if not samples:
-        return FramingPlan((), MODE_STATIC, 0.0, ("aucune detection de visage",))
+        return whole_image(0.0, "aucune detection de visage")
 
     with_faces = [s for s in samples if s.faces]
     ratio = len(with_faces) / len(samples)
     if ratio < min_samples_ratio or len(with_faces) < 3:
-        return FramingPlan(
-            (), MODE_STATIC, round(ratio, 3),
-            (f"visage detecte sur seulement {ratio:.0%} des images analysees -- cadrage fixe",),
-        )
+        return whole_image(round(ratio, 3),
+                           f"visage detecte sur seulement {ratio:.0%} des images analysees")
 
     targets, mode = choose_targets(
         with_faces, speaker_decisions, two_faces_min_distance_frac, vertical_bias,
@@ -349,7 +370,7 @@ def build_framing_plan(
         # sur un ecran ne fait pas basculer en plan large (editing/subject.py).
         from editing.subject import keep_subject_faces
 
-        participants = (subject_filter or keep_subject_faces)(with_faces) or with_faces
+        participants = (subject_filter or keep_subject_faces)(samples) or samples
         wide = wide_intervals(participants, speaker_decisions, speech_spans, crop_width_frac)
     wide_span = group_span(participants, wide) if wide else (0.0, 1.0)
 

@@ -158,3 +158,33 @@ class TestParoleEtPlanLarge:
                 return t
 
         assert wide_enable_expression([(1, 2.5)], Same()) == "between(t\\,1.000\\,2.500)"
+
+
+class TestPersonneACadrer:
+    """Demande : sans personne a cadrer, l'image entiere sur fond flou."""
+
+    def test_clip_sans_visage_image_entiere(self):
+        from editing.framing import build_framing_plan
+
+        empty = [FaceSample(t=t / 2, faces=(), mouth_activity=()) for t in range(10)]
+        plan = build_framing_plan(empty, crop_width_frac=0.3, speech_spans=[],
+                                  clip_span=(0.0, 30.0))
+        assert plan.wide == ((0.0, 30.0),) and plan.wide_span == (0.0, 1.0)
+        assert build_framing_plan([], crop_width_frac=0.3, clip_span=(0.0, 5.0)).wide == ((0.0, 5.0),)
+
+    def test_paysage_inchange(self):
+        from editing.framing import build_framing_plan
+
+        empty = [FaceSample(t=t / 2, faces=(), mouth_activity=()) for t in range(10)]
+        assert build_framing_plan(empty).wide == ()
+
+    def test_passage_sans_visage_au_milieu(self):
+        from editing.framing import group_span, wide_intervals
+
+        samples = ([FaceSample(t=t / 2, faces=(_box(0.5),), mouth_activity=(0.0,)) for t in range(6)]
+                   + [FaceSample(t=3 + t / 2, faces=(), mouth_activity=()) for t in range(6)]
+                   + [FaceSample(t=6 + t / 2, faces=(_box(0.5),), mouth_activity=(0.0,))
+                      for t in range(6)])
+        wide = wide_intervals(samples, [], [(0.0, 9.0)], crop_width_frac=0.3)
+        assert len(wide) == 1 and 2.5 <= wide[0][0] <= 3.0 and 5.5 <= wide[0][1] <= 6.0
+        assert group_span(samples, wide) == (0.0, 1.0)
