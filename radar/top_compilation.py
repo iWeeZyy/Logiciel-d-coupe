@@ -187,6 +187,12 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
     overrides = dict(production.get("editing_overrides") or {})
     overrides["intro"] = False
     production["editing_overrides"] = overrides
+    # Classes du plus vu au moins vu ; en compte a rebours le #1 passe en
+    # DERNIER (video/compilation.numbering) : on inverse, sinon le clip le
+    # plus vu ouvrait la video en « #3 » (constate le 2026-10-31).
+    opportunities = list(opportunities)
+    if countdown:
+        opportunities.reverse()
     paths = []
     total = len(opportunities)
     for index, opportunity in enumerate(opportunities, 1):

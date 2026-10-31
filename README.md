@@ -521,7 +521,21 @@ Squeezie, 2026-10-31) :
   l'incrustation, centre, ou a cote / au-dessus d'elle en zoomant si besoin
   (`editing/subject.game_window`) -- jamais la webcam deux fois. Verifie sur
   des clips de Kamet0 (LoL, webcam en bas a gauche) ; aucun faux positif sur
-  les clips de Squeezie apres le seuil de taille minimale.
+  les clips de Squeezie apres le seuil de taille minimale. Pas de coupe sur
+  une image plus de deux fois plus large que haute (plateau « cinema »).
+- *Fond fixe* (affiche, tweet, Paint commentes ; demande de l'utilisateur) :
+  pas de jeu a montrer, donc la webcam SEULE, entiere, au centre sur fond
+  flou -- dans un coin comme ailleurs (`editing/subject.floating_webcam`,
+  visage present 80 % du clip). Le rectangle de l'incrustation est trouve
+  par ses bords (`video/motion.webcam_rect` / `floating_webcam_rect` ; un
+  bord sans contraste est deduit du 16:9) ; le reste de l'image doit etre
+  fixe (difference moyenne < 5 sur 255) et l'interieur bouger (une personne
+  en direct, pas une photo). Mesures reelles : affiche 0,5-0,7, Paint 2,8,
+  jeux 14-28.
+- *Compte a rebours* : les clips sont classes du plus vu au moins vu ; avec
+  le compte a rebours, le plus vu passe en DERNIER, avec le #1
+  (`radar/top_compilation.build`). Avant le 2026-10-31, il ouvrait la video
+  en « #3 ».
 - *Streamer a suivre* (`video/face_identity.py`, non active par defaut) : avec une photo de
   reference (cle `faces` de la configuration de la compilation, ex.
   `"faces": {"squeezie": ["visages/squeezie.png"]}`), chaque visage est

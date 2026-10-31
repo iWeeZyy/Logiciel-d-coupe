@@ -34,10 +34,11 @@ def mean_difference(frames, mask=None) -> float:
 
 
 def background_motion(video_path: str, start: float, end: float,
-                      exclude=None, samples: int = SAMPLES) -> float | None:
+                      exclude=None, samples: int = SAMPLES, only=None) -> float | None:
     """Mouvement du fond entre `start` et `end` (secondes), la boite
-    `exclude` = (x0, y0, x1, y1) en fractions de l'image ignoree. None si la
-    video ne se lit pas."""
+    `exclude` = (x0, y0, x1, y1) en fractions de l'image ignoree -- ou, avec
+    `only`, mesure DANS cette boite seulement. None si la video ne se lit
+    pas."""
     try:
         import cv2
         import numpy as np
@@ -59,11 +60,13 @@ def background_motion(video_path: str, start: float, end: float,
     if len(frames) < 3:
         return None
     mask = None
-    if exclude is not None:
+    box = exclude if exclude is not None else only
+    if box is not None:
         h, w = frames[0].shape
-        mask = np.ones((h, w), dtype=bool)
-        x0, y0, x1, y1 = exclude
-        mask[max(0, int(y0 * h)):max(0, int(y1 * h) + 1), max(0, int(x0 * w)):max(0, int(x1 * w) + 1)] = False
+        inside = np.zeros((h, w), dtype=bool)
+        x0, y0, x1, y1 = box
+        inside[max(0, int(y0 * h)):max(0, int(y1 * h) + 1), max(0, int(x0 * w)):max(0, int(x1 * w) + 1)] = True
+        mask = inside if exclude is None else ~inside
     return mean_difference(frames, mask)
 
 
@@ -153,3 +156,100 @@ def plausible_webcam(rect, width: int, height: int) -> bool:
     if w_px <= 0 or h_px <= 0:
         return False
     return 0.8 <= w_px / h_px <= 2.4 and (x1 - x0) * (y1 - y0) <= 0.35
+
+
+BORDER_SNAP = 0.35   # pas de bord trouve de ce cote : le bord de l'ecran, s'il est proche
+LIVE_MIN = 1.0       # une webcam en direct bouge un peu (une photo fixe : ~0)
+
+
+def _gray_frames(video_path: str, start: float, end: float, samples: int = 6, width: int = 640):
+    import cv2
+
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    span = max(0.0, end - start)
+    try:
+        for i in range(samples):
+            cap.set(cv2.CAP_PROP_POS_MSEC, (start + span * (0.1 + 0.8 * i / max(1, samples - 1))) * 1000)
+            ok, frame = cap.read()
+            if ok:
+                h = max(4, int(width * frame.shape[0] / frame.shape[1]))
+                frames.append(cv2.cvtColor(cv2.resize(frame, (width, h)),
+                                           cv2.COLOR_BGR2GRAY).astype("float32"))
+    finally:
+        cap.release()
+    return frames
+
+
+def floating_webcam_rect(video_path: str, start: float, end: float, cx: float, cy: float,
+                         face_h: float):
+    """Rectangle d'une incrustation webcam placee N'IMPORTE OU (pas forcement
+    dans un coin) : ses quatre bords, cherches depuis le visage vers
+    l'exterieur. Un cote sans bord franc prend le bord de l'ecran s'il est
+    proche (webcam collee a un bord), sinon rien n'est renvoye."""
+    try:
+        import numpy as np
+
+        frames = _gray_frames(video_path, start, end)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Bords de la webcam non mesurés : {e}")
+        return None
+    if not frames:
+        return None
+    H, W = frames[0].shape
+    face_w = face_h * H / W
+    ry0, ry1 = max(1, int((cy - face_h) * H)), min(H - 1, int((cy + face_h) * H))
+    if ry1 <= ry0:
+        return None
+
+    def vscore(x):
+        return float(np.median([np.median(np.abs(g[ry0:ry1, x + 1] - g[ry0:ry1, x - 1]))
+                                for g in frames]))
+
+    def search(positions, score, border, distance):
+        i = nearest_edge([score(v) for v in positions])
+        if i is not None:
+            return positions[i]
+        return border if distance < BORDER_SNAP else None
+
+    right = search(list(range(min(W - 2, int((cx + 0.6 * face_w) * W)), min(W - 1, int((cx + 0.5) * W)))),
+                   vscore, W, 1 - cx)
+    left = search(list(range(max(1, int((cx - 0.6 * face_w) * W)), max(0, int((cx - 0.5) * W)), -1)),
+                  vscore, 0, cx)
+    if right is None or left is None or right - left < 8:
+        return None
+    cx0, cx1 = left + 2, right - 2
+
+    def hscore(y):
+        return float(np.median([np.median(np.abs(g[y + 1, cx0:cx1] - g[y - 1, cx0:cx1]))
+                                for g in frames]))
+
+    # Depuis le menton / le haut du crane : le bas d'une webcam serree tombe
+    # juste sous le visage.
+    bottom = search(list(range(min(H - 2, int((cy + 0.6 * face_h) * H)),
+                               min(H - 1, int((cy + 0.5) * H)))), hscore, H, 1.0)
+    top = search(list(range(max(1, int((cy - 0.6 * face_h) * H)), max(0, int((cy - 0.5) * H)), -1)),
+                 hscore, 0, 1.0)
+    # Un bord haut ou bas sans contraste (t-shirt noir sur bandeau noir) :
+    # deduit de la largeur, une webcam etant en 16:9.
+    height = (right - left) * 9 / 16
+    if bottom is None and top is not None:
+        bottom = round(top + height) if top + height <= H else None
+    elif top is None and bottom is not None:
+        top = round(bottom - height) if bottom - height >= 0 else None
+    elif top is None and bottom is None:
+        # Ni l'un ni l'autre : collee aux deux bords seulement s'ils sont proches.
+        top = 0 if cy < BORDER_SNAP else None
+        bottom = H if 1 - cy < BORDER_SNAP else None
+    if top is None or bottom is None or bottom - top < 8:
+        return None
+    # Un bord trouve est le liseré de l'incrustation : resserrer de 3 px (sur
+    # 640) pour ne pas le garder ; un bord de l'ecran reste tel quel.
+    inset = 3
+    left = left if left == 0 else left + inset
+    right = right if right == W else right - inset
+    top = top if top == 0 else top + inset
+    bottom = bottom if bottom == H else bottom - inset
+    rect = (left / W, top / H, right / W, bottom / H)
+    inside = rect[0] < cx < rect[2] and rect[1] < cy < rect[3]
+    return rect if inside and plausible_webcam(rect, W, H) else None

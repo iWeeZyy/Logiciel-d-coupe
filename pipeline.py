@@ -768,6 +768,11 @@ def _analyse_framing(
             # (elle est deja en haut) ni les visages du contenu.
             plan = FramingPlan((FramingKeyframe(t=0.0, cx=0.5, cy=0.5),), "static", 1.0,
                                ("webcam dans un coin : jeu centre sous la webcam",))
+        else:
+            # Webcam ailleurs que dans un coin, image fixe autour (Paint,
+            # page commentee) : la webcam seule (demande de l'utilisateur,
+            # 2026-10-31).
+            plan = _floating_webcam_plan(video_path, candidate, samples) or plan
     else:
         webcam = None
     if split_webcam:
@@ -826,6 +831,36 @@ def _analyse_framing(
                 pass
 
     return face_hint, plan, webcam_plan
+
+
+def _floating_webcam_plan(video_path: str, candidate, samples) -> Optional[FramingPlan]:
+    """La webcam seule, entiere, sur fond flou, si : un petit visage present
+    presque tout le clip, des bords d'incrustation trouves autour, le reste
+    de l'image fixe, et l'interieur qui bouge (une personne en direct, pas
+    une photo). None sinon : le cadrage habituel s'applique."""
+    from editing.subject import floating_webcam
+    from video.motion import LIVE_MIN, background_motion, floating_webcam_rect, is_static
+
+    webcam = floating_webcam(samples)
+    if webcam is None:
+        return None
+    try:
+        src_w, src_h = ffmpeg_utils.video_resolution(video_path)
+    except Exception:  # noqa: BLE001
+        return None
+    face_h = (webcam.area * src_w / src_h) ** 0.5
+    rect = floating_webcam_rect(video_path, candidate.start, candidate.end,
+                                webcam.cx, webcam.cy, face_h)
+    if rect is None:
+        return None
+    outside = background_motion(video_path, candidate.start, candidate.end, exclude=rect)
+    inside = background_motion(video_path, candidate.start, candidate.end, only=rect)
+    if not is_static(outside) or inside is None or inside < LIVE_MIN:
+        return None
+    logger.info(f"Fond fixe ({outside:.1f}) : la webcam seule, entière, au centre "
+                f"({', '.join(f'{v:.2f}' for v in rect)}).")
+    return FramingPlan((FramingKeyframe(t=0.0, cx=webcam.cx, cy=webcam.cy),), "static", 1.0,
+                       ("fond fixe : la webcam seule",), box=rect)
 
 
 def _ultra_wide(video_path: str, limit: float = 2.0) -> bool:

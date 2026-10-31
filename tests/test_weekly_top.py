@@ -258,3 +258,22 @@ def test_moins_de_15_s_de_trop_passe(tmp_path):
                             today=TODAY, now=NOW)
     assert calls and not any("CONFIRMATION" in e for e in report.errors)
     assert any("vidéo de 1 min 15 s" in n for n in report.notes)
+
+
+def test_le_plus_vu_est_le_numero_1(monkeypatch, tmp_path):
+    from types import SimpleNamespace as O
+
+    import video.compilation
+    from radar import top_compilation
+
+    produced, composed = [], {}
+    monkeypatch.setattr(top_compilation, "produce_clip",
+                        lambda o, *a, **k: produced.append(o.title) or o.title)
+    monkeypatch.setattr(video.compilation, "compose",
+                        lambda paths, *a, **k: composed.update(paths=paths, **k) or [])
+    clips = [O(title="plus vu"), O(title="deuxieme"), O(title="troisieme")]
+    top_compilation.build(clips, {}, tmp_path, name="x", countdown=True)
+    # #3, #2, #1 dans cet ordre : le plus vu en dernier, avec le #1.
+    assert composed["paths"] == ["troisieme", "deuxieme", "plus vu"]
+    top_compilation.build(clips, {}, tmp_path, name="x", countdown=False)
+    assert composed["paths"] == ["plus vu", "deuxieme", "troisieme"]

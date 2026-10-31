@@ -307,6 +307,19 @@ def corner_webcam(samples, radius: float = CLUSTER_RADIUS,
     return max(candidates, key=lambda t: t.presence, default=None)
 
 
+def floating_webcam(samples, radius: float = CLUSTER_RADIUS,
+                    min_presence: float = 0.8) -> FaceTrack | None:
+    """Une incrustation webcam HORS d'un coin (milieu d'un bord, par exemple) :
+    un petit visage present presque tout le clip. Seulement un candidat --
+    retenu par le pipeline uniquement si le reste de l'image est fixe, que la
+    webcam bouge (en direct) et que ses bords sont trouves (video/motion.py).
+    Le plus present, None sinon."""
+    candidates = [t for t in build_tracks(samples, radius=radius)
+                  if MIN_CORNER_FACE_AREA <= t.area <= MAX_CORNER_FACE_AREA
+                  and t.presence >= min_presence]
+    return max(candidates, key=lambda t: t.presence, default=None)
+
+
 def webcam_box(webcam: FaceTrack, src_w: int, src_h: int, face_h: float,
                box_faces: float = 3.5, box_ratio: float = 1.6,
                margin: float = 0.01) -> tuple[float, float, float, float]:

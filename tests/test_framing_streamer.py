@@ -355,3 +355,65 @@ def test_bord_invraisemblable_rejete():
     assert plausible_webcam((0, 0, 0.25, 0.25), 1920, 1080)
     assert not plausible_webcam((0, 0, 0.05, 0.25), 1920, 1080)   # trop etroit
     assert not plausible_webcam((0, 0, 0.7, 0.7), 1920, 1080)     # trop grand
+
+
+def _video_webcam_flottante(path, cam_ok=True):
+    """Page fixe, webcam 16:9 collee au bord gauche, a mi-hauteur ; son bas
+    touche un bandeau aussi sombre qu'elle (bord sans contraste)."""
+    import cv2
+    import numpy as np
+
+    W, H = 640, 360
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 10, (W, H))
+    for i in range(30):
+        frame = np.full((H, W, 3), 230, dtype=np.uint8)        # page blanche fixe
+        frame[200:260, 0:140] = 20                               # bandeau sombre sous la webcam
+        cam = np.full((79, 140, 3), 150, dtype=np.uint8)
+        cam[60:, 40:90] = 20                                     # t-shirt noir en bas
+        if cam_ok:
+            cv2.circle(cam, (35 + (i * 7) % 70, 32), 22, (40, 40, 40), -1)
+        frame[121:200, 0:140] = cam
+        writer.write(frame)
+    writer.release()
+
+
+def test_webcam_flottante_bords_et_bas_deduit(tmp_path):
+    from video.motion import LIVE_MIN, background_motion, floating_webcam_rect, is_static
+
+    path = tmp_path / "flottante.mp4"
+    _video_webcam_flottante(path)
+    rect = floating_webcam_rect(str(path), 0.0, 3.0, cx=0.1, cy=0.43, face_h=0.08)
+    assert rect is not None
+    x0, y0, x1, y1 = rect
+    assert x0 == 0.0 and abs(x1 - 140 / 640) < 0.02
+    assert abs(y0 - 121 / 360) < 0.03
+    # Bas sans contraste : deduit du 16:9 (140 px de large -> ~79 de haut).
+    assert abs(y1 - 200 / 360) < 0.03
+    assert is_static(background_motion(str(path), 0, 3, exclude=rect))
+    assert background_motion(str(path), 0, 3, only=rect) >= LIVE_MIN
+
+
+def test_photo_fixe_n_est_pas_une_webcam(tmp_path):
+    from video.motion import LIVE_MIN, background_motion
+
+    path = tmp_path / "photo.mp4"
+    _video_webcam_flottante(path, cam_ok=False)
+    inside = background_motion(str(path), 0, 3, only=(0.0, 0.33, 0.22, 0.56))
+    assert inside < LIVE_MIN
+
+
+def test_webcam_flottante_choisie_seulement_si_presque_toujours_la():
+    from editing.subject import floating_webcam
+
+    from types import SimpleNamespace as O
+
+    def sample(t, faces):
+        return O(t=t, faces=tuple(O(cx=x, cy=y, area=a, score=0.9, identity=-1.0)
+                                  for x, y, a in faces), mouth_activity=())
+
+    present = [sample(i, [(0.13, 0.55, 0.005)]) for i in range(20)]
+    assert floating_webcam(present) is not None
+    rare = [sample(i, [(0.13, 0.55, 0.005)] if i % 3 == 0 else []) for i in range(20)]
+    assert floating_webcam(rare) is None
+    grand = [sample(i, [(0.5, 0.4, 0.05)]) for i in range(20)]   # plein ecran
+    assert floating_webcam(grand) is None
