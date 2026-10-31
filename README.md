@@ -410,6 +410,46 @@ traitement de chaque clip par le pipeline habituel (memes options que
 dans « Mes projets ». `vod_offset` n'est enregistre que depuis cette version :
 rescanner le Radar pour en profiter.
 
+**Compilation automatique de la semaine (sans PC)** :
+`python gui_main.py --weekly-top --config ma_config.json --out sortie/`
+(`radar/weekly_top.py`) fait, sans fenetre ni ecran, ce que fait le bouton :
+rafraichissement du Radar sur 7 jours pour les streamers choisis, les N plus
+vus un seul par moment, telechargement et traitement de chaque clip, montage,
+legende .txt, et un `rapport.txt`. Une compilation par streamer. La logique
+est celle de la fenetre, sortie dans `radar/top_compilation.py` (et les
+reglages par defaut des options dans `editing/production.py`) : la fenetre et
+la commande appellent le meme code, et un test verifie que les reglages par
+defaut de la commande sont exactement ceux d'une fenetre non touchee. Aucun
+module Qt n'est importe sur ce chemin (verifie par un test).
+
+- **Droits** : la confirmation « Vérification des droits » de la fenetre ne
+  peut pas etre cliquee par un serveur. Pour CE mode seulement, elle est
+  remplacee par la liste `authorized` de la configuration : chaque streamer y
+  figure avec la date (AAAA-MM-JJ) de son accord. Absent de la liste, sans
+  date, date illisible ou future : refuse, signale dans `rapport.txt` et en
+  annotation sur la page du run GitHub -- jamais compile. La fenetre garde sa
+  confirmation.
+- **Configuration** : `config/weekly_compilation.json` est un modele VIDE ;
+  la vraie liste vit dans le depot prive (ci-dessous). Cles : `streamers`,
+  `authorized`, `count` (2-8), `parts` (1-2), `countdown`, `transitions`,
+  `intro`, `production` (aspect, fit_mode, modules, watermark…, par defaut
+  ceux de la fenetre).
+- **GitHub Actions** : `.github/workflows/weekly-top.yml` est un workflow
+  REUTILISABLE (`workflow_call`), qui ne se lance jamais seul ici. Le depot
+  etant public, ses artefacts seraient telechargeables par n'importe qui : il
+  est appele depuis un depot PRIVE avec `docs/weekly-top-caller.yml` (chaque
+  dimanche 18 h heure de Paris, ete comme hiver, + bouton « Run workflow »).
+  Le travail tourne dans le contexte du depot prive : artefact et journaux
+  prives, minutes decomptees la-bas, les builds Windows de ce depot restent
+  gratuits. Secrets `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET` dans le depot
+  prive. Ubuntu, ffmpeg (libass) + polices Arial (sous-titres), dependances
+  de `requirements.txt` sans l'interface ni l'IA locale, modeles Whisper en
+  cache ; artefact = video(s) + legende + rapport + 3 images de controle par
+  video, conserve 3 jours. Aucune publication automatique.
+- Essai reel local (2026-10-31, 4 coeurs CPU, vrais clips Anyme023
+  telecharges, Radar simule faute d'identifiants Twitch ici) : 3 clips en
+  10 min, ~3 min par clip, video 1080x1920 de 2 min 13 s.
+
 **Cadrage** : celui choisi dans les options, comme pour un clip seul. Par
 defaut « Recadrer sur le sujet », visage suivi (une webcam incrustee est
 suivie elle aussi quand c'est le seul visage). « Webcam en haut + Gameplay en

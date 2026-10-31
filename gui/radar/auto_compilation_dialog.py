@@ -12,12 +12,14 @@ transitions. Tout est enchaine sans autre clic :
    compilation ; chaque clip devient un projet normal de « Mes projets » ;
 3. montage (video/compilation.py) : numeros, transitions, intro, ecran de
    fin, 1 ou 2 parties, legende .txt a cote.
+
+La logique vit dans radar/top_compilation.py, partagee avec la compilation
+automatique de la semaine (radar/weekly_top.py) : cette fenetre ne fait que
+montrer, demander la verification des droits, et lancer.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -36,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.cancellation import CancelToken
+from radar.top_compilation import default_title
 
 _PERIODS = (("cette semaine", 7), ("ce mois-ci", 30), ("depuis 3 mois", 90))
 
@@ -48,94 +51,6 @@ def _fmt(seconds: float) -> str:
 def _views(value) -> str:
     return f"{value:,}".replace(",", " ") + " vues" if value is not None else "vues inconnues"
 
-
-def default_title(count: int, creator_label: str, period_label: str) -> str:
-    who = f" de {creator_label}" if creator_label else ""
-    return f"Top {count} des moments{who} {period_label}"
-
-
-def _produce_clip(opportunity, production: dict, cancel_token, on_status=lambda m: None) -> str:
-    """Telecharge puis traite UN clip par le pipeline habituel ; renvoie le
-    fichier produit. Meme preparation que la fenetre d'analyse du Radar."""
-    import pipeline
-    from core.config_loader import load_settings
-    from gui import settings_store
-    from gui.controller import apply_editing_overrides
-    from gui.radar.analysis_dialog import _project_name
-    from projects import store as project_store
-    from radar.analysis import media
-
-    title = opportunity.title or opportunity.content_id
-    on_status(f"Téléchargement : {title}")
-    source = media.resolve(opportunity, cancel_token=cancel_token)
-    source_path = source.path
-    fit_mode = production.get("fit_mode")
-    from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM
-
-    if fit_mode == FIT_SPLIT_WEBCAM:
-        # Exactement comme un clip seul (gui/controller.py, AnalysisThread) :
-        # « Webcam en haut + Gameplay en bas » = la version PORTRAIT que
-        # Twitch genere lui-meme, puis le cadrage classique dessus -- notre
-        # propre decoupage en deux bandes cadrait la webcam trop large.
-        # Sans cette version pour ce clip, cadrage classique sur le paysage.
-        on_status(f"Version portrait Twitch : {title}")
-        source_path = portrait_variant(opportunity, cancel_token) or source_path
-        fit_mode = FIT_CROP
-    name = _project_name(opportunity)
-    folder = project_store.create_project_folder(name, projects_dir=settings_store.projects_dir())
-    duration = opportunity.duration_s
-    cli_args = SimpleNamespace(
-        input=source_path, output=str(folder), overwrite=True,
-        clip_duration=max(5, int(duration)) if duration else 45, nb_clips=1, whole_source=True,
-        model=settings_store.get("default_model") or "small", language=None,
-        pre_roll=None, post_roll=None, min_gap=None,
-        subtitle_style=production.get("subtitle_style") or settings_store.get("default_subtitle_style"),
-        device=settings_store.get("default_device"), no_cache=False, debug_scores=False,
-        aspect=production.get("aspect"), fill_mode=production.get("fill_mode"),
-        fit_mode=fit_mode,
-    )
-    settings = load_settings(cli_args)
-    apply_editing_overrides(settings, production.get("editing_overrides") or {})
-    project_store.write_manifest(
-        folder, name=name, source_label=title, source_kind="local",
-        settings_used={
-            "clip_duration": settings.clip_duration, "nb_clips": settings.nb_clips,
-            "model": settings.model, "language": settings.language,
-            "subtitle_style": settings.subtitle_style, "device": settings.device,
-            "editing_modules": {key: bool(block.get("enabled", False))
-                                for key, block in settings.editing.items()
-                                if isinstance(block, dict) and "enabled" in block},
-        },
-        source_url=opportunity.url or None)
-    on_status(f"Montage du clip : {title}")
-    results = pipeline.run(settings, cancel_token=cancel_token)
-    if not results:
-        raise RuntimeError(f"Aucun clip produit pour « {title} ».")
-    return str(Path(folder) / results[0].file_name)
-
-
-def portrait_variant(opportunity, cancel_token) -> str | None:
-    """La version portrait (webcam en haut, jeu en bas) que Twitch genere pour
-    ce clip, ou None s'il n'en a pas. Rangee dans un sous-dossier : le rendu
-    paysage du meme clip porte le meme nom de fichier, et yt-dlp le
-    prendrait pour la version deja telechargee."""
-    from core.logging_setup import get_logger
-    from radar.analysis.media import clips_dir
-    from radar.clip_download import download_clip
-    from utils.errors import CancelledError
-    from video.ffmpeg_utils import video_resolution
-
-    try:
-        path = download_clip(opportunity.url or opportunity.content_id,
-                             str(clips_dir() / "portrait"), cancel_token=cancel_token,
-                             prefer_portrait=True)
-        width, height = video_resolution(path)
-    except CancelledError:
-        raise
-    except Exception as error:  # noqa: BLE001 -- repli : cadrage classique sur le paysage
-        get_logger().warning(f"Version portrait indisponible ({error}).")
-        return None
-    return path if height > width else None
 
 
 class _Worker(QThread):
@@ -152,20 +67,15 @@ class _Worker(QThread):
         self.token = token
 
     def run(self) -> None:
+        from radar.top_compilation import build
         from utils.errors import CancelledError
-        from video.compilation import compose
 
         out_dir, name, parts, countdown, intro, transitions = self.args
         try:
-            paths = []
-            total = len(self.opportunities)
-            for index, opportunity in enumerate(self.opportunities, 1):
-                paths.append(_produce_clip(
-                    opportunity, self.production, self.token,
-                    lambda message, i=index: self.status.emit(f"Clip {i}/{total} — {message}")))
-            written = compose(paths, out_dir, name=name, parts=parts, countdown=countdown,
-                              intro=intro, transitions=transitions,
-                              on_progress=self.status.emit, cancel_token=self.token)
+            written = build(self.opportunities, self.production, out_dir, name=name,
+                            parts=parts, countdown=countdown, intro=intro,
+                            transitions=transitions, cancel_token=self.token,
+                            on_status=self.status.emit)
         except CancelledError:
             self.failed.emit("")
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -274,15 +184,10 @@ class AutoCompilationDialog(QDialog):
 
     # ------------------------------------------------------------- choix
     def _candidates(self):
-        days = self.period_combo.currentData() or 7
-        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
-        since = since.replace("+00:00", "Z")
-        from radar.display import ORDER_VIEWS
+        from radar.top_compilation import candidates
 
-        return self.store.list_opportunities(platform="twitch",
-                                             creator_key=self.creator_combo.currentData() or None,
-                                             since=since, kinds=("clip",), order=ORDER_VIEWS,
-                                             limit=300)
+        return candidates(self.store, self.creator_combo.currentData() or None,
+                          self.period_combo.currentData() or 7)
 
     def _refresh(self, *_args) -> None:
         from radar.compilation_pick import pick_top
@@ -326,6 +231,7 @@ class AutoCompilationDialog(QDialog):
             return
         from gui.radar.daily_top_dialog import ask_export_folder
         from radar.bridge import RIGHTS_NOTICE
+        from radar.top_compilation import safe_name
 
         if QMessageBox.question(self, "Vérification des droits", RIGHTS_NOTICE + "\n\nContinuer ?") \
                 != QMessageBox.StandardButton.Yes:
@@ -334,13 +240,12 @@ class AutoCompilationDialog(QDialog):
         if not folder:
             return
         options = self.production_options
-        overrides = dict(options.editing_overrides())
-        overrides["intro"] = False          # posee une seule fois par la compilation
+        # L'intro par clip est coupee par build() : posee une seule fois par
+        # la compilation.
         production = {"aspect": options.aspect(), "fill_mode": options.fill_mode(),
                       "fit_mode": options.fit_mode(), "subtitle_style": options.subtitle_style(),
-                      "editing_overrides": overrides}
-        name = " ".join(self.name_edit.text().split()) or "Compilation"
-        safe = "".join(ch for ch in name if ch not in '<>:"/\\|?*').strip() or "Compilation"
+                      "editing_overrides": dict(options.editing_overrides())}
+        safe = safe_name(self.name_edit.text())
         self.create_btn.setEnabled(False)
         self._thread = _Worker(list(self._chosen), production, folder, safe,
                                self.parts_combo.currentData() or 1,
@@ -357,16 +262,15 @@ class AutoCompilationDialog(QDialog):
             thread.wait()        # un QThread detruit encore actif arrete l'application
 
     def _on_done(self, written) -> None:
-        from video.compilation import MIN_MONETIZABLE_S, caption_text
+        from radar.top_compilation import write_captions
+        from video.compilation import MIN_MONETIZABLE_S
 
         self._release_thread()
         self.create_btn.setEnabled(True)
         self.status_label.setText("")
-        title = " ".join(self.name_edit.text().split())
+        write_captions(written, self.name_edit.text())
         lines = []
-        for index, (path, duration) in enumerate(written, 1):
-            Path(path).with_suffix(".txt").write_text(caption_text(title, index, len(written)),
-                                                     encoding="utf-8")
+        for path, duration in written:
             note = "" if duration >= MIN_MONETIZABLE_S else " (moins d'une minute)"
             lines.append(f"{Path(path).name} — {_fmt(duration)}{note}")
         QMessageBox.information(self, "Compilation créée",

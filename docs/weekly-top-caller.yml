@@ -1,0 +1,57 @@
+# A copier dans le depot PRIVE, sous .github/workflows/weekly-top.yml
+# (avec weekly_compilation.json a la racine du depot prive).
+#
+# Chaque dimanche a 18 h, heure de Paris, appelle la compilation des plus vus
+# definie dans Logiciel-d-coupe (.github/workflows/weekly-top.yml). Le travail
+# tourne dans CE depot : artefact et journaux prives.
+#
+# Secrets a creer ici (Settings > Secrets and variables > Actions) :
+# TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET (ceux de twitch_credentials.txt).
+name: Compilation des plus vus de la semaine
+
+on:
+  schedule:
+    # GitHub planifie en UTC. 18 h a Paris = 16 h UTC en heure d'ete, 17 h UTC
+    # en heure d'hiver : les deux horaires sont declares, et l'etape « heure »
+    # ne garde que celui qui correspond a la saison. Minute 7 : les horaires
+    # « pile » sont les plus encombres chez GitHub (retards).
+    - cron: "7 16 * * 0"
+    - cron: "7 17 * * 0"
+  workflow_dispatch:          # bouton « Run workflow » pour un essai a la main
+
+concurrency:
+  group: weekly-top
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  heure:
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.check.outputs.go }}
+    steps:
+      - id: check
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ -z "$SCHEDULE" ]; then echo "go=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          offset=$(TZ=Europe/Paris date +%z)          # +0200 ete, +0100 hiver
+          if { [ "$offset" = "+0200" ] && [ "$SCHEDULE" = "7 16 * * 0" ]; } || \
+             { [ "$offset" = "+0100" ] && [ "$SCHEDULE" = "7 17 * * 0" ]; }; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  compilation:
+    needs: heure
+    if: needs.heure.outputs.go == 'true'
+    uses: iWeeZyy/Logiciel-d-coupe/.github/workflows/weekly-top.yml@main
+    with:
+      config-path: weekly_compilation.json
+      retention-days: 3
+    secrets:
+      TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+      TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}

@@ -103,7 +103,7 @@ def test_production_d_un_clip(tmp_path, monkeypatch):
     sans l'intro, et devient un projet de « Mes projets »."""
     import pipeline
     from gui import settings_store
-    from gui.radar import auto_compilation_dialog as dialog_module
+    from radar import top_compilation as dialog_module
     from radar.analysis import media
 
     source = tmp_path / "source.mp4"
@@ -118,7 +118,7 @@ def test_production_d_un_clip(tmp_path, monkeypatch):
         return [SimpleNamespace(file_name="clips/clip_01.mp4")]
 
     monkeypatch.setattr(pipeline, "run", fake_run)
-    path = dialog_module._produce_clip(_clip("top", 9000), {"editing_overrides": {"intro": False}},
+    path = dialog_module.produce_clip(_clip("top", 9000), {"editing_overrides": {"intro": False}},
                                        None)
     assert path.endswith("clips/clip_01.mp4") and str(tmp_path / "projets") in path
     assert seen == {"intro": False, "whole": True}
@@ -136,7 +136,7 @@ class TestCadrage:
     def _produce(self, tmp_path, monkeypatch, fit, portrait):
         import pipeline
         from gui import settings_store
-        from gui.radar import auto_compilation_dialog as dialog_module
+        from radar import top_compilation as dialog_module
         from radar.analysis import media
 
         landscape = tmp_path / "paysage.mp4"
@@ -145,7 +145,7 @@ class TestCadrage:
         monkeypatch.setattr(settings_store, "projects_dir", lambda: tmp_path / "projets")
         asked = []
         monkeypatch.setattr(dialog_module, "portrait_variant",
-                            lambda opp, token: asked.append(1) or portrait)
+                            lambda opp, token, clips_dir=None: asked.append(1) or portrait)
         seen = {}
 
         def fake_run(settings, cancel_token=None, on_progress=None):
@@ -153,7 +153,7 @@ class TestCadrage:
             return [SimpleNamespace(file_name="clips/clip_01.mp4")]
 
         monkeypatch.setattr(pipeline, "run", fake_run)
-        dialog_module._produce_clip(_clip("top", 9000),
+        dialog_module.produce_clip(_clip("top", 9000),
                                     {"aspect": "9:16", "fit_mode": fit,
                                      "editing_overrides": {"intro": False}}, None)
         return seen, landscape, asked
@@ -171,7 +171,7 @@ class TestCadrage:
         assert seen == {"input": str(landscape), "fit": "recadrer"}
 
     def test_version_portrait_dans_un_dossier_a_part(self, tmp_path, monkeypatch):
-        from gui.radar import auto_compilation_dialog as dialog_module
+        from radar import top_compilation as dialog_module
         from radar import clip_download
         from radar.analysis import media
         from video import ffmpeg_utils

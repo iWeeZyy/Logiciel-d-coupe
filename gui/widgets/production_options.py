@@ -21,32 +21,14 @@ from PySide6.QtWidgets import (
 )
 
 from editing import delire, presets
+# Modules proposes a la coche et leurs valeurs par defaut. Source unique
+# (editing/production.py) : l'accueil, le Radar et la compilation automatique
+# de la semaine la lisent, ils n'en tiennent pas chacun la leur.
+from editing.production import DEFAULT_OFF as _DEFAULT_OFF
+from editing.production import QUICK_MODULES
 from video import watermark
 from video.cropper import ASPECT_LANDSCAPE, ASPECT_PORTRAIT
 from video.filter_graph import FIT_CROP, FIT_SPLIT_WEBCAM, FIT_WHOLE
-
-# Modules proposes a la coche. Source unique : l'accueil et le Radar lisent
-# cette liste, ils n'en tiennent pas chacun la leur.
-QUICK_MODULES = [
-    ("context_detection", "Contexte"),
-    ("framing", "Cadrage intelligent"),
-    ("montage", "Montage auto"),
-    ("captions", "Sous-titres"),
-    # "Titres" et "Descriptions" sont deux cases distinctes dans la demande,
-    # mais un seul module ici : editing/metadata.py les extrait ensemble, du
-    # meme texte et du meme classement de phrases. Deux interrupteurs pour un
-    # seul mecanisme donneraient une case sans effet propre.
-    ("metadata", "Titres et descriptions"),
-    ("thumbnails", "Miniatures"),
-    ("watermark", "Filigrane"),
-    ("intro", "Intro ClipsOfStreams"),
-    ("delire", "Délire"),
-]
-
-# Les modules DECOCHES au demarrage. Tous les autres sont actifs par defaut,
-# parce qu'ils ameliorent un clip ; le delire est un parti pris esthetique, pas
-# une amelioration, et il n'a rien a faire sur un clip sobre.
-_DEFAULT_OFF = {"delire"}
 
 LANDSCAPE_HINT = ("L'image d'origine est conservée : aucun recadrage, "
                   "donc pas de cadrage intelligent.")
@@ -95,16 +77,9 @@ _DELIRE_THEMES = [("", "Aucun — rafales classiques")] + [
 
 
 def _watermark_config() -> dict:
-    """La section « watermark » de config/editing.json, ou {}.
+    from editing.production import watermark_config
 
-    Lue a la construction : un fichier illisible ne doit pas empecher la page
-    de s'afficher, le menu se contente alors du repli du module."""
-    try:
-        from core.config_loader import _load_editing_config
-
-        return (_load_editing_config() or {}).get("watermark") or {}
-    except Exception:                                  # pragma: no cover
-        return {}
+    return watermark_config()
 
 
 class ProductionOptionsBox(QWidget):
@@ -426,30 +401,13 @@ class ProductionOptionsBox(QWidget):
         grisee, mais renvoyer sa valeur cochee laisserait le pipeline croire
         qu'on la lui demande.
         """
-        overrides = {key: box.isChecked() for key, box in self.boxes.items()}
-        if self.keeps_whole_image():
-            overrides["framing"] = False
-        # Le filigrane porte DEUX informations : actif ou non, et lequel. D'ou
-        # un dictionnaire la ou les autres modules se contentent d'un booleen
-        # -- le controleur accepte les deux formes.
-        choice = self.watermark_choice()
-        if choice:
-            overrides["watermark"] = {"enabled": bool(overrides.get("watermark")),
-                                      "choice": choice}
-        # Meme forme pour le delire : actif ou non, a quel cran, avec quel
-        # theme ("" = aucun -- le cran commande alors seul, comme avant).
-        overrides["delire"] = {"enabled": bool(overrides.get("delire")),
-                               "level": self.delire_level(),
-                               "theme": self.theme()}
-        # Le style de montage ajoute ce que les cases ne savent pas exprimer :
-        # l'ampleur et le nombre des zooms. Il vient APRES, mais ne peut pas
-        # contredire les cases -- son bloc « delire » est reecrit juste en
-        # dessous avec l'etat reellement affiche, qui reste la verite.
-        for module, override in presets.editing_overrides(self.preset()).items():
-            if module == "delire":
-                continue
-            overrides[module] = override
-        return overrides
+        from editing.production import build_overrides
+
+        return build_overrides({key: box.isChecked() for key, box in self.boxes.items()},
+                               aspect=self.aspect(), fit_mode=self.fit_mode(),
+                               watermark_choice=self.watermark_choice(),
+                               delire_level=self.delire_level(), theme=self.theme(),
+                               preset=self.preset())
 
     def watermark_choice(self) -> str:
         """Cle de la chaine choisie, ou "" si le catalogue est vide."""

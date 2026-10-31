@@ -38,6 +38,13 @@ def main() -> int:
         from news_story.auto_top import main_cli
 
         return main_cli()
+    # Compilation des clips Twitch les plus vus de la semaine, sans fenetre
+    # (radar/weekly_top.py) -- lancee par GitHub Actions, sur un serveur sans
+    # ecran : aucun module Qt n'est importe sur ce chemin.
+    if "--weekly-top" in sys.argv[1:]:
+        from radar.weekly_top import main_cli as weekly_top
+
+        return weekly_top()
     try:
         from gui.app import main as run_gui
 

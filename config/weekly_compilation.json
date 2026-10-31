@@ -1,0 +1,18 @@
+{
+  "_comment": "Compilation automatique des clips Twitch les plus vus de la semaine (python gui_main.py --weekly-top, voir radar/weekly_top.py et la section Compilations du README). Ce fichier est un MODELE, vide : la vraie liste vit dans le depot prive qui lance la compilation, passee avec --config.",
+
+  "_streamers": "Logins Twitch a compiler, une compilation par streamer. Un login absent de « authorized » est REFUSE et signale, jamais compile.",
+  "streamers": [],
+
+  "_authorized": "Remplace, pour ce mode automatique seulement, la confirmation « Vérification des droits » de la fenetre : un streamer n'y figure qu'avec la date (AAAA-MM-JJ) a laquelle il a donne son accord. Sans date valable, ou avec une date future, il n'est pas autorise. Exemple : {\"login\": \"anyme023\", \"authorized_on\": \"2026-10-12\", \"note\": \"accord par message privé\"}",
+  "authorized": [],
+
+  "count": 5,
+  "parts": 1,
+  "countdown": true,
+  "transitions": true,
+  "intro": true,
+
+  "_production": "Traitement de chaque clip : par defaut, celui d'une fenetre qu'on n'a pas touchee (9:16, recadrage sur le visage, sous-titres, filigrane…). Cles possibles : aspect, fit_mode (recadrer / entier / webcam_gameplay), fill_mode, preset, modules ({\"captions\": false…}), watermark, subtitle_style.",
+  "production": {}
+}
