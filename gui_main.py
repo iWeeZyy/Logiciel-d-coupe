@@ -45,6 +45,12 @@ def main() -> int:
         from radar.weekly_top import main_cli as weekly_top
 
         return weekly_top()
+    # Bande-annonce ActuaFilms automatique (news_story/auto_trailer.py) : la
+    # fenetre « Créer un visuel » y est ouverte sans ecran (Qt offscreen).
+    if "--auto-trailer" in sys.argv[1:]:
+        from news_story.auto_trailer import main_cli as auto_trailer
+
+        return auto_trailer()
     try:
         from gui.app import main as run_gui
 

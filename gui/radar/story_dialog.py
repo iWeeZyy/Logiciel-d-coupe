@@ -224,39 +224,18 @@ class _VideoExportThread(QThread):
         self.cancel_token = cancel_token
 
     def run(self) -> None:
-        from news_story.video_composer import compose_video
+        from news_story.video_export import VostUnavailable, export_video
         from utils.errors import CancelledError
-        from youtube.downloader import download_video
 
         try:
-            with tempfile.TemporaryDirectory(prefix="clipfarming_article_video_") as workdir:
-                self.status.emit("Téléchargement de la vidéo…")
-
-                def progress(fraction, done_mb, total_mb):
-                    if fraction is not None:
-                        self.status.emit(f"Téléchargement de la vidéo… {int(fraction * 100)} %")
-
-                source = download_video(self.video_url, workdir, consent_confirmed=True,
-                                        max_height=1080, on_progress=progress,
-                                        cancel_token=self.cancel_token)
-                cues = None
-                if self.french_subtitles:
-                    from news_story.vost import VostError, french_cues
-
-                    try:
-                        cues = french_cues(source, on_status=self.status.emit,
-                                           cancel_token=self.cancel_token)
-                    except VostError as error:
-                        self.failed.emit(f"Sous-titres français impossibles : {error}\n\n"
-                                         "Décoche « Sous-titres français » pour exporter sans.")
-                        return
-                self.status.emit("Montage de la vidéo 9:16… (cela peut prendre une minute)")
-                compose_video(source, self.out_path, title=self.title, label=self.label,
-                              logo_path=Path(self.logo_path) if self.logo_path else None,
-                              text_opacity=self.text_opacity, title_scale=self.title_scale,
-                              subtitle=self.subtitle, cta=self.cta,
-                              cancel_token=self.cancel_token, french_subtitles=cues,
-                              intro=self.intro)
+            export_video(self.video_url, self.out_path, title=self.title, label=self.label,
+                         logo_path=self.logo_path, text_opacity=self.text_opacity,
+                         title_scale=self.title_scale, subtitle=self.subtitle, cta=self.cta,
+                         french_subtitles=self.french_subtitles, intro=self.intro,
+                         on_status=self.status.emit, cancel_token=self.cancel_token)
+        except VostUnavailable as error:
+            self.failed.emit(f"Sous-titres français impossibles : {error}\n\n"
+                             "Décoche « Sous-titres français » pour exporter sans.")
         except CancelledError:
             self.cancelled.emit()
         except Exception as error:  # noqa: BLE001 -- message montre a l'utilisateur
@@ -851,27 +830,37 @@ class StoryDialog(QDialog):
         self._export_thread.failed.connect(self._on_export_failed)
         self._export_thread.start()
 
-    def _export_video(self) -> None:
-        from news_story.story_composer import post_subtitle, post_text
+    def video_job(self) -> dict:
+        """Reglages de l'export video tels que la fenetre les montre --
+        partages avec la bande-annonce automatique (news_story/auto_trailer.py),
+        qui ouvre cette fenetre sans ecran pour les lire."""
+        from news_story.story_composer import _branding_path, post_subtitle, post_text
 
+        options = self._current_options()
+        title, label = post_text(options, get_template(TEMPLATE_VIDEO))
+        logo = self._logo_path if self.branding_check.isChecked() else None
+        if self.branding_check.isChecked() and not logo:
+            logo = str(_branding_path(options))
+        return {"video_url": self._video_url, "title": title, "label": label,
+                "logo_path": logo, "text_opacity": options.text_opacity,
+                "title_scale": options.title_scale, "subtitle": post_subtitle(options),
+                "cta": options.cta, "french_subtitles": self.vost_check.isChecked(),
+                "intro": options.intro}
+
+    def _export_video(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self, "Exporter la vidéo", f"video_{self.article.article_id}.mp4", "Vidéo MP4 (*.mp4)")
         if not path:
             return
         if not path.lower().endswith(".mp4"):
             path += ".mp4"
-        options = self._current_options()
-        title, label = post_text(options, get_template(TEMPLATE_VIDEO))
-        logo = self._logo_path if self.branding_check.isChecked() else None
-        if self.branding_check.isChecked() and not logo:
-            from news_story.story_composer import _branding_path
-            logo = str(_branding_path(options))
+        job = self.video_job()
         self.export_btn.setEnabled(False)
         self._export_thread = _VideoExportThread(
-            self._video_url, path, title, label, logo, options.text_opacity,
-            options.title_scale, self._cancel_token, subtitle=post_subtitle(options),
-            cta=options.cta, french_subtitles=self.vost_check.isChecked(),
-            intro=options.intro)
+            job["video_url"], path, job["title"], job["label"], job["logo_path"],
+            job["text_opacity"], job["title_scale"], self._cancel_token,
+            subtitle=job["subtitle"], cta=job["cta"],
+            french_subtitles=job["french_subtitles"], intro=job["intro"])
         self._export_thread.status.connect(self.status_label.setText)
         self._export_thread.ready.connect(self._on_export_ready)
         self._export_thread.failed.connect(self._on_export_failed)

@@ -1,0 +1,33 @@
+# A copier dans le depot PRIVE, sous .github/workflows/bande-annonce.yml.
+#
+# Bande-annonce ActuaFilms : lancee chaque jour par Claude (tache programmee
+# de la session), qui envoie ensuite le lien et la legende quand une video a
+# ete faite. Le rythme (2-3 jours, selon les sorties) est decide par le
+# logiciel lui-meme (news_story/auto_trailer.py) : un jour sans rien a faire
+# se termine en une minute.
+#
+# Secret : ANTHROPIC_API_KEY (sous-titres francais des bandes-annonces en VO).
+name: Bande-annonce ActuaFilms
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Essai : ignorer le rythme"
+        type: boolean
+        default: false
+
+concurrency:
+  group: bande-annonce
+  cancel-in-progress: false
+
+jobs:
+  bande-annonce:
+    permissions:
+      contents: write
+    uses: iWeeZyy/Logiciel-d-coupe/.github/workflows/auto-trailer.yml@main
+    with:
+      force: ${{ inputs.force }}
+      retention-days: 3
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
