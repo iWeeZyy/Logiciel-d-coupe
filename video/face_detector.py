@@ -84,7 +84,10 @@ class YuNetDetector:
         self.model_path = model_path
         self._detector = None
 
-    def detect(self, frame, confidence_threshold: float, max_faces: int) -> list[FaceBox]:
+    def detect(self, frame, confidence_threshold: float, max_faces: int,
+               matcher=None) -> list[FaceBox]:
+        """`matcher` (video/face_identity.py) : chaque visage est aussi
+        compare a la personne a suivre, sur l'image d'origine."""
         import cv2
 
         h, w = frame.shape[:2]
@@ -107,7 +110,15 @@ class YuNetDetector:
             x2, y2 = min(1.0, (x + fw) / size[0]), min(1.0, (y + fh) / size[1])
             if x2 - x1 <= 0.005 or y2 - y1 <= 0.005:
                 continue
-            boxes.append(FaceBox(x=x1, y=y1, w=x2 - x1, h=y2 - y1, confidence=float(face[-1])))
+            identity = -1.0
+            if matcher is not None:
+                # Ligne YuNet ramenee a la resolution d'origine (boite + 5
+                # reperes) : l'alignement se fait sur l'image complete.
+                row = face.copy()
+                row[:14] = row[:14] / scale
+                identity = matcher.score(frame, row)
+            boxes.append(FaceBox(x=x1, y=y1, w=x2 - x1, h=y2 - y1, confidence=float(face[-1]),
+                                 identity=identity))
         boxes.sort(key=lambda b: b.area, reverse=True)
         return boxes[:max_faces]
 
@@ -156,6 +167,9 @@ class FaceBox:
     w: float
     h: float
     confidence: float
+    # Ressemblance avec la personne a suivre (video/face_identity.py), -1 si
+    # aucune personne n'est donnee ou le visage n'a pas pu etre compare.
+    identity: float = -1.0
 
     @property
     def cx(self) -> float:
@@ -190,7 +204,7 @@ class FaceCropHint:
 
 
 def detect_faces_in_frame(net, frame, confidence_threshold: float = 0.6,
-                          max_faces: int = 4) -> list[FaceBox]:
+                          max_faces: int = 4, matcher=None) -> list[FaceBox]:
     """Detection de visages sur UNE image deja chargee (BGR, comme OpenCV les
     lit), triee du plus grand au plus petit. Extrait de detect_face_track pour
     que le meme calcul serve aussi a une image seule (thumbnailer.py, et le
@@ -198,7 +212,7 @@ def detect_faces_in_frame(net, frame, confidence_threshold: float = 0.6,
     extraction QUE la copie video ici et une copie quasi identique dans
     thumbnailer.py, aucune des deux appelable sur une image independante."""
     if isinstance(net, YuNetDetector):
-        return net.detect(frame, confidence_threshold, max_faces)
+        return net.detect(frame, confidence_threshold, max_faces, matcher=matcher)
 
     import cv2
 
@@ -294,6 +308,7 @@ def detect_face_track(
     max_samples: int = 160,
     confidence_threshold: float = 0.6,
     max_faces: int = 2,
+    matcher=None,
 ) -> list[FaceSample]:
     """Position des visages au fil du clip. Liste vide si le modele, OpenCV ou
     la video ne sont pas exploitables -- l'appelant retombe alors sur un
@@ -319,7 +334,8 @@ def detect_face_track(
             if not ret or frame is None:
                 continue
 
-            boxes = detect_faces_in_frame(net, frame, confidence_threshold, max_faces)
+            boxes = detect_faces_in_frame(net, frame, confidence_threshold, max_faces,
+                                          matcher=matcher)
 
             activity: list[float] = []
             current: list[tuple[FaceBox, object]] = []

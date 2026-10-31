@@ -170,8 +170,25 @@ def run(
         on_progress=on_progress,
     )
     tmp_dir = tempfile.mkdtemp(prefix="clip_farming_")
+    # Le cache de transcription reste attache a la source d'origine : le son
+    # ne change pas quand on retire des bandes noires de l'image.
+    original_input = input_path
 
     try:
+        # [0] Bandes noires incrustees dans la source (video/letterbox.py) :
+        # en 9:16, on recadre DANS la zone utile, pas dans l'ecran entier.
+        if settings.target_size()[1] > settings.target_size()[0]:
+            from video.letterbox import crop_to_content, detect_content_box
+
+            box = detect_content_box(str(input_path))
+            if box is not None:
+                logger.info(f"Bandes noires dans la source : zone utile {box.w}x{box.h} "
+                            f"en ({box.x}, {box.y}), le reste est ecarte.")
+                input_path = Path(crop_to_content(
+                    str(input_path), str(Path(tmp_dir) / "source_sans_bandes.mp4"), box,
+                    cancel_token=cancel_token))
+                src_w, src_h = ffmpeg_utils.video_resolution(str(input_path))
+
         # [1] Extraction audio
         if cancel_token:
             cancel_token.check()
@@ -185,7 +202,7 @@ def run(
         progress.step(STEP_TRANSCRIPTION)
         transcript = None
         if not settings.no_cache:
-            transcript = transcript_cache.load(str(input_path), settings.model, settings.language)
+            transcript = transcript_cache.load(str(original_input), settings.model, settings.language)
             if transcript is not None:
                 logger.info("Transcription recuperee depuis le cache (.cache/) -- Whisper non relance.")
         if transcript is None:
@@ -214,7 +231,7 @@ def run(
                 on_download_progress=_on_download,
             )
             if not settings.no_cache:
-                transcript_cache.save(str(input_path), settings.model, settings.language, transcript)
+                transcript_cache.save(str(original_input), settings.model, settings.language, transcript)
 
         # [3] Analyse des hooks
         if cancel_token:
@@ -666,6 +683,13 @@ def _analyse_framing(
     if not face_cfg.get("enabled", True) and not tracking:
         return None, None, None
 
+    # Personne a suivre (photo de reference, video/face_identity.py) : quand
+    # elle est a l'ecran, le cadrage la suit ; sinon, la personne qui parle.
+    matcher = None
+    if tracking and framing_cfg.get("subject_photos"):
+        from video.face_identity import load_matcher
+
+        matcher = load_matcher(framing_cfg.get("subject_photos"))
     samples = detect_face_track(
         video_path, candidate.start, candidate.end,
         sample_interval_s=float(framing_cfg.get("sample_interval_s", 0.5)) if tracking
@@ -677,8 +701,18 @@ def _analyse_framing(
         # gameplay dans le MEME echantillon pour les distinguer (voir
         # editing/subject.py) -- 2 suffit au cadrage classique, qui n'a que
         # l'incrustation a ecarter, jamais a l'identifier separement.
-        max_faces=(3 if split_webcam else 2) if tracking else 1,
+        # Tous les visages d'un plateau (jusqu'a `max_faces`, 6 par defaut) :
+        # limite a deux, celui qui parle n'etait parfois meme pas regarde.
+        max_faces=(3 if split_webcam else int(framing_cfg.get("max_faces", 6))) if tracking else 1,
+        **({"matcher": matcher} if matcher is not None else {}),
     )
+    if matcher is not None:
+        from video.face_identity import keep_target
+
+        samples, presence = keep_target(samples)
+        logger.info(f"Personne à suivre reconnue sur {presence:.0%} des images analysées."
+                    if presence else "Personne à suivre absente du clip : cadrage sur "
+                                     "la personne qui parle.")
     face_hint = crop_hint_from_track(samples)
 
     if not tracking:
@@ -708,6 +742,7 @@ def _analyse_framing(
         deadzone_frac=float(framing_cfg.get("deadzone_frac", 0.02)),
         max_keyframes=int(framing_cfg.get("max_keyframes", 60)),
         static_movement_threshold=float(framing_cfg.get("static_movement_threshold", 0.03)),
+        crop_width_frac=_crop_width_frac(video_path, settings),
     )
 
     webcam_plan = None
@@ -723,6 +758,19 @@ def _analyse_framing(
         )
 
     return face_hint, plan, webcam_plan
+
+
+def _crop_width_frac(video_path: str, settings) -> float | None:
+    """Largeur du cadre de sortie en fraction de la largeur de la source (le
+    cadre garde toute la hauteur) ; None en paysage, ou rien n'est recadre."""
+    out_w, out_h = settings.target_size()
+    if out_h <= out_w:
+        return None
+    try:
+        src_w, src_h = ffmpeg_utils.video_resolution(video_path)
+    except Exception:  # noqa: BLE001 -- sans dimensions, comportement d'avant
+        return None
+    return min(1.0, (src_h * out_w / out_h) / src_w) if src_w else None
 
 
 def _delire_cues(cfg: dict) -> dict:

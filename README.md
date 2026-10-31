@@ -471,6 +471,26 @@ vrais clips (streamer filme de loin dans sa piece), le visage fait ~1,3 % de
 l'image, comme une webcam incrustee -- il envoyait ces clips vers la version
 portrait floutee de Twitch au lieu de suivre le visage.
 
+**Plateau a plusieurs, bandes noires, streamer a suivre** (compilation de
+Squeezie, 2026-10-31) :
+- *Bandes noires incrustees dans la source* (`video/letterbox.py`) : un flux
+  « cinema » ne montre la camera que dans une bande (2560x720 au milieu d'un
+  2560x1440), avec du noir et des logos de sponsors autour. En 9:16, le
+  pipeline recadre desormais DANS la zone utile. Une ligne est une bande
+  quand moins de 12 % de ses pixels sont clairs (un logo n'y change rien) sur
+  au moins 75 % des images ; rien n'est coupe en dessous de 8 % de la hauteur.
+- *Plateau* : jusqu'a 6 visages regardes (au lieu de 2) pour trouver celui qui
+  parle ; quand personne ne se detache et que le groupe est plus large que le
+  cadre 9:16, le cadrage reste sur la derniere personne suivie (sinon le plus
+  grand visage) au lieu de cadrer le vide entre deux personnes.
+- *Streamer a suivre* (`video/face_identity.py`) : avec une photo de
+  reference (cle `faces` de la configuration de la compilation, ex.
+  `"faces": {"squeezie": ["visages/squeezie.png"]}`), chaque visage est
+  compare a la photo (SFace, OpenCV Zoo, Apache 2.0, 39 Mo telecharges une
+  fois -- pas livre avec l'application). Reconnu : le cadrage le suit ;
+  absent : la personne qui parle. Essai reel : reconnu sur 96 % des images
+  d'un clip a cinq, scores 0,61-0,71 contre moins de 0,25 pour les autres.
+
 **Detection des visages : YuNet** (`video/face_detector.py`,
 `assets/models/face_detection_yunet_2023mar.onnx`, licence MIT, livre avec
 l'application), Res10 en repli. Sur un clip reel (streamer de loin, perruque,

@@ -122,14 +122,17 @@ class TestModeClassique:
         assert framing_plan is None
         assert webcam_plan is None
 
-    def test_cadrage_intelligent_active_suit_deux_visages_au_plus(self, monkeypatch):
+    def test_cadrage_intelligent_active_regarde_tout_le_plateau(self, monkeypatch):
+        """Jusqu'a 6 visages (et non plus 2) : sur un plateau a cinq
+        (compilation de Squeezie, 2026-10-31), celui qui parle n'etait parfois
+        meme pas parmi les deux visages regardes."""
         stub = _AppelsEnregistres(_echantillons_avec_webcam())
         monkeypatch.setattr(pipeline, "detect_face_track", stub)
         face_hint, framing_plan, webcam_plan = pipeline._analyse_framing(
             _settings("recadrer", framing_enabled=True), "video.mp4", _candidat(),
             AudioAnalyzerJamaisAppele(), face_cfg={},
         )
-        assert stub.calls == [{"max_faces": 2}]
+        assert stub.calls == [{"max_faces": 6}]
         assert isinstance(framing_plan, FramingPlan)
         assert webcam_plan is None, "webcam_plan doit rester None hors mode split"
 

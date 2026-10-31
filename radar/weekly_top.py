@@ -155,6 +155,35 @@ def _signal_github(report: Report) -> None:
                 f.write(f"\n### Légende — {login}\n\n```\n{text}\n```\n")
 
 
+# ------------------------------------------------------- visage a suivre
+
+def face_photos(config: dict, login: str, config_dir) -> list[str]:
+    """Photos de reference du streamer (cle « faces » de la configuration,
+    chemins relatifs au fichier de configuration) qui existent vraiment."""
+    entries = ((config.get("faces") or {}).get(login) or [])
+    base = Path(config_dir) if config_dir else Path(".")
+    paths = [base / str(e) for e in (entries if isinstance(entries, list) else [entries])]
+    found = [str(p) for p in paths if p.is_file()]
+    for p in paths:
+        if not p.is_file():
+            logger.warning(f"Photo de référence introuvable pour {login} : {p}")
+    return found
+
+
+def with_face(production: dict, config: dict, login: str, config_dir) -> dict:
+    """Le traitement, avec la photo du streamer pour que le cadrage le suive
+    quand il est a l'ecran (video/face_identity.py). Sans photo : inchange."""
+    photos = face_photos(config, login, config_dir)
+    if not photos:
+        return production
+    overrides = dict(production.get("editing_overrides") or {})
+    framing = overrides.get("framing", True)
+    block = dict(framing) if isinstance(framing, dict) else {"enabled": bool(framing)}
+    block["subject_photos"] = photos
+    overrides["framing"] = block
+    return {**production, "editing_overrides": overrides}
+
+
 # -------------------------------------------------------------------- run
 
 def _make_engine(store, adapter=None):
@@ -170,7 +199,8 @@ def _make_engine(store, adapter=None):
     return engine, adapter, max_results
 
 
-def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, adapter=None,
+def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=None,
+        adapter=None,
         builder=None, today: date | None = None, now: datetime | None = None,
         on_status=logger.info) -> Report:
     """Une compilation par streamer autorise. Ne leve que si la configuration
@@ -255,7 +285,8 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, adapter=None,
         for i, o in enumerate(kept, 1):
             on_status(f"  {i}. {o.title} — {o.view_count} vues, {o.duration_s} s")
         try:
-            written = builder(kept, production, out_dir, name=safe_name(title), parts=parts,
+            written = builder(kept, with_face(production, config, auth.login, config_dir),
+                              out_dir, name=safe_name(title), parts=parts,
                               countdown=bool(config.get("countdown", True)),
                               intro=bool(config.get("intro", True)),
                               transitions=bool(config.get("transitions", True)),
@@ -289,7 +320,8 @@ def main_cli(argv=None) -> int:
     try:
         config = load_config(args.config)
         report = run(config, args.out, args.work_dir or args.out.parent / "_travail",
-                     only=args.only or None)
+                     only=args.only or None,
+                     config_dir=(args.config or default_config_path()).parent)
     except Exception as e:  # noqa: BLE001 -- tache de fond : on journalise
         logger.error(f"Compilation de la semaine : {e}")
         print(f"::error::{e}" if os.environ.get("GITHUB_ACTIONS") == "true" else str(e))

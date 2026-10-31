@@ -68,8 +68,15 @@ def choose_targets(
     two_faces_min_distance_frac: float = 0.18,
     vertical_bias: float = 0.42,
     subject_filter=None,
+    crop_width_frac: float | None = None,
 ) -> tuple[list[FramingKeyframe], str]:
     """Cible brute a chaque echantillon, plus le mode retenu.
+
+    `crop_width_frac` : largeur du cadre 9:16 en fraction de l'image. Quand le
+    groupe est plus large que le cadre (plateau a cinq dans une bande large,
+    signale sur une compilation de Squeezie), cadrer son milieu montrerait le
+    vide entre deux personnes : on reste alors sur la derniere personne qui a
+    parle, a defaut sur le plus grand visage. None : comportement d'avant.
 
     `vertical_bias` place le visage un peu au-dessus du centre du cadre (0.42 =
     aux deux cinquiemes) : un visage exactement centre en 9:16 laisse un vide
@@ -93,6 +100,7 @@ def choose_targets(
 
     targets: list[FramingKeyframe] = []
     modes: list[str] = []
+    last_cx: float | None = None          # derniere personne suivie
 
     for sample in samples:
         if not sample.faces:
@@ -107,7 +115,18 @@ def choose_targets(
             spread = max(b.cx for b in boxes) - min(b.cx for b in boxes)
             focus = speaker_at(speaker_decisions or [], sample.t)
 
-            if spread >= two_faces_min_distance_frac and focus is None:
+            too_wide = crop_width_frac is not None and spread > crop_width_frac * 0.9
+            if focus is None and too_wide:
+                # Le groupe ne tient pas dans le cadre : on reste sur la
+                # personne suivie jusqu'ici (celle qui parlait), sinon sur le
+                # plus grand visage -- jamais sur le vide entre deux.
+                if last_cx is None:
+                    chosen = max(boxes, key=lambda b: b.area)
+                else:
+                    chosen = min(boxes, key=lambda b: abs(b.cx - last_cx))
+                cx, cy = chosen.cx, chosen.cy
+                modes.append(MODE_TRACK)
+            elif spread >= two_faces_min_distance_frac and focus is None:
                 # Plusieurs personnes distinctes, aucun locuteur identifie de
                 # facon sure : on cadre le groupe plutot que de parier. Avec
                 # deux visages, ce barycentre est exactement leur milieu --
@@ -123,6 +142,7 @@ def choose_targets(
             cx, cy = ordered[0][0].cx, ordered[0][0].cy
             modes.append(MODE_TRACK)
 
+        last_cx = cx
         targets.append(FramingKeyframe(t=sample.t, cx=_clamp01(cx), cy=_clamp01(cy - (0.5 - vertical_bias))))
 
     mode = MODE_BOTH if modes.count(MODE_BOTH) > len(modes) / 2 else MODE_TRACK
@@ -189,6 +209,7 @@ def build_framing_plan(
     max_keyframes: int = 60,
     static_movement_threshold: float = 0.03,
     subject_filter=None,
+    crop_width_frac: float | None = None,
 ) -> FramingPlan:
     """Trajectoire de cadrage, ou plan statique si le suivi n'est pas fiable.
 
@@ -208,7 +229,7 @@ def build_framing_plan(
 
     targets, mode = choose_targets(
         with_faces, speaker_decisions, two_faces_min_distance_frac, vertical_bias,
-        subject_filter=subject_filter,
+        subject_filter=subject_filter, crop_width_frac=crop_width_frac,
     )
     if not targets:
         return FramingPlan((), MODE_STATIC, 0.0, ("aucune cible exploitable",))

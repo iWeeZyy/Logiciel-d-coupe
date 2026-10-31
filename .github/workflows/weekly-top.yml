@@ -89,13 +89,14 @@ jobs:
             requirements.txt > "$RUNNER_TEMP/requirements-sans-fenetre.txt"
           python -m pip install -q -r "$RUNNER_TEMP/requirements-sans-fenetre.txt"
 
-      - name: Modeles Whisper (cache)
+      - name: Modeles Whisper et reconnaissance des visages (cache)
         uses: actions/cache@v4
         with:
           path: |
             app/whisper-models
+            app/.cache/models
             ~/.cache/huggingface
-          key: whisper-${{ runner.os }}-v1
+          key: modeles-${{ runner.os }}-v2
 
       - name: Compilation
         working-directory: app
