@@ -1,28 +1,26 @@
 # A copier dans le depot PRIVE, sous .github/workflows/weekly-top.yml
 # (avec weekly_compilation.json a la racine du depot prive).
 #
-# Chaque dimanche a 18 h, heure de Paris, appelle la compilation des plus vus
-# definie dans Logiciel-d-coupe (.github/workflows/weekly-top.yml). Le travail
-# tourne dans CE depot : artefact et journaux prives.
+# Compilation des clips Twitch les plus vus de la semaine, pour UN streamer
+# choisi a chaque fois (demande de Lucas : pas de compilation automatique de
+# toute la liste). Lancee a la main : bouton « Run workflow » (champ
+# « streamer »), ou par Claude apres lui avoir demande lequel.
 #
-# Secrets a creer ici (Settings > Secrets and variables > Actions) :
-# TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET (ceux de twitch_credentials.txt).
+# Appelle le workflow defini dans Logiciel-d-coupe
+# (.github/workflows/weekly-top.yml). Le travail tourne dans CE depot :
+# artefact et journaux prives. Le streamer doit figurer dans « authorized »
+# de weekly_compilation.json, sinon il est refuse.
+#
+# Secrets : TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET.
 name: Compilation des plus vus de la semaine
 
 on:
-  schedule:
-    # GitHub planifie en UTC. 18 h a Paris = 16 h UTC en heure d'ete, 17 h UTC
-    # en heure d'hiver : les deux horaires sont declares, et l'etape « heure »
-    # ne garde que celui qui correspond a la saison. Minute 7 : les horaires
-    # « pile » sont les plus encombres chez GitHub (retards).
-    - cron: "7 16 * * 0"
-    - cron: "7 17 * * 0"
-  workflow_dispatch:          # bouton « Run workflow » pour un essai a la main
+  workflow_dispatch:
     inputs:
       streamer:
-        description: "Un seul streamer pour l'essai (vide = toute la liste)"
+        description: "Le streamer à compiler (login Twitch, ex. anyme023)"
         type: string
-        default: ""
+        required: true
 
 concurrency:
   group: weekly-top
@@ -32,32 +30,13 @@ permissions:
   contents: read
 
 jobs:
-  heure:
-    runs-on: ubuntu-latest
-    outputs:
-      go: ${{ steps.check.outputs.go }}
-    steps:
-      - id: check
-        env:
-          SCHEDULE: ${{ github.event.schedule }}
-        run: |
-          if [ -z "$SCHEDULE" ]; then echo "go=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          offset=$(TZ=Europe/Paris date +%z)          # +0200 ete, +0100 hiver
-          if { [ "$offset" = "+0200" ] && [ "$SCHEDULE" = "7 16 * * 0" ]; } || \
-             { [ "$offset" = "+0100" ] && [ "$SCHEDULE" = "7 17 * * 0" ]; }; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "go=false" >> "$GITHUB_OUTPUT"
-          fi
-
   compilation:
-    needs: heure
-    if: needs.heure.outputs.go == 'true'
+    if: inputs.streamer != ''
     uses: iWeeZyy/Logiciel-d-coupe/.github/workflows/weekly-top.yml@main
     with:
       config-path: weekly_compilation.json
       retention-days: 3
-      only: ${{ inputs.streamer || '' }}
+      only: ${{ inputs.streamer }}
     secrets:
       TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
       TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}

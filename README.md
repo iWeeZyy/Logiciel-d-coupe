@@ -437,17 +437,22 @@ module Qt n'est importe sur ce chemin (verifie par un test).
 - **GitHub Actions** : `.github/workflows/weekly-top.yml` est un workflow
   REUTILISABLE (`workflow_call`), qui ne se lance jamais seul ici. Le depot
   etant public, ses artefacts seraient telechargeables par n'importe qui : il
-  est appele depuis un depot PRIVE avec `docs/weekly-top-caller.yml` (chaque
-  dimanche 18 h heure de Paris, ete comme hiver, + bouton « Run workflow »).
+  est appele depuis un depot PRIVE avec `docs/weekly-top-caller.yml`, pour
+  UN streamer choisi a chaque lancement (« Run workflow », champ
+  « streamer » obligatoire) : Lucas ne veut pas toute la liste chaque
+  semaine. Pas de planification dans le workflow : une tache programmee
+  de la session Claude lui demande chaque dimanche lequel, puis lance.
   Le travail tourne dans le contexte du depot prive : artefact et journaux
   prives, minutes decomptees la-bas, les builds Windows de ce depot restent
   gratuits. Secrets `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET` dans le depot
   prive. Ubuntu, ffmpeg (libass) + polices Arial (sous-titres), dependances
   de `requirements.txt` sans l'interface ni l'IA locale, modeles Whisper en
   cache ; artefact = video(s) + legende + rapport + 3 images de controle par
-  video, conserve 3 jours. Aucune publication automatique. Le bouton « Run
-  workflow » a un champ « streamer » pour un essai sur un seul (il doit etre
-  autorise lui aussi) ; vide, toute la liste.
+  video, conserve 3 jours. Aucune publication automatique. Le streamer
+  choisi doit etre autorise ; `--only` vide (commande locale) = toute la liste.
+- Essai reel GitHub (2026-10-31, Anyme023, 5 clips) : clips Twitch telecharges
+  sans blocage depuis les serveurs GitHub, compilation en 12 min, run complet
+  13 min 20 s (~15 minutes Actions decomptees).
 - Essai reel local (2026-10-31, 4 coeurs CPU, vrais clips Anyme023
   telecharges, Radar simule faute d'identifiants Twitch ici) : 3 clips en
   10 min, ~3 min par clip, video 1080x1920 de 2 min 13 s.
