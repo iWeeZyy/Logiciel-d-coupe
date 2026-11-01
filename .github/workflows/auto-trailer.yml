@@ -15,6 +15,10 @@ on:
         description: "Ignorer le rythme (essai) ; jamais une bande-annonce deja publiee"
         type: boolean
         default: false
+      film:
+        description: "Ce film-la seulement (titre), au lieu du choix automatique"
+        type: string
+        default: ""
       retention-days:
         type: number
         default: 3
@@ -91,12 +95,14 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORCE: ${{ inputs.force && '--force' || '' }}
+          FILM: ${{ inputs.film }}
         run: |
           cp "$GITHUB_WORKSPACE/appelant/news_publiees.json" news_publiees.json 2>/dev/null || true
           # --sans-youtube : YouTube refuse les serveurs GitHub (« Sign in to
           # confirm you're not a bot », essai du 2026-10-31) ; les videos
           # AlloCine (Dailymotion) y sont servies en 1080p.
-          python gui_main.py --auto-trailer --sans-youtube --out "$RUNNER_TEMP/bande-annonce" $FORCE
+          python gui_main.py --auto-trailer --sans-youtube --out "$RUNNER_TEMP/bande-annonce" $FORCE \
+            ${FILM:+--film "$FILM"}
 
       - name: Memoire des publications
         if: steps.run.outputs.produit == 'true'

@@ -248,9 +248,11 @@ def produce(article, out_dir: Path, on_status=logger.info):
 
 def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         fetch=fetch_trailers, producer=produce, on_status=logger.info,
-        skip_youtube: bool = False, lookup="allocine") -> dict:
+        skip_youtube: bool = False, lookup="allocine", film: str = "") -> dict:
     """{"status": "produit"|"rien"|"erreur", "reason", "title", "video",
-    "caption"}. Ne leve pas."""
+    "caption"}. Ne leve pas. `film` : ce film-la seulement (demande de
+    l'utilisateur), en ignorant le rythme ; jamais une bande-annonce deja
+    publiee."""
     from news_story import published
 
     today = today or date.today()
@@ -258,6 +260,13 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         articles = fetch()
     except Exception as e:  # noqa: BLE001 -- rapporte
         return {"status": "erreur", "reason": f"Fil Bandes-annonces illisible : {e}"}
+    if film:
+        wanted = film_key(type("A", (), {"title": film})())
+        articles = [a for a in articles if film_key(a) == wanted]
+        if not articles:
+            return {"status": "erreur",
+                    "reason": f"« {film} » absent du fil Bandes-annonces d'AlloCiné."}
+        force = True
     if lookup == "allocine":
         from news_story.popularity import lookup as allocine_lookup
 
@@ -302,11 +311,13 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--out", type=Path, default=Path("bande_annonce"))
     parser.add_argument("--force", action="store_true",
                         help="ignorer le rythme (essai) ; jamais une deja publiee")
+    parser.add_argument("--film", default="",
+                        help="ce film-la seulement (titre), au lieu du choix automatique")
     parser.add_argument("--sans-youtube", action="store_true",
                         help="ecarter les videos YouTube (serveur : YouTube les bloque)")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
-    result = run(args.out, force=args.force, skip_youtube=args.sans_youtube)
+    result = run(args.out, force=args.force, skip_youtube=args.sans_youtube, film=args.film)
     print(f"Résultat : {result['status']} — {result.get('reason', '')}", flush=True)
     for line in result.get("skipped") or []:
         print(f"⚠ écartée : {line}", flush=True)

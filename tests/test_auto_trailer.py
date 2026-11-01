@@ -97,12 +97,12 @@ def test_sous_github_actions(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary"))
-    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False: {
+    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False, film="": {
         "status": "produit", "reason": "r", "title": "T", "video": "v.mp4",
         "caption": "Légende\n#cinema"})
     assert at.main_cli(["--auto-trailer"]) == 0
     assert out.read_text(encoding="utf-8").strip() == "produit=true"
-    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False: {"status": "rien", "reason": "x"})
+    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False, film="": {"status": "rien", "reason": "x"})
     assert at.main_cli([]) == 0
     assert out.read_text(encoding="utf-8").strip().endswith("produit=false")
 
@@ -179,3 +179,31 @@ def test_popularite_lecture_et_titre_qui_ne_correspond_pas():
     assert popularity.is_popular(info, TODAY)
     assert not popularity.is_popular(_info(1118, release="2026-08-12"), TODAY)
     assert popularity.is_popular(_info(None, views=250_000), TODAY)
+
+
+def test_film_demande_seulement(tmp_path):
+    """« Fais la bande-annonce Le Fantôme de l'Opéra » : ce film-la, en
+    ignorant le rythme ; absent du fil -> erreur claire, rien d'autre."""
+    from types import SimpleNamespace as A
+
+    articles = [A(title="Karma Bande-annonce VF", url="k", published_at="", source_label="x"),
+                A(title="Le Fantôme de l'Opéra Bande-annonce VF", url="f", published_at="",
+                  source_label="x")]
+    seen = {}
+
+    def fake_decide(arts, published, today, **kw):
+        seen["titles"] = [a.title for a in arts]
+        seen["force"] = kw.get("force")
+        return A(article=None, reason="stop", candidates=[])
+
+    import news_story.auto_trailer as at2
+    original = at2.decide
+    at2.decide = fake_decide
+    try:
+        at2.run(tmp_path, fetch=lambda: articles, lookup=lambda t: None,
+                film="Le Fantôme de l'Opéra")
+        assert seen == {"titles": ["Le Fantôme de l'Opéra Bande-annonce VF"], "force": True}
+        result = at2.run(tmp_path, fetch=lambda: articles, lookup=lambda t: None, film="Dune")
+        assert result["status"] == "erreur" and "Dune" in result["reason"]
+    finally:
+        at2.decide = original
