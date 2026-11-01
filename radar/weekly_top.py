@@ -308,13 +308,18 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
                               countdown=bool(config.get("countdown", True)),
                               intro=bool(config.get("intro", True)),
                               transitions=bool(config.get("transitions", True)),
+                              # Phrase choc sous chaque numero (texte unique) et
+                              # « Dimanche prochain tu veux voir quel top ? »
+                              clip_titles=bool(config.get("clip_titles", True)),
+                              ask_next=bool(config.get("ask_next", True)),
                               on_status=on_status, projects_dir=work_dir / "projets",
                               clips_dir=work_dir / "clips")
         except Exception as e:  # noqa: BLE001 -- rapporte, les autres streamers continuent
             logger.exception(f"Compilation de {auth.login} impossible")
             report.errors.append(f"{auth.login} : compilation impossible ({e})")
             continue
-        captions = write_captions(written, title, creator=creator.label)
+        captions = write_captions(written, title, creator=creator.label,
+                                  ask_next=bool(config.get("ask_next", True)))
         for _path, seconds in written:
             line = f"{auth.login} : vidéo de {int(seconds // 60)} min {int(seconds % 60):02d} s"
             too_long = seconds >= max_seconds + ASK_ABOVE_S and not accept_long

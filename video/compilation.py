@@ -51,6 +51,11 @@ TRANSITION_S = 0.4
 # Pas de fleche « → » : la police du logiciel n'a pas ce glyphe (carre vide).
 NEXT_PART_TEXT = ("La suite dans la PARTIE 2", "Abonne-toi pour ne pas la rater")
 LAST_PART_TEXT = ("Abonne-toi pour la prochaine compil", "")
+# Compilation de la semaine : faire commenter plutot que demander l'abonnement
+# (texte choisi par l'utilisateur, 2026-11-01).
+ASK_NEXT_TEXT = ("Dimanche prochain tu veux voir quel top ?", "Dis-le moi en commentaire !")
+ASK_NEXT_CAPTION = "Dimanche prochain tu veux voir quel top ? Dis-le moi en commentaire ! 👇"
+LABEL_MAX_WORDS = 9
 
 
 def pick_transitions(count: int, rng=None) -> list[str]:
@@ -108,6 +113,7 @@ class Clip:
     path: str
     duration: float
     label: str = ""
+    title: str = ""                 # texte affiche sous le numero (phrase choc du clip)
 
 
 @dataclass
@@ -178,10 +184,30 @@ def badge_rect(out_w: int = OUT_W, out_h: int = OUT_H) -> tuple[int, int]:
             else round(min(out_w, out_h) * BADGE_MARGIN_PERCENT / 100))
 
 
-def draw_badge(number: int, out_path, *, caption: str = "", out_w: int = OUT_W,
-               out_h: int = OUT_H) -> Sticker:
+def wrap_text(draw, text: str, font, max_w: float, max_lines: int = 2) -> list[str]:
+    """Coupe `text` en lignes de largeur `max_w` au plus ; « … » si ca
+    deborde des `max_lines` lignes."""
+    words, lines, current = text.split(), [], ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        if draw.textlength(trial, font=font) <= max_w or not current:
+            current = trial
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip(" ,.;:!?") + "…"
+    return lines
+
+
+def draw_badge(number: int, out_path, *, caption: str = "", label: str = "",
+               out_w: int = OUT_W, out_h: int = OUT_H) -> Sticker:
     """PNG transparent plein cadre : « #3 » dans une pastille rose, avec une
-    petite ligne au-dessus (« PARTIE 2 ») si fournie."""
+    petite ligne au-dessus (« PARTIE 2 ») si fournie, et sous la pastille le
+    `label` du clip (sa phrase choc) s'il y en a un."""
     from PIL import Image, ImageDraw
 
     title_font, small_font = _fonts()
@@ -206,6 +232,22 @@ def draw_badge(number: int, out_path, *, caption: str = "", out_w: int = OUT_W,
                            radius=round(26 * scale), fill=(0, 0, 0, 110))      # ombre
     draw.rounded_rectangle(box, radius=round(26 * scale), fill=BRAND)
     draw.text((x + pad_x - left, y + pad_y - top), text, font=font, fill=(255, 255, 255, 255))
+    if label:
+        font = title_font(round(50 * scale))
+        # Colonne de gauche seulement : l'intro « Follow » occupe la droite de
+        # la meme bande pendant les premieres secondes.
+        lines = wrap_text(draw, f"« {label} »", font, out_w * 0.62 - x, max_lines=3)
+        line_h = round(font.size * 1.22)
+        pad = round(16 * scale)
+        ty = box[3] + round(18 * scale)
+        # Cartouche sombre : lisible meme sur l'interface chargee d'un jeu.
+        width = max(draw.textlength(line, font=font) for line in lines)
+        draw.rounded_rectangle([x, ty, x + width + 2 * pad, ty + line_h * len(lines) + 2 * pad],
+                               radius=round(18 * scale), fill=(0, 0, 0, 190))
+        ty += pad
+        for line in lines:
+            draw.text((x + pad, ty), line, font=font, fill=(255, 255, 255, 255))
+            ty += line_h
     return _save_cropped(image, out_path)
 
 
@@ -222,11 +264,16 @@ def draw_end_card(lines: tuple[str, str], out_path, *, out_w: int = OUT_W,
     big, small = (lines[0] or "").upper(), lines[1] or ""
     big_font, small_font_ = title_font(round(76 * scale)), small_font(round(44 * scale))
     max_w = out_w - 2 * round(90 * scale)
-    while draw.textlength(big, font=big_font) > max_w and big_font.size > 30:
+    # Une phrase longue passe sur deux lignes plutot que de devenir illisible.
+    big_lines = wrap_text(draw, big, big_font, max_w)
+    while any(draw.textlength(line, font=big_font) > max_w for line in big_lines) \
+            and big_font.size > 30:
         big_font = title_font(big_font.size - 4)
-    big_w = draw.textlength(big, font=big_font)
+        big_lines = wrap_text(draw, big, big_font, max_w)
+    big_w = max(draw.textlength(line, font=big_font) for line in big_lines)
     small_w = draw.textlength(small, font=small_font_) if small else 0
-    big_h, small_h = big_font.size * 1.15, (small_font_.size * 1.3 if small else 0)
+    line_h = big_font.size * 1.15
+    big_h, small_h = line_h * len(big_lines), (small_font_.size * 1.3 if small else 0)
     pad = round(28 * scale)
     width = max(big_w, small_w) + 2 * pad
     height = big_h + small_h + 2 * pad
@@ -234,7 +281,9 @@ def draw_end_card(lines: tuple[str, str], out_path, *, out_w: int = OUT_W,
     top = round(out_h * END_CARD_TOP_PERCENT / 100) if out_h > out_w else (out_h - height) / 2
     draw.rounded_rectangle([left, top, left + width, top + height], radius=round(30 * scale),
                            fill=(0, 0, 0, 185), outline=BRAND, width=max(2, round(5 * scale)))
-    draw.text(((out_w - big_w) / 2, top + pad), big, font=big_font, fill=(255, 255, 255, 255))
+    for k, line in enumerate(big_lines):
+        draw.text(((out_w - draw.textlength(line, font=big_font)) / 2, top + pad + k * line_h),
+                  line, font=big_font, fill=(255, 255, 255, 255))
     if small:
         draw.text(((out_w - small_w) / 2, top + pad + big_h), small, font=small_font_,
                   fill=(255, 255, 255, 230))
@@ -396,8 +445,11 @@ def read_clips(paths: list[str]) -> list[Clip]:
 
 def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int = 1,
             countdown: bool = True, intro: bool = True, transitions: bool = True,
-            on_progress=None, cancel_token=None, rng=None) -> list[tuple[Path, float]]:
+            on_progress=None, cancel_token=None, rng=None, labels=None,
+            end_text: tuple[str, str] | None = None) -> list[tuple[Path, float]]:
     """Ecrit la (ou les) partie(s) dans `out_dir` ; renvoie [(fichier, duree)].
+    `labels` : un texte par clip (meme ordre que `paths`, "" = aucun), affiche
+    sous son numero. `end_text` : l'ecran de fin de la derniere partie.
     Leve CompilationError / FfmpegError / CancelledError."""
     import tempfile
 
@@ -406,17 +458,24 @@ def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int 
     say = on_progress or (lambda message: None)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    plan_parts = plan(read_clips(paths), parts, countdown, transitions)
+    clips = read_clips(paths)
+    if labels:
+        from dataclasses import replace
+
+        clips = [replace(c, title=(labels[i] if i < len(labels) else "") or "")
+                 for i, c in enumerate(clips)]
+    plan_parts = plan(clips, parts, countdown, transitions)
     written = []
     with tempfile.TemporaryDirectory(prefix="clipfarming_compilation_") as tmp:
         work = Path(tmp)
         intro_overlay = _intro_overlay(work, OUT_W, OUT_H) if intro else None
         for part in plan_parts:
             caption = f"PARTIE {part.index}" if part.total > 1 else ""
-            badges = tuple(draw_badge(n, work / f"badge_{part.index}_{k}.png", caption=caption)
+            badges = tuple(draw_badge(n, work / f"badge_{part.index}_{k}.png", caption=caption,
+                                      label=part.clips[k].title)
                            for k, n in enumerate(part.numbers))
             last = part.index == part.total
-            card = draw_end_card(LAST_PART_TEXT if last else NEXT_PART_TEXT,
+            card = draw_end_card((end_text or LAST_PART_TEXT) if last else NEXT_PART_TEXT,
                                  work / f"end_{part.index}.png")
             inputs = PartInputs(
                 clips=tuple(part.clips),
@@ -450,15 +509,19 @@ def creator_hashtag(creator: str) -> str:
 
 
 def caption_text(title: str, part_index: int = 1, part_total: int = 1,
-                 creator: str = "") -> str:
+                 creator: str = "", ask_next: bool = False) -> str:
     """Legende proposee pour TikTok (modifiable). Hashtags demandes par
     l'utilisateur : #clip #twitch #stream, le createur, #drole."""
     title = " ".join((title or "").split()) or "Les meilleurs moments de stream"
     lines = [f"{title} 🔥" + (f" (Partie {part_index}/{part_total})" if part_total > 1 else "")]
     if part_total > 1 and part_index < part_total:
         lines.append("La suite dans la partie 2, abonne-toi pour ne pas la rater 👀")
+    elif ask_next:
+        # Une seule question : celle qui fait commenter (et revenir).
+        lines.append(ASK_NEXT_CAPTION)
     else:
         lines.append("Abonne-toi pour la prochaine compil 👀")
-    lines.append("Lequel est ton préféré ? 👇")
+    if not ask_next or (part_total > 1 and part_index < part_total):
+        lines.append("Lequel est ton préféré ? 👇")
     lines.append(" ".join([*HASHTAGS, creator_hashtag(creator), "#drole"]).replace("  ", " "))
     return "\n\n".join(lines)

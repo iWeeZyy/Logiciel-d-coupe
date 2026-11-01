@@ -174,10 +174,46 @@ def portrait_variant(opportunity, cancel_token, clips_dir: Path | None = None) -
     return path if height > width else None
 
 
+def clip_label(clip_path: str, opportunity=None, max_words: int = 9) -> str:
+    """Le texte affiche sous le numero d'un clip : sa phrase la plus
+    percutante, REELLEMENT prononcee (module « Titres et descriptions »,
+    editing/metadata.py -- extraction, jamais invention), sinon le titre
+    donne au clip sur Twitch s'il dit quelque chose (2 mots au moins), sinon
+    rien. C'est le texte unique qu'Instagram demande pour ne pas classer le
+    compte en simple republication (2026-11-01)."""
+    import json
+
+    try:
+        results = json.loads((Path(clip_path).parent.parent / "results.json")
+                             .read_text(encoding="utf-8"))
+        titles = (results[0].get("metadata") or {}).get("titles") or []
+    except (OSError, ValueError, IndexError, AttributeError):
+        titles = []
+    by_kind = {t.get("kind"): t.get("text", "") for t in titles if isinstance(t, dict)}
+    text = by_kind.get("direct") or by_kind.get("curiosite") or by_kind.get("punchy") or ""
+    if not text and opportunity is not None:
+        title = " ".join((getattr(opportunity, "title", "") or "").split())
+        text = title if len(title.split()) >= 2 else ""
+    words = text.split()
+    if len(words) > max_words:
+        kept = words[:max_words]
+        # Pas de « … devant tout le… » : on ne finit pas sur un petit mot.
+        while len(kept) > 3 and kept[-1].lower().strip(",;:") in _SMALL_WORDS:
+            kept.pop()
+        text = " ".join(kept).rstrip(" ,;:") + "…"
+    return text.strip(" .")
+
+
+_SMALL_WORDS = {"le", "la", "les", "l'", "de", "du", "des", "d'", "un", "une", "et", "à", "a",
+                "en", "que", "qui", "pour", "par", "sur", "dans", "au", "aux", "ce", "cette",
+                "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "tout", "toute"}
+
+
 def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1,
           countdown: bool = True, intro: bool = True, transitions: bool = True,
           cancel_token=None, on_status=lambda m: None, projects_dir: Path | None = None,
-          clips_dir: Path | None = None) -> list:
+          clips_dir: Path | None = None, clip_titles: bool = False,
+          ask_next: bool = False) -> list:
     """Produit chaque clip puis monte la compilation ; [(chemin, duree)] des
     parties ecrites. L'intro par clip est toujours coupee : la compilation
     la pose une seule fois au debut."""
@@ -186,6 +222,10 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
     production = dict(production)
     overrides = dict(production.get("editing_overrides") or {})
     overrides["intro"] = False
+    if clip_titles:
+        # Pour la phrase affichee sous chaque numero (clip_label) ; ce module
+        # ne produit que du texte, le rendu du clip n'en depend pas.
+        overrides["metadata"] = True
     production["editing_overrides"] = overrides
     # Classes du plus vu au moins vu ; en compte a rebours le #1 passe en
     # DERNIER (video/compilation.numbering) : on inverse, sinon le clip le
@@ -200,12 +240,17 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
             opportunity, production, cancel_token,
             lambda message, i=index: on_status(f"Clip {i}/{total} — {message}"),
             projects_dir=projects_dir, clips_dir=clips_dir))
-    return compose(paths, out_dir, name=name, parts=parts, countdown=countdown,
+    from video.compilation import ASK_NEXT_TEXT
+
+    labels = ([clip_label(path, o) for path, o in zip(paths, opportunities)]
+              if clip_titles else None)
+    return compose(paths, out_dir, name=name, parts=parts, countdown=countdown, labels=labels,
+                   end_text=ASK_NEXT_TEXT if ask_next else None,
                    intro=intro, transitions=transitions,
                    on_progress=on_status, cancel_token=cancel_token)
 
 
-def write_captions(written, title: str, creator: str = "") -> list[Path]:
+def write_captions(written, title: str, creator: str = "", ask_next: bool = False) -> list[Path]:
     """La legende .txt a cote de chaque partie ; renvoie leurs chemins."""
     from video.compilation import caption_text
 
@@ -213,7 +258,8 @@ def write_captions(written, title: str, creator: str = "") -> list[Path]:
     captions = []
     for index, (path, _duration) in enumerate(written, 1):
         caption = Path(path).with_suffix(".txt")
-        caption.write_text(caption_text(title, index, len(written), creator=creator),
+        caption.write_text(caption_text(title, index, len(written), creator=creator,
+                                        ask_next=ask_next),
                            encoding="utf-8")
         captions.append(caption)
     return captions

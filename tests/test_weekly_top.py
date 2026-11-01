@@ -277,3 +277,48 @@ def test_le_plus_vu_est_le_numero_1(monkeypatch, tmp_path):
     assert composed["paths"] == ["troisieme", "deuxieme", "plus vu"]
     top_compilation.build(clips, {}, tmp_path, name="x", countdown=False)
     assert composed["paths"] == ["plus vu", "deuxieme", "troisieme"]
+
+
+def test_legende_et_ecran_de_fin_demandent_le_prochain_top():
+    from video.compilation import ASK_NEXT_TEXT, caption_text
+
+    text = caption_text("Top 3 des moments de Kamet0", creator="Kamet0", ask_next=True)
+    assert "Dimanche prochain tu veux voir quel top ? Dis-le moi en commentaire !" in text
+    assert "Lequel est ton préféré" not in text          # une seule question
+    assert text.endswith("#clip #twitch #stream #kamet0 #drole")
+    assert ASK_NEXT_TEXT == ("Dimanche prochain tu veux voir quel top ?",
+                             "Dis-le moi en commentaire !")
+    # Sans l'option (fenetre du logiciel) : la legende d'avant.
+    assert "Abonne-toi pour la prochaine compil" in caption_text("Top", creator="x")
+
+
+def test_phrase_du_clip(tmp_path):
+    import json
+    from types import SimpleNamespace as O
+
+    from radar.top_compilation import clip_label
+
+    folder = tmp_path / "projet"
+    (folder / "clips").mkdir(parents=True)
+    clip = folder / "clips" / "clip_01.mp4"
+    (folder / "results.json").write_text(json.dumps([{"metadata": {"titles": [
+        {"kind": "punchy", "text": "IL A OSE"},
+        {"kind": "direct", "text": "Il a vraiment osé faire ça devant tout le monde en live hier soir."}]}}]),
+        encoding="utf-8")
+    assert clip_label(str(clip)) == "Il a vraiment osé faire ça devant…"
+    # Rien de prononce : le titre Twitch s'il dit quelque chose, sinon rien.
+    (folder / "results.json").write_text(json.dumps([{"metadata": {}}]), encoding="utf-8")
+    assert clip_label(str(clip), O(title="plus fort zongo")) == "plus fort zongo"
+    assert clip_label(str(clip), O(title="W")) == ""
+
+
+def test_numero_avec_phrase_et_ecran_de_fin_sur_deux_lignes(tmp_path):
+    from PIL import Image
+
+    from video.compilation import ASK_NEXT_TEXT, draw_badge, draw_end_card
+
+    plain = draw_badge(3, tmp_path / "a.png")
+    with_label = draw_badge(3, tmp_path / "b.png", label="Il a vraiment osé faire ça devant tout le monde")
+    assert Image.open(with_label.path).height > Image.open(plain.path).height
+    card = draw_end_card(ASK_NEXT_TEXT, tmp_path / "c.png")
+    assert Image.open(card.path).width <= 1080

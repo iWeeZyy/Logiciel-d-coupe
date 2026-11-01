@@ -434,6 +434,16 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   `authorized`, `count` (2-8, le maximum), `min_count` (3), `max_seconds`
   (150), `parts` (1-2), `countdown`, `transitions`, `intro`, `production`
   (aspect, fit_mode, modules, watermark…, par defaut ceux de la fenetre).
+- **Faire commenter et ajouter du texte unique** (2026-11-01 : des likes,
+  favoris et partages mais pas d'abonnes ; Instagram ne recommande plus aux
+  non-abonnes les comptes qui republient sans transformer -- texte unique,
+  montage, voix off) : sous chaque numero, la phrase la plus percutante
+  REELLEMENT prononcee dans le clip (module « Titres et descriptions »,
+  extraction sans IA, `radar/top_compilation.clip_label`), a defaut le titre
+  Twitch du clip s'il a au moins deux mots ; ecran de fin et legende :
+  « Dimanche prochain tu veux voir quel top ? Dis-le moi en commentaire ! »
+  (une seule question dans la legende). Cles `clip_titles` / `ask_next`
+  (vrai par defaut) ; la fenetre du logiciel garde l'ancien texte.
 - **Duree** : 2 min 30 au plus (les Reels de plus de 3 minutes ne sont plus
   recommandes aux nouvelles audiences). Un top 3, et plus de clips
   seulement s'ils tiennent dans la duree (`radar/top_compilation.fit_count`,
