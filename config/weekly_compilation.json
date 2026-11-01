@@ -9,7 +9,8 @@
 
   "count": 5,
   "parts": 1,
-  "countdown": true,
+  "_countdown": "false (defaut) : le plus vu ouvre la video en #1, puis #2, #3... ; true : compte a rebours, le #1 a la fin.",
+  "countdown": false,
   "transitions": true,
   "intro": true,
 

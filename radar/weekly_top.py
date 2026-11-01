@@ -305,7 +305,10 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
         try:
             written = builder(kept, with_face(production, config, auth.login, config_dir),
                               out_dir, name=safe_name(title), parts=parts,
-                              countdown=bool(config.get("countdown", True)),
+                              # Le #1 (le plus vu) EN PREMIER pour retenir des
+                              # la premiere seconde (demande du 2026-11-01) :
+                              # plus de compte a rebours par defaut.
+                              countdown=bool(config.get("countdown", False)),
                               intro=bool(config.get("intro", True)),
                               transitions=bool(config.get("transitions", True)),
                               # Phrase choc sous chaque numero (texte unique) et

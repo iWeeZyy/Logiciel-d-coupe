@@ -432,7 +432,8 @@ module Qt n'est importe sur ce chemin (verifie par un test).
 - **Configuration** : `config/weekly_compilation.json` est un modele VIDE ;
   la vraie liste vit dans le depot prive (ci-dessous). Cles : `streamers`,
   `authorized`, `count` (2-8, le maximum), `min_count` (3), `max_seconds`
-  (150), `parts` (1-2), `countdown`, `transitions`, `intro`, `production`
+  (150), `parts` (1-2), `countdown` (false par defaut : le plus vu
+  ouvre la video en #1 ; true : #5 → #1), `transitions`, `intro`, `production`
   (aspect, fit_mode, modules, watermark…, par defaut ceux de la fenetre).
 - **Faire commenter et ajouter du texte unique** (2026-11-01 : des likes,
   favoris et partages mais pas d'abonnes ; Instagram ne recommande plus aux
