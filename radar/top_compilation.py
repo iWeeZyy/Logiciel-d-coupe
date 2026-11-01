@@ -209,11 +209,16 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
           countdown: bool = True, intro: bool = True, transitions: bool = True,
           cancel_token=None, on_status=lambda m: None, projects_dir: Path | None = None,
           clips_dir: Path | None = None, clip_titles: bool = False,
-          ask_next: bool = False) -> list:
+          ask_next: bool = False, streamer: str = "") -> list:
     """Produit chaque clip puis monte la compilation ; [(chemin, duree)] des
     parties ecrites. L'intro par clip est toujours coupee : la compilation
-    la pose une seule fois au debut."""
+    la pose une seule fois au debut. `streamer` (tops de la semaine) : chaque
+    clip porte le design des clips seuls -- badge neon « REPLAY » + « DE
+    <STREAMER> », son numero « #N » sur la meme ligne et sa phrase dans le
+    bandeau dessous (demande du 2026-11-01) -- au lieu de la pastille et de
+    la petite phrase de la compilation."""
     from video.compilation import compose
+    from video.hook_text import INTRO_SECONDS, replay_label
 
     production = dict(production)
     overrides = dict(production.get("editing_overrides") or {})
@@ -235,17 +240,26 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
     paths = []
     total = len(opportunities)
     for index, opportunity in enumerate(opportunities, 1):
+        clip_production = production
+        if streamer:
+            number = total - index + 1 if countdown else index
+            block = {"enabled": True, "tag": streamer, "badge_label": replay_label(streamer),
+                     "number": number,
+                     # L'intro « Follow » de la compilation passe sur le 1er clip.
+                     "avoid_intro_s": INTRO_SECONDS if index == 1 and intro else 0.0}
+            clip_production = {**production,
+                               "editing_overrides": {**overrides, "hook_text": block}}
         paths.append(produce_clip(
-            opportunity, production, cancel_token,
+            opportunity, clip_production, cancel_token,
             lambda message, i=index: on_status(f"Clip {i}/{total} — {message}"),
             projects_dir=projects_dir, clips_dir=clips_dir))
     from video.compilation import ASK_NEXT_TEXT
 
     labels = ([clip_label(path, o) for path, o in zip(paths, opportunities)]
-              if clip_titles else None)
+              if clip_titles and not streamer else None)
     return compose(paths, out_dir, name=name, parts=parts, countdown=countdown, labels=labels,
                    end_text=ASK_NEXT_TEXT if ask_next else None,
-                   intro=intro, transitions=transitions,
+                   intro=intro, transitions=transitions, numbers=not streamer,
                    on_progress=on_status, cancel_token=cancel_token)
 
 

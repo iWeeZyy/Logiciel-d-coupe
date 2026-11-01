@@ -315,6 +315,8 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
                               # « Dimanche prochain tu veux voir quel top ? »
                               clip_titles=bool(config.get("clip_titles", True)),
                               ask_next=bool(config.get("ask_next", True)),
+                              # Badge « REPLAY DE <STREAMER> » + bandeau sur chaque clip.
+                              streamer=creator.label if config.get("replay_design", True) else "",
                               on_status=on_status, projects_dir=work_dir / "projets",
                               clips_dir=work_dir / "clips")
         except Exception as e:  # noqa: BLE001 -- rapporte, les autres streamers continuent

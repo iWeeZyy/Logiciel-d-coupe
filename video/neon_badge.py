@@ -67,19 +67,24 @@ def perimeter_point(x0, y0, x1, y1, u: float):
     return x0, y1 - (d - w)
 
 
-def _neon(mask, level: float):
+GOLD_TUBE = ((255, 160, 10), (255, 200, 70), (255, 246, 214))   # halo, halo serre, coeur
+RED_TUBE = (RED, (255, 90, 100), CORE)
+
+
+def _neon(mask, level: float, tube=RED_TUBE):
     from PIL import Image, ImageFilter
 
     s = SUPERSAMPLE
     w, h = mask.size
     out = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    for radius, color in ((14 * s, RED), (5 * s, RED), (1.5 * s, (255, 90, 100))):
+    glow, inner, core_color = tube
+    for radius, color in ((14 * s, glow), (5 * s, glow), (1.5 * s, inner)):
         alpha = mask.filter(ImageFilter.GaussianBlur(radius)).point(
             lambda v: min(255, int(v * level * 2.2)))
         layer = Image.new("RGBA", (w, h), color + (0,))
         layer.putalpha(alpha)
         out = Image.alpha_composite(out, layer)
-    core = Image.new("RGBA", (w, h), CORE + (0,))
+    core = Image.new("RGBA", (w, h), core_color + (0,))
     core.putalpha(mask.point(lambda v: int(v * min(1.0, level))))
     return Image.alpha_composite(out, core)
 
@@ -142,5 +147,54 @@ def frames(tag: str, scale: float = 1.0, word: str = "REPLAY", fps: int = FPS,
             r = (6 - j * 0.35) * k
             c.ellipse([px - r, py - r, px + r, py + r], fill=int(255 * (1 - j / 14)))
         image = Image.alpha_composite(image, _neon(ImageChops.multiply(comet, track), 1.3))
+        out.append(image.resize((width // s, height // s), Image.LANCZOS))
+    return out
+
+
+def number_frames(number: int, scale: float = 1.0, fps: int = FPS, period: float = PERIOD_S):
+    """Le numero du clip dans un top (« #3 »), en neon anime comme REPLAY
+    (demande du 2026-11-01 : « attirer l'oeil sur le numero […] un neon qui
+    bouge ») : meme hauteur que le badge, meme plaque, meme comete. Le #1
+    est en neon DORE, les autres en rouge."""
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter
+
+    s = SUPERSAMPLE
+    k = scale * s
+    _, name = _fonts(scale)
+    font = name.font_variant(size=max(8, round(52 * scale * s)))
+    text = f"#{number}"
+    probe = ImageDraw.Draw(Image.new("L", (1, 1)))
+    tb = probe.textbbox((0, 0), text, font=font)
+    bx0, by0 = round(26 * k), round(18 * k)
+    bx1 = round(bx0 + 20 * k + (tb[2] - tb[0]) + 20 * k)
+    by1 = round(by0 + 46 * k)
+    width = int(bx1 + 26 * k) // (2 * s) * (2 * s)
+    height = int(by1 + 18 * k) // (2 * s) * (2 * s)
+    cy = (by0 + by1) / 2
+    mask = Image.new("L", (width, height), 0)
+    m = ImageDraw.Draw(mask)
+    m.rounded_rectangle([bx0, by0, bx1, by1], round(8 * k), outline=255, width=max(1, round(3 * k)))
+    m.text(((bx0 + bx1) / 2 - (tb[0] + tb[2]) / 2, cy - (tb[1] + tb[3]) / 2), text, font=font,
+           fill=0, stroke_width=max(1, round(2 * k)), stroke_fill=255)
+    track = mask.filter(ImageFilter.MaxFilter(9))
+    tube = GOLD_TUBE if number == 1 else RED_TUBE
+    rim = (255, 214, 120) if number == 1 else PASTEL
+    background = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    d = ImageDraw.Draw(background)
+    d.rounded_rectangle([0, 0, width - 1, height - 1], round(18 * k), fill=rim + (255,))
+    d.rounded_rectangle([bx0 - 12 * k, by0 - 10 * k, bx1 + 12 * k, by1 + 10 * k], round(12 * k),
+                        fill=PLATE)
+    out = []
+    for n in range(max(2, round(period * fps))):
+        t = n / fps
+        image = Image.alpha_composite(background, _neon(mask, intensity(t, period), tube))
+        comet = Image.new("L", (width, height), 0)
+        c = ImageDraw.Draw(comet)
+        for j in range(14):
+            # Sens inverse du badge REPLAY : les deux cometes se repondent.
+            px, py = perimeter_point(bx0, by0, bx1, by1, -(t / period) + j * 0.012)
+            r = (6 - j * 0.35) * k
+            c.ellipse([px - r, py - r, px + r, py + r], fill=int(255 * (1 - j / 14)))
+        image = Image.alpha_composite(image, _neon(ImageChops.multiply(comet, track), 1.3, tube))
         out.append(image.resize((width // s, height // s), Image.LANCZOS))
     return out

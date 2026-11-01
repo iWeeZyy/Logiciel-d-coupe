@@ -391,6 +391,12 @@ def run(
             ass_path = (str(Path(tmp_dir) / f"{clip_stem(i)}.ass")
                         if settings.editing_module_enabled("captions") else None)
             hook_text_value = _hook_text_for_clip(settings, sentence_index, c)
+            # Tops de la semaine : le numero (« #N ») est porte par la ligne du
+            # badge, meme quand aucune phrase n'est a afficher.
+            hook_cfg = (settings.editing_module("hook_text")
+                        if settings.editing_module_enabled("hook_text") else {})
+            hook_number = hook_cfg.get("number")
+            use_hook = bool(hook_text_value or hook_number)
 
             try:
                 build_clip(
@@ -423,22 +429,25 @@ def run(
                     fit=(FIT_SPLIT_WEBCAM if webcam_plan is not None else settings.fit_mode),
                     # Avec un texte en haut, l'intro est posee APRES le
                     # bandeau (hook_text.apply), pour rester au premier plan.
-                    intro=None if hook_text_value else intro,
+                    intro=None if use_hook else intro,
                     webcam_plan=webcam_plan,
                 )
-                if hook_text_value:
+                if use_hook:
                     # Pose APRES le rendu : les visages sont cherches sur la
                     # video finie, le bandeau va la ou il n'y en a pas.
                     from video import hook_text
 
-                    hook_cfg = settings.editing_module("hook_text")
                     out_w, out_h = settings.target_size()
+                    badge_label = hook_cfg.get("badge_label")
                     hook_text.apply(
-                        out_mp4_path, hook_text_value, out_w, out_h,
+                        out_mp4_path, hook_text_value or "", out_w, out_h,
                         tag=str(hook_cfg.get("tag") or ""),
                         preferred=(0.37 if webcam_plan is not None
                                    else float(hook_cfg.get("top_percent", 11)) / 100),
-                        intro=intro, cancel_token=cancel_token)
+                        intro=intro, cancel_token=cancel_token,
+                        badge_label=None if badge_label is None else str(badge_label),
+                        number=int(hook_number) if hook_number else None,
+                        avoid_intro_s=float(hook_cfg.get("avoid_intro_s") or 0))
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
                 # incomplet/corrompu, on le supprime plutot que de laisser un

@@ -478,3 +478,44 @@ def test_accent_et_majuscule():
         == "Anyme commence à chanter"
     # « a » verbe avoir : inchange.
     assert hook_text.choose_text([], preferred="il a gagne la finale") == "Il a gagne la finale"
+
+
+def test_replay_de_streamer():
+    from video.hook_text import replay_label
+
+    assert replay_label("Anyme023") == "D'ANYME023"
+    assert replay_label("Squeezie") == "DE SQUEEZIE"
+    assert replay_label("") == ""
+
+
+def test_numero_en_neon_anime_dore_pour_le_1():
+    from video import neon_badge
+
+    one, three = neon_badge.number_frames(1), neon_badge.number_frames(3)
+    assert len(one) == len(three) == round(neon_badge.PERIOD_S * neon_badge.FPS)
+    assert one[0].height == neon_badge.frames("x")[0].height      # meme ligne que REPLAY
+    w, h = one[0].size
+    assert one[0].getpixel((w // 2, 3))[:3] != three[0].getpixel((w // 2, 3))[:3]   # bord or / rose
+    assert one[5].tobytes() != one[40].tobytes()                   # ca bouge
+
+
+def test_top_chaque_clip_porte_replay_et_son_numero(monkeypatch, tmp_path):
+    from types import SimpleNamespace as O
+
+    import video.compilation
+    from radar import top_compilation
+
+    blocks, composed = [], {}
+    monkeypatch.setattr(top_compilation, "produce_clip",
+                        lambda o, production, *a, **k: blocks.append(
+                            production["editing_overrides"]["hook_text"]) or o.title)
+    monkeypatch.setattr(video.compilation, "compose",
+                        lambda paths, *a, **k: composed.update(paths=paths, **k) or [])
+    clips = [O(title="plus vu"), O(title="deuxieme"), O(title="troisieme")]
+    top_compilation.build(clips, {}, tmp_path, name="x", countdown=False, clip_titles=True,
+                          streamer="Anyme023")
+    assert [b["number"] for b in blocks] == [1, 2, 3]
+    assert {b["badge_label"] for b in blocks} == {"D'ANYME023"}
+    assert blocks[0]["avoid_intro_s"] > 0 and blocks[1]["avoid_intro_s"] == 0
+    # Pas de seconde pastille ni de petite phrase par la compilation.
+    assert composed["numbers"] is False and composed["labels"] is None

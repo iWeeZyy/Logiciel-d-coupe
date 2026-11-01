@@ -446,10 +446,13 @@ def read_clips(paths: list[str]) -> list[Clip]:
 def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int = 1,
             countdown: bool = True, intro: bool = True, transitions: bool = True,
             on_progress=None, cancel_token=None, rng=None, labels=None,
-            end_text: tuple[str, str] | None = None) -> list[tuple[Path, float]]:
+            end_text: tuple[str, str] | None = None,
+            numbers: bool = True) -> list[tuple[Path, float]]:
     """Ecrit la (ou les) partie(s) dans `out_dir` ; renvoie [(fichier, duree)].
     `labels` : un texte par clip (meme ordre que `paths`, "" = aucun), affiche
     sous son numero. `end_text` : l'ecran de fin de la derniere partie.
+    `numbers=False` : aucune pastille posee (les clips portent deja leur
+    numero, video/hook_text.apply).
     Leve CompilationError / FfmpegError / CancelledError."""
     import tempfile
 
@@ -473,7 +476,7 @@ def compose(paths: list[str], out_dir, *, name: str = "compilation", parts: int 
             caption = f"PARTIE {part.index}" if part.total > 1 else ""
             badges = tuple(draw_badge(n, work / f"badge_{part.index}_{k}.png", caption=caption,
                                       label=part.clips[k].title)
-                           for k, n in enumerate(part.numbers))
+                           for k, n in enumerate(part.numbers)) if numbers else ()
             last = part.index == part.total
             card = draw_end_card((end_text or LAST_PART_TEXT) if last else NEXT_PART_TEXT,
                                  work / f"end_{part.index}.png")
