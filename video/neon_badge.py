@@ -202,19 +202,26 @@ def number_frames(number: int, scale: float = 1.0, fps: int = FPS, period: float
 
 PINK_TUBE = ((255, 46, 99), (255, 120, 160), (255, 226, 236))
 HEADLINE_S = 5.5                 # titre ephemere du top (« 5-6 secondes »)
-HEADLINE_OFF_S = 0.45            # extinction en gresillant
+HEADLINE_FADE_IN_S = 0.4
+HEADLINE_FADE_OUT_S = 0.6
+HEADLINE_BREATH_S = 1.8          # une respiration du halo
 
 
 def headline_level(t: float, duration: float = HEADLINE_S) -> float:
-    """Eclat du titre a l'instant t (pure) : allumage gresillant, respiration,
-    extinction gresillante, puis 0."""
-    if t >= duration:
+    """Presence du titre a l'instant t (pure) : fondu d'entree, plein, fondu
+    de sortie, puis 0. Aucun gresillement (demande du 2026-11-01 : « retire
+    le gresillement […] plutot le neon qui respire »)."""
+    if t >= duration or t < 0:
         return 0.0
-    left = duration - t
-    if left < HEADLINE_OFF_S:
-        off = (1.0, 0.3, 0.9, 0.1, 0.6, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        return off[min(len(off) - 1, int((HEADLINE_OFF_S - left) * FPS))]
-    return intensity(t, PERIOD_S)
+    fade_in = min(1.0, t / HEADLINE_FADE_IN_S)
+    fade_out = min(1.0, (duration - t) / HEADLINE_FADE_OUT_S)
+    ease = lambda u: u * u * (3 - 2 * u)  # noqa: E731
+    return ease(min(fade_in, fade_out))
+
+
+def headline_breath(t: float) -> float:
+    """Respiration du halo rose, entre 0 et 1 (pure), douce et continue."""
+    return 0.5 - 0.5 * math.cos(2 * math.pi * t / HEADLINE_BREATH_S)
 
 
 def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: int = FPS,
@@ -244,7 +251,20 @@ def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: i
     ImageDraw.Draw(mask).text(((w - (bb[2] - bb[0])) / 2 - bb[0], pad - bb[1]), big,
                               font=big_font, fill=0, stroke_width=max(1, round(4 * scale * s)),
                               stroke_fill=255)
-    lit = _neon(mask, 1.0, PINK_TUBE)
+    # Le tube (coeur + halo serre) reste net ; le grand halo rose respire.
+    glow, inner, core_color = PINK_TUBE
+    tube = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    for radius, color, gain in ((5 * s, glow, 2.2), (1.5 * s, inner, 2.2)):
+        layer = Image.new("RGBA", (w, h), color + (0,))
+        layer.putalpha(mask.filter(ImageFilter.GaussianBlur(radius)).point(
+            lambda v, g=gain: min(255, int(v * g))))
+        tube = Image.alpha_composite(tube, layer)
+    core = Image.new("RGBA", (w, h), core_color + (0,))
+    core.putalpha(mask)
+    tube = Image.alpha_composite(tube, core)
+    halo_mask = mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(26 * s))
+    halo = Image.new("RGBA", (w, h), glow + (0,))
+    halo.putalpha(halo_mask.point(lambda v: min(255, int(v * 3.0))))
     text = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     ty = pad + (bb[3] - bb[1]) + gap - sb[1]
     tx = (w - (sb[2] - sb[0])) / 2 - sb[0]
@@ -252,14 +272,21 @@ def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: i
     ImageDraw.Draw(shadow).text((tx, ty + 3 * s), small, font=small_font, fill=(0, 0, 0, 230))
     text = Image.alpha_composite(text, shadow.filter(ImageFilter.GaussianBlur(5 * s)))
     ImageDraw.Draw(text).text((tx, ty), small, font=small_font, fill=(255, 255, 255, 255))
-    lit = Image.alpha_composite(lit, text).resize((w // s, h // s), Image.LANCZOS)
-    alpha = lit.getchannel("A")
+    size = (w // s, h // s)
+    halo = halo.resize(size, Image.LANCZOS)
+    fixed = Image.alpha_composite(tube, text).resize(size, Image.LANCZOS)
     out, cache = [], {}
     for n in range(max(2, round(duration * fps)) + 1):
-        level = round(min(1.0, headline_level(n / fps, duration)), 2)
-        if level not in cache:
-            frame = lit.copy()
-            frame.putalpha(alpha.point(lambda v, lv=level: int(v * lv)))
-            cache[level] = frame
-        out.append(cache[level])
+        t = n / fps
+        level = round(headline_level(t, duration), 2)
+        breath = round(headline_breath(t), 2)
+        key = (level, breath)
+        if key not in cache:
+            glow_now = halo.copy()
+            glow_now.putalpha(halo.getchannel("A").point(
+                lambda v, b=breath: int(v * (0.25 + 0.75 * b))))
+            frame = Image.alpha_composite(glow_now, fixed)
+            frame.putalpha(frame.getchannel("A").point(lambda v, lv=level: int(v * lv)))
+            cache[key] = frame
+        out.append(cache[key])
     return out

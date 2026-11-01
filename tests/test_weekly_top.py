@@ -524,7 +524,13 @@ def test_top_chaque_clip_porte_replay_et_son_numero(monkeypatch, tmp_path):
 def test_titre_ephemere_du_top():
     from video import neon_badge as nb
 
-    assert nb.headline_level(0.0) < 0.5 < nb.headline_level(1.0)
+    assert nb.headline_level(0.0) == 0.0 and nb.headline_level(1.0) == 1.0
+    # Aucun gresillement : la presence ne fait que monter puis descendre.
+    levels = [nb.headline_level(t / 30) for t in range(int(nb.HEADLINE_S * 30) + 1)]
+    peak = levels.index(max(levels))
+    assert levels[:peak + 1] == sorted(levels[:peak + 1])
+    assert levels[peak:] == sorted(levels[peak:], reverse=True)
+    assert nb.headline_breath(0.0) == 0.0 and abs(nb.headline_breath(nb.HEADLINE_BREATH_S / 2) - 1) < 1e-9
     assert nb.headline_level(nb.HEADLINE_S) == 0.0 == nb.headline_level(9.0)
     frames = nb.headline_frames("TOP 5", "DES CLIPS DE KAMET0 CETTE SEMAINE", 1080)
     assert frames[0].width == 1080
