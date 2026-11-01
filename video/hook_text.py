@@ -140,14 +140,12 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
         dot = round(26 * scale)
         draw.rounded_rectangle([x, 0, x + tw + round(56 * scale), pill_h + rule],
                                radius=round(16 * scale), fill=PINK + (255,))
-        # Anneau blanc fixe ; le point rouge qui « respire » est pose par
-        # dessus a l'incrustation (dot_layer / apply).
+        # Rond evide (transparent) dans la pastille ; le point rouge qui
+        # grandit et rapetisse y est pose a l'incrustation (dot_frames).
         ring = max(2, round(4 * scale))
         cx, cy = x + round(18 * scale) + dot // 2, pill_h // 2
         draw.ellipse([cx - dot // 2 - ring, cy - dot // 2 - ring,
-                      cx + dot // 2 + ring, cy + dot // 2 + ring], fill=(255, 255, 255))
-        draw.ellipse([cx - dot // 2, cy - dot // 2, cx + dot // 2, cy + dot // 2],
-                      fill=(90, 0, 0))
+                      cx + dot // 2 + ring, cy + dot // 2 + ring], fill=(0, 0, 0, 0))
         dot_center = (cx, cy, dot)
         draw.text((x + round(48 * scale), round(4 * scale)), label, font=tag_font,
                   fill=(255, 255, 255))
@@ -165,30 +163,41 @@ BREATH_PERIOD_S = 1.6       # un cycle complet : s'allume puis s'eteint doucemen
 BREATH_MIN = 0.25           # le point ne disparait jamais tout a fait
 
 
-def dot_layer(diameter: int):
-    """Le point rouge « en direct » avec son halo, sur fond transparent : une
-    image carree de cote ~2,4 x le diametre, point au centre."""
+BREATH_SMALL = 0.45         # taille minimale du point (fraction de sa taille maximale)
+FPS = 30
+
+
+def breath(t: float, period: float = BREATH_PERIOD_S) -> float:
+    """0 -> 1 -> 0 en douceur sur une periode (fonction pure)."""
+    import math
+
+    return 0.5 - 0.5 * math.cos(2 * math.pi * (t % period) / period)
+
+
+def dot_frames(diameter: int, period: float = BREATH_PERIOD_S, fps: int = FPS):
+    """Une periode d'animation du point « en direct » : il grandit puis
+    rapetisse (de BREATH_SMALL a 1 x `diameter`), s'eclaire en grandissant,
+    avec un halo. Images carrees transparentes, point au centre ; elles
+    bouclent sans saut (la derniere precede la premiere)."""
     from PIL import Image, ImageDraw, ImageFilter
 
-    size = int(diameter * 2.4) // 2 * 2 + 2
+    size = int(diameter * 2.2) // 2 * 2 + 2
     center = size / 2
-    halo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    ImageDraw.Draw(halo).ellipse([center - diameter * 0.8, center - diameter * 0.8,
-                                  center + diameter * 0.8, center + diameter * 0.8],
-                                 fill=LIVE_RED + (170,))
-    halo = halo.filter(ImageFilter.GaussianBlur(diameter * 0.3))
-    ImageDraw.Draw(halo).ellipse([center - diameter / 2, center - diameter / 2,
-                                  center + diameter / 2, center + diameter / 2],
-                                 fill=LIVE_RED + (255,))
-    return halo
-
-
-def breathing_filter(period: float = BREATH_PERIOD_S, low: float = BREATH_MIN) -> str:
-    """Filtre ffmpeg : l'opacite du point suit une respiration (sinus doux)
-    entre `low` et 1. Fonction pure."""
-    amp = (1 - low) / 2
-    return (f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
-            f"a='alpha(X,Y)*({low + amp:.3f}+{amp:.3f}*sin(2*PI*T/{period}))'")
+    frames = []
+    for k in range(max(2, round(period * fps))):
+        b = breath(k / fps, period)
+        radius = diameter / 2 * (BREATH_SMALL + (1 - BREATH_SMALL) * b)
+        alpha = int(255 * (BREATH_MIN + (1 - BREATH_MIN) * b))
+        image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        ImageDraw.Draw(image).ellipse([center - radius * 1.5, center - radius * 1.5,
+                                       center + radius * 1.5, center + radius * 1.5],
+                                      fill=LIVE_RED + (int(alpha * 0.55),))
+        image = image.filter(ImageFilter.GaussianBlur(max(1.0, radius * 0.45)))
+        ImageDraw.Draw(image).ellipse([center - radius, center - radius,
+                                       center + radius, center + radius],
+                                      fill=LIVE_RED + (max(alpha, 200),))
+        frames.append(image)
+    return frames
 
 
 def choose_top(face_samples, height: float, preferred: float,
@@ -256,14 +265,16 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
             inputs = ["-i", str(video_path), "-i", str(png)]
             graph = f"[0:v][1:v]overlay=0:{y}:format=auto[b]"
             if dot:
-                # Point rouge qui « respire », comme le voyant d'une camera.
-                layer = dot_layer(dot[2])
-                dot_png = Path(tmp) / "point.png"
-                layer.save(dot_png)
-                dx, dy = dot[0] - layer.width // 2, y + dot[1] - layer.height // 2
-                inputs += ["-loop", "1", "-framerate", "30", "-i", str(dot_png)]
-                graph += (f";[2:v]{breathing_filter()}[d];"
-                          f"[b][d]overlay={dx}:{dy}:shortest=1:format=auto[b2]")
+                # Point rouge qui grandit et rapetisse, comme le voyant d'une
+                # camera : une periode d'images, bouclee sur tout le clip.
+                frames = dot_frames(dot[2])
+                for k, frame in enumerate(frames):
+                    frame.save(Path(tmp) / f"point_{k:03d}.png")
+                side = frames[0].width
+                dx, dy = dot[0] - side // 2, y + dot[1] - side // 2
+                inputs += ["-stream_loop", "-1", "-framerate", str(FPS),
+                           "-i", str(Path(tmp) / "point_%03d.png")]
+                graph += f";[b][2:v]overlay={dx}:{dy}:shortest=1:format=auto[b2]"
                 last = "b2"
             else:
                 last = "b"

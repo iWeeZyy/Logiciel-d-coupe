@@ -408,10 +408,16 @@ def test_point_rouge_qui_respire():
     image, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920, tag="Kamet0")
     x, y, diameter = image.info["dot"]
     assert diameter > 0 and 0 < x < 300
-    layer = hook_text.dot_layer(diameter)
-    assert layer.getpixel((layer.width // 2, layer.height // 2))[:3] == hook_text.LIVE_RED
-    f = hook_text.breathing_filter()
-    assert "sin(2*PI*T/1.6)" in f and "geq=" in f
-    # Sans pastille, pas de point.
+    assert image.getpixel((x, y))[3] == 0                 # rond evide : transparent
+    frames = hook_text.dot_frames(diameter)
+    assert len(frames) == round(hook_text.BREATH_PERIOD_S * hook_text.FPS)
+
+    def width(frame):
+        box = frame.getchannel("A").point(lambda a: 255 if a >= 200 else 0).getbbox()
+        return box[2] - box[0]
+
+    sizes = [width(f) for f in frames]
+    assert max(sizes) > 1.8 * min(sizes)                    # grandit et rapetisse
+    assert abs(sizes[0] - sizes[-1]) <= 2                   # boucle sans saut
     plain, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920)
     assert plain.info["dot"] is None
