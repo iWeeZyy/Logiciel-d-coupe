@@ -51,3 +51,8 @@ def test_sans_qt():
             "assert not any(m.startswith('PySide6') for m in sys.modules)")
     subprocess.run([sys.executable, "-c", code], check=True,
                    cwd=Path(__file__).resolve().parent.parent)
+
+
+def test_legende_sans_guillemets_du_titre():
+    assert daily_clip.caption('"CALISTE JE T\'AIME"', "Kamet0").startswith(
+        "Kamet0 — CALISTE JE T'AIME 🔥")

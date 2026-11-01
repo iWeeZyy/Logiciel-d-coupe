@@ -86,7 +86,9 @@ def caption(clip_title: str, creator: str) -> str:
     et les hashtags demandes (#clip #twitch #stream #<createur> #drole)."""
     from video.compilation import HASHTAGS, creator_hashtag
 
-    title = " ".join((clip_title or "").split())
+    from video.hook_text import clean
+
+    title = clean(clip_title)            # sans les guillemets du titre Twitch
     head = f"{creator} — {title}" if title else creator
     tags = " ".join([*HASHTAGS, creator_hashtag(creator), "#drole"]).replace("  ", " ")
     return "\n\n".join([f"{head} 🔥", "Abonne-toi pour le clip de demain 👀", tags])
