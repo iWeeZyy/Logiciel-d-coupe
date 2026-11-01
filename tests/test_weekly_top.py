@@ -308,11 +308,11 @@ def test_phrase_du_clip(tmp_path):
     assert clip_label(str(clip)) == "Il a vraiment osé faire ça devant…"
     # Le titre Twitch (3 mots ou plus) passe devant une phrase dite...
     assert clip_label(str(clip), O(title="anyme en mode rp halloween")) \
-        == "anyme en mode rp halloween"
+        == "Anyme en mode rp halloween"
     # ... sans emoji (absent de la police : carre vide).
     (folder / "results.json").write_text(json.dumps([{"metadata": {}}]), encoding="utf-8")
     assert clip_label(str(clip), O(title="HALLOWEEN 26 🎃 trop drole")) == "HALLOWEEN 26 trop drole"
-    assert clip_label(str(clip), O(title="plus fort zongo")) == "plus fort zongo"
+    assert clip_label(str(clip), O(title="plus fort zongo")) == "Plus fort zongo"
     assert clip_label(str(clip), O(title="W")) == ""
 
 
@@ -338,7 +338,7 @@ def test_texte_en_haut_question_d_abord():
     assert hook_text.choose_text(titles[:2]) == "On met un terme à la run de T1"
     assert hook_text.choose_text([]) == ""
     assert hook_text.choose_text([{"kind": "direct", "text": "un 3 -2 contre un 3 - 1"}]) \
-        == "un 3-2 contre un 3-1"
+        == "Un 3-2 contre un 3-1"
 
 
 def test_bandeau_design_e():
@@ -469,3 +469,12 @@ def test_intro_au_premier_plan(tmp_path):
         intro_overlay.prepare = original
     assert last == "i0" and "intro.mp4" in inputs
     assert parts[0].index("[b][intro0]overlay") > parts[0].index("overlay=0:600")
+
+
+def test_accent_et_majuscule():
+    from video import hook_text
+
+    assert hook_text.choose_text([], preferred="anyme commence a chanter") \
+        == "Anyme commence à chanter"
+    # « a » verbe avoir : inchange.
+    assert hook_text.choose_text([], preferred="il a gagne la finale") == "Il a gagne la finale"

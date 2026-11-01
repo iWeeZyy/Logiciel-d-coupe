@@ -55,6 +55,10 @@ def clean(text: str) -> str:
     text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
     # « Saint -Hurigol » -> « Saint-Hurigol » (tiret colle par la transcription)
     text = re.sub(r"(\w) -(\w)", r"\1-\2", text)
+    # « commence a chanter » -> « commence à chanter » : « a » devant un verbe
+    # a l'infinitif est toujours la preposition (titre Twitch tape sans accent).
+    text = re.sub(r"(?i)\b(a)( [a-zàâçéèêëîïôûùüÿœ]+(?:er|ir|re|oir))\b",
+                  lambda m: ("À" if m.group(1) == "A" else "à") + m.group(2), text)
     return text.strip(' "«»“”').strip()
 
 
@@ -115,7 +119,8 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
         elif len(text.split()) < min_words:
             text = ""
         if text:
-            return shorten(text, max_words)
+            text = shorten(text, max_words)
+            return text[:1].upper() + text[1:]          # majuscule en debut de phrase
     # Rien de solide : un texte VRAI et neutre fourni par l'appelant (le clip
     # du jour : « le clip le plus vu du jour »), jamais un bout de phrase.
     return clean(fallback)
