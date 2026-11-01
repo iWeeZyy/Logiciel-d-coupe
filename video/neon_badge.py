@@ -85,8 +85,11 @@ def _neon(mask, level: float):
 
 
 def frames(tag: str, scale: float = 1.0, word: str = "REPLAY", fps: int = FPS,
-           period: float = PERIOD_S):
-    """Une periode d'animation : liste d'images RGBA de meme taille."""
+           period: float = PERIOD_S, *, label: str | None = None, icon: str = "ring"):
+    """Une periode d'animation : liste d'images RGBA de meme taille.
+    `label` : texte a droite du neon (par defaut « <tag> EN LIVE ») ; vide =
+    neon seul. `icon` : « ring » (le rond de REPLAY) ou « play » (triangle,
+    bandes-annonces ActuaFilms)."""
     from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
     s = SUPERSAMPLE
@@ -94,20 +97,26 @@ def frames(tag: str, scale: float = 1.0, word: str = "REPLAY", fps: int = FPS,
     title, name = _fonts(scale)
     probe = ImageDraw.Draw(Image.new("L", (1, 1)))
     word_w = probe.textlength(word, font=title)
-    label = f"{tag} EN LIVE".upper()
-    label_w = probe.textlength(label, font=name)
+    label = (f"{tag} EN LIVE" if label is None else label).upper().strip()
+    label_w = probe.textlength(label, font=name) if label else 0
     ring = round(13 * k)
     bx0, by0 = round(26 * k), round(18 * k)
     bx1 = round(bx0 + 16 * k + 2 * ring + 12 * k + word_w + 18 * k)
     by1 = round(by0 + 46 * k)
-    width = int(bx1 + 28 * k + label_w + 28 * k) // (2 * s) * (2 * s)
+    right = bx1 + 28 * k + label_w + 28 * k if label else bx1 + 22 * k
+    width = int(right) // (2 * s) * (2 * s)
     height = int(by1 + 18 * k) // (2 * s) * (2 * s)
     cx, cy = bx0 + 16 * k + ring, (by0 + by1) / 2
 
     mask = Image.new("L", (width, height), 0)
     m = ImageDraw.Draw(mask)
     m.rounded_rectangle([bx0, by0, bx1, by1], round(8 * k), outline=255, width=max(1, round(3 * k)))
-    m.ellipse([cx - ring, cy - ring, cx + ring, cy + ring], outline=255, width=max(1, round(3 * k)))
+    if icon == "play":
+        m.polygon([(cx - ring * 0.7, cy - ring), (cx - ring * 0.7, cy + ring), (cx + ring, cy)],
+                  outline=255, width=max(1, round(3 * k)))
+    else:
+        m.ellipse([cx - ring, cy - ring, cx + ring, cy + ring], outline=255,
+                  width=max(1, round(3 * k)))
     tb = probe.textbbox((0, 0), word, font=title)
     m.text((cx + ring + 12 * k, cy - (tb[1] + tb[3]) / 2), word, font=title, fill=0,
            stroke_width=max(1, round(2 * k)), stroke_fill=255)
@@ -118,8 +127,9 @@ def frames(tag: str, scale: float = 1.0, word: str = "REPLAY", fps: int = FPS,
     d.rounded_rectangle([0, 0, width - 1, height - 1], round(18 * k), fill=PASTEL + (255,))
     d.rounded_rectangle([bx0 - 12 * k, by0 - 10 * k, bx1 + 12 * k, by1 + 10 * k], round(12 * k),
                         fill=PLATE)
-    nb = probe.textbbox((0, 0), label, font=name)
-    d.text((bx1 + 28 * k, cy - (nb[1] + nb[3]) / 2), label, font=name, fill=(255, 255, 255))
+    if label:
+        nb = probe.textbbox((0, 0), label, font=name)
+        d.text((bx1 + 28 * k, cy - (nb[1] + nb[3]) / 2), label, font=name, fill=(255, 255, 255))
 
     out = []
     for n in range(max(2, round(period * fps))):

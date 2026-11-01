@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core.logging_setup import get_logger
+from news_story import trailer_header
 
 logger = get_logger()
 
@@ -279,7 +280,31 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     video au centre sur le fond flou ; dans la bande floue du HAUT,
     etiquette + titre (+ chapo) ; dans celle du BAS, la phrase d'appel puis
     le logo. Rien n'est jamais pose sur la video.
-    Renvoie (image Pillow, (x, y, w, h) de la video)."""
+    Renvoie (image Pillow, (x, y, w, h) de la video). Les elements animes
+    (en-tete des bandes-annonces) y sont figes sur une image representative,
+    pour l'apercu."""
+    from PIL import Image
+
+    overlay, box, sprites = build_layers(title=title, label=label, logo_path=logo_path,
+                                         text_opacity=text_opacity, title_scale=title_scale,
+                                         subtitle=subtitle, source_size=source_size, cta=cta)
+    for sprite in sprites:
+        # Neon allume (apres le gresillement) ; date au repos.
+        frame = sprite.frames[min(len(sprite.frames) - 1, sprite.fps)]
+        layer = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
+        layer.alpha_composite(frame, (sprite.x, sprite.y))
+        overlay = Image.alpha_composite(overlay, layer)
+    return overlay, box
+
+
+def build_layers(*, title: str, label: str = "", logo_path: Path | None = None,
+                 text_opacity: float = DEFAULT_TEXT_OPACITY, title_scale: float = 1.0,
+                 subtitle: str = "", source_size: tuple[int, int] = (16, 9), cta: str = "",
+                 today=None):
+    """Comme build_overlay, mais les elements animes a part :
+    (calque fixe, box, [trailer_header.Sprite en coordonnees ecran]). Pour
+    une BANDE-ANNONCE : l'en-tete neon + bandeau + date
+    (news_story/trailer_header.py) remplace l'etiquette et le titre."""
     from PIL import Image, ImageDraw
 
     from news_story.post_composer import (_GAP_LABEL_TITLE, _fit_block, _font, _french_spacing,
@@ -312,7 +337,12 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     room = _SAFE_BOTTOM - _SAFE_TOP - bottom_h - (2 * _GAP if bottom_h else _GAP)
     vw, vh = video_size(source_size, max(2, room - _MIN_TEXT_ZONE))
     block, block_h = None, 0
-    if title or subtitle:
+    header = None
+    if title and trailer_header.is_trailer(label):
+        header = trailer_header.build(title, subtitle, W, max_w, max(room - vh, 0), today=today)
+    if header is not None:
+        label, label_h, block_h = "", 0, header.height
+    elif title or subtitle:
         block = _fit_block(draw, title, subtitle, max(0.6, min(1.6, title_scale)), max_w,
                            max(room - vh - label_h, 0), min_size=_TITLE_SIZES[1],
                            max_size=_TITLE_SIZES[0], max_lines=_MAX_LINES)
@@ -345,6 +375,16 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     if block is not None:
         draw_block(draw, top + label_h, center_x, block, fill=white, shadow_fill=black,
                    shadow_draw=shadow_draw)
+    sprites = []
+    if header is not None:
+        overlay.alpha_composite(header.band, (0, top + header.band_y))
+        sprites = [trailer_header.Sprite(s.frames, s.x, top + s.y, s.fps) for s in header.sprites]
+        if header.text_line:
+            line_font = _font(44)
+            x = center_x - draw.textlength(header.text_line, font=line_font) / 2
+            shadow_draw.text((x + 2, top + header.text_y + 3), header.text_line, font=line_font,
+                             fill=black)
+            draw.text((x, top + header.text_y), header.text_line, font=line_font, fill=white)
 
     zone_top = vy + vh + _GAP
     y = int(zone_top + max(0, (_SAFE_BOTTOM - zone_top - bottom_h) / 2))
@@ -362,7 +402,7 @@ def build_overlay(*, title: str, label: str = "", logo_path: Path | None = None,
     text_block = Image.alpha_composite(shadow_layer, text_layer)
     if alpha < 1.0:
         text_block.putalpha(text_block.getchannel("A").point(lambda a: int(a * alpha)))
-    return Image.alpha_composite(text_block, overlay), box
+    return Image.alpha_composite(text_block, overlay), box, sprites
 
 
 def _background_and_frame(still, box):
@@ -444,12 +484,14 @@ def _intro_graph(intro: IntroSpec, box) -> tuple[list[str], str, str]:
 
 def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
                 box: tuple[int, int, int, int], subtitles_path: str | None = None,
-                intro: IntroSpec | None = None) -> list[str]:
+                intro: IntroSpec | None = None, sprites=()) -> list[str]:
     """Arguments ffmpeg (sans le binaire) : fond flou 9:16 fait de la video,
     video entiere a la place `box` (une 16:9 garde son format, sous la bande
     de texte), calque par-dessus, son conserve s'il existe ; sous-titres .ass
     brules en dernier si fournis (VOST, news_story/vost.py) ; intro popcorn
-    incrustee au debut si fournie. Fonction pure."""
+    incrustee au debut si fournie, PAR-DESSUS tout le reste ; `sprites` :
+    [(motif des images « …%03d.png », fps, x, y)] boucles sur toute la
+    video, sous l'intro. Fonction pure."""
     x, y, w, h = box
     subtitles = ""
     if subtitles_path:
@@ -464,15 +506,21 @@ def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
     )
     inputs = ["-i", str(video_path), "-i", str(overlay_path)]
     audio_map = ["-map", "0:a?"]
+    intro_inputs, intro_video, intro_audio = _intro_graph(intro, box) if intro else ([], "", "")
+    inputs += intro_inputs
+    # Elements animes : entrees apres celles de l'intro (numerotees 2 a 4).
+    texted, first = "[base][1:v]overlay=0:0", 2 + (3 if intro else 0)
+    for k, (pattern, fps, sx, sy) in enumerate(sprites):
+        inputs += ["-stream_loop", "-1", "-framerate", str(fps), "-i", str(pattern)]
+        graph += f"{texted}[an{k}];"
+        texted = f"[an{k}][{first + k}:v]overlay={sx}:{sy}:shortest=1"
     if intro is None:
-        graph += f"[base][1:v]overlay=0:0,{subtitles}format=yuv420p[v]"
+        graph += f"{texted},{subtitles}format=yuv420p[v]"
     else:
-        intro_inputs, intro_video, intro_audio = _intro_graph(intro, box)
         ix, iy = intro_position(box)
-        inputs += intro_inputs
         # eof_action=pass : une fois l'intro finie, la bande-annonce seule.
         graph += (intro_video
-                  + f"[base][1:v]overlay=0:0[texted];"
+                  + f"{texted}[texted];"
                   + f"[texted][intro]overlay={ix}:{iy}:eof_action=pass[withintro];"
                   + f"[withintro][itext]overlay=0:0:eof_action=pass,{subtitles}format=yuv420p[v];"
                   + intro_audio)
@@ -502,13 +550,19 @@ def compose_video(video_path, out_path, *, title: str, label: str = "",
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    overlay, box = build_overlay(title=title, label=label, logo_path=logo_path,
-                                 text_opacity=text_opacity, title_scale=title_scale,
-                                 subtitle=subtitle, source_size=video_resolution(str(video_path)),
-                                 cta=cta)
+    overlay, box, sprites = build_layers(title=title, label=label, logo_path=logo_path,
+                                         text_opacity=text_opacity, title_scale=title_scale,
+                                         subtitle=subtitle,
+                                         source_size=video_resolution(str(video_path)), cta=cta)
     with tempfile.TemporaryDirectory(prefix="clipfarming_video_post_") as workdir:
         overlay_path = Path(workdir) / "overlay.png"
         overlay.save(overlay_path)
+        sprite_specs = []
+        for k, sprite in enumerate(sprites):
+            for n, frame in enumerate(sprite.frames):
+                frame.save(Path(workdir) / f"anim{k}_{n:03d}.png")
+            sprite_specs.append((str(Path(workdir) / f"anim{k}_%03d.png"), sprite.fps,
+                                 sprite.x, sprite.y))
         ass_path = None
         if french_subtitles:
             from news_story.vost import build_ass
@@ -526,7 +580,7 @@ def compose_video(video_path, out_path, *, title: str, label: str = "",
         elif intro:
             logger.warning("Intro popcorn absente des fichiers de l'application : export sans intro.")
         run_ffmpeg(ffmpeg_args(str(video_path), str(overlay_path), str(out_path), box, ass_path,
-                               intro=spec),
+                               intro=spec, sprites=sprite_specs),
                    "montage du post video 9:16", cancel_token=cancel_token)
     logger.info(f"Post video ecrit : {out_path}")
     return out_path

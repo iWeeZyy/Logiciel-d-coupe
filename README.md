@@ -1048,6 +1048,16 @@ dans la fenetre comme en automatique.
   1080x1920 de 1 min 23 s avec date de sortie, intro popcorn et synopsis en
   legende, run de 3 min 30 s.
 
+**En-tête des bandes-annonces** (`news_story/trailer_header.py`, choix du
+design « A » le 2026-11-01) : à la place de l'étiquette « BANDE-ANNONCE »
+entre deux filets, un badge néon animé « ▶ BANDE-ANNONCE » (le même que le
+REPLAY de ClipsOfStreams), un bandeau noir à filets rouges avec le titre du
+film, et la date mise en valeur (page de calendrier + date en or, un reflet
+la traverse toutes les 3 s). « NOUVEAU » s'ajoute au badge seulement si la
+date de sortie est connue et à venir : film déjà sorti ou date inconnue,
+le néon seul. Un titre trop long réduit la taille ; s'il ne tient vraiment
+pas, retour à l'ancienne mise en page. L'intro popcorn reste par-dessus.
+
 **Intro popcorn** : dans « Créer un visuel » d'une bande-annonce (modèle
 vidéo), la case « Intro popcorn au début » (cochée par défaut, mémorisée)
 incruste le logo popcorn animé en haut à gauche de la vidéo pendant ses 5
