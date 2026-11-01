@@ -424,3 +424,31 @@ def test_point_rouge_qui_respire():
     assert big.getpixel((big.width // 2, big.height // 2)) == hook_text.LIVE_RED + (255,)
     plain, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920)
     assert plain.info["dot"] is None
+
+
+def test_texte_en_haut_jamais_ampute():
+    from video import hook_text
+
+    # Constate sur le clip du jour du 2026-11-01 : « Saint -Hurigol et le ».
+    assert hook_text.choose_text([{"kind": "direct", "text": "Saint -Hurigol et le"}]) == ""
+    assert hook_text.choose_text(
+        [{"kind": "direct", "text": "Saint -Hurigol a gagné la finale et le"}]) \
+        == "Saint-Hurigol a gagné la finale"
+
+
+def test_texte_en_haut_phrase_trop_courte_et_repli():
+    from video import hook_text
+
+    spoken = [{"kind": "direct", "text": "Ouais, je suis"}]
+    assert hook_text.choose_text(spoken) == ""
+    assert hook_text.choose_text(spoken, preferred="wssh", fallback="Le clip le plus vu du jour") \
+        == "Le clip le plus vu du jour"
+
+
+def test_curiosite_sans_question_ignoree():
+    from video import hook_text
+
+    titles = [{"kind": "curiosite", "text": "Ouais, je suis"},
+              {"kind": "direct", "text": "Ouais, je suis"}]
+    assert hook_text.choose_text(titles, fallback="Le clip le plus vu du jour") \
+        == "Le clip le plus vu du jour"

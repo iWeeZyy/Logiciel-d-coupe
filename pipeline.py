@@ -901,7 +901,8 @@ def _hook_text_for_clip(settings, sentence_index, candidate) -> str:
                 punchy_max_words=int(meta_cfg.get("punchy_max_words", 6)),
                 min_title_words=int(meta_cfg.get("min_title_words", 3)),
                 max_description_sentences=1, max_hashtags=0).titles
-        return hook_text.choose_text(titles, max_words, preferred=str(cfg.get("preferred") or ""))
+        return hook_text.choose_text(titles, max_words, preferred=str(cfg.get("preferred") or ""),
+                                     fallback=str(cfg.get("fallback") or ""))
     except Exception as e:  # noqa: BLE001 -- le clip passe avant le texte
         logger.warning(f"Texte en haut non choisi : {e}")
         return ""

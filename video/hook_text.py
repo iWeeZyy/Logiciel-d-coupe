@@ -49,7 +49,18 @@ def clean(text: str) -> str:
     text = " ".join((text or "").split())
     text = re.sub(r"(\w) ?['’] ?(\w)", r"\1'\2", text)
     text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
+    # « Saint -Hurigol » -> « Saint-Hurigol » (tiret colle par la transcription)
+    text = re.sub(r"(\w) -(\w)", r"\1-\2", text)
     return text.strip(' "«»“”').strip()
+
+
+def trim_tail(text: str, min_words: int = 3) -> str:
+    """Retire les petits mots en fin de phrase (« … et le ») ; "" s'il ne
+    reste pas `min_words` mots -- une phrase amputee ne fait pas un titre."""
+    words = text.rstrip(" .,;:…").split()
+    while words and words[-1].lower().strip(",;:") in _SMALL_WORDS:
+        words.pop()
+    return " ".join(words) if len(words) >= min_words else ""
 
 
 def shorten(text: str, max_words: int = MAX_WORDS) -> str:
@@ -64,12 +75,17 @@ def shorten(text: str, max_words: int = MAX_WORDS) -> str:
     return " ".join(kept).rstrip(" ,;:") + "…"
 
 
-def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "") -> str:
+MIN_SPOKEN_WORDS = 5        # une phrase dite plus courte ne fait pas un titre (« Ouais, je suis »)
+
+
+def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
+                fallback: str = "") -> str:
     """La phrase a afficher : une QUESTION reellement posee dans le clip
     d'abord (elle fait commenter) ; sinon `preferred` -- le titre donne au
     clip sur Twitch, ecrit par un humain et souvent la chute du moment --
-    s'il fait au moins 3 mots ; sinon la phrase la plus percutante prononcee.
-    "" si rien. Fonction pure."""
+    s'il fait au moins 3 mots ; sinon la phrase la plus percutante prononcee
+    (5 mots au moins, sans petit mot ampute en fin) ; sinon `fallback`.
+    Fonction pure."""
     by_kind = {}
     for title in titles or ():
         kind = title.get("kind") if isinstance(title, dict) else getattr(title, "kind", "")
@@ -79,8 +95,26 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "") -> str:
     preferred = clean(preferred)
     if len(preferred.split()) < 3:
         preferred = ""
-    text = clean(by_kind.get("curiosite") or preferred or by_kind.get("direct") or "")
-    return shorten(text, max_words)
+    # « curiosite » sans point d'interrogation = une phrase volontairement
+    # coupee par le module de titres (editing/metadata.py) : pas pour le
+    # bandeau, qui ne prend que les VRAIES questions.
+    question = by_kind.get("curiosite") or ""
+    if not question.rstrip().endswith("?"):
+        question = ""
+    for candidate, min_words in ((question, 3), (preferred, 3),
+                                 (by_kind.get("direct"), MIN_SPOKEN_WORDS)):
+        text = clean(candidate or "")
+        if not text:
+            continue
+        if not text.endswith("?"):
+            text = trim_tail(text, min_words)
+        elif len(text.split()) < min_words:
+            text = ""
+        if text:
+            return shorten(text, max_words)
+    # Rien de solide : un texte VRAI et neutre fourni par l'appelant (le clip
+    # du jour : « le clip le plus vu du jour »), jamais un bout de phrase.
+    return clean(fallback)
 
 
 PINK = (255, 46, 99)          # rose du medaillon ClipsOfStreams (video/compilation.BRAND)

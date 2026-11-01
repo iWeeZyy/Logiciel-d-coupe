@@ -173,6 +173,9 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         # Pastille « ● <STREAMER> EN LIVE » au-dessus du bandeau (design E).
         block = dict(current) if isinstance(current, dict) else {"enabled": True}
         block["tag"] = creator.label
+        # Rien de solide a citer : un texte vrai sur ce clip, pas une phrase
+        # amputee (constate le 2026-11-01 : « Saint -Hurigol et le »).
+        block["fallback"] = "Le clip le plus vu du jour"
         overrides["hook_text"] = block
         production = {**production, "editing_overrides": overrides}
     try:
