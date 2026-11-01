@@ -127,6 +127,7 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
     band_h = line_h * len(lines) + 2 * pad
     pill_h = round(60 * scale) if tag else 0
     image = Image.new("RGBA", (out_w, pill_h + band_h), (0, 0, 0, 0))
+    dot_center = None
     draw = ImageDraw.Draw(image)
     top = pill_h
     draw.rectangle([0, top, out_w, top + band_h], fill=(0, 0, 0, BAND_ALPHA))
@@ -136,11 +137,18 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
         label = f"{tag} EN LIVE".upper()
         x = round(60 * scale)
         tw = draw.textlength(label, font=tag_font)
-        dot = round(20 * scale)
+        dot = round(26 * scale)
         draw.rounded_rectangle([x, 0, x + tw + round(56 * scale), pill_h + rule],
                                radius=round(16 * scale), fill=PINK + (255,))
-        draw.ellipse([x + round(18 * scale), (pill_h - dot) // 2,
-                      x + round(18 * scale) + dot, (pill_h + dot) // 2], fill=(255, 255, 255))
+        # Anneau blanc fixe ; le point rouge qui « respire » est pose par
+        # dessus a l'incrustation (dot_layer / apply).
+        ring = max(2, round(4 * scale))
+        cx, cy = x + round(18 * scale) + dot // 2, pill_h // 2
+        draw.ellipse([cx - dot // 2 - ring, cy - dot // 2 - ring,
+                      cx + dot // 2 + ring, cy + dot // 2 + ring], fill=(255, 255, 255))
+        draw.ellipse([cx - dot // 2, cy - dot // 2, cx + dot // 2, cy + dot // 2],
+                      fill=(90, 0, 0))
+        dot_center = (cx, cy, dot)
         draw.text((x + round(48 * scale), round(4 * scale)), label, font=tag_font,
                   fill=(255, 255, 255))
     y = top + pad
@@ -148,7 +156,39 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
         draw.text(((out_w - draw.textlength(line, font=title_font)) / 2, y), line,
                   font=title_font, fill=(255, 255, 255))
         y += line_h
+    image.info["dot"] = dot_center       # (x, y, diametre) du point « en direct »
     return image, pill_h
+
+
+LIVE_RED = (255, 23, 23)
+BREATH_PERIOD_S = 1.6       # un cycle complet : s'allume puis s'eteint doucement
+BREATH_MIN = 0.25           # le point ne disparait jamais tout a fait
+
+
+def dot_layer(diameter: int):
+    """Le point rouge « en direct » avec son halo, sur fond transparent : une
+    image carree de cote ~2,4 x le diametre, point au centre."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    size = int(diameter * 2.4) // 2 * 2 + 2
+    center = size / 2
+    halo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(halo).ellipse([center - diameter * 0.8, center - diameter * 0.8,
+                                  center + diameter * 0.8, center + diameter * 0.8],
+                                 fill=LIVE_RED + (170,))
+    halo = halo.filter(ImageFilter.GaussianBlur(diameter * 0.3))
+    ImageDraw.Draw(halo).ellipse([center - diameter / 2, center - diameter / 2,
+                                  center + diameter / 2, center + diameter / 2],
+                                 fill=LIVE_RED + (255,))
+    return halo
+
+
+def breathing_filter(period: float = BREATH_PERIOD_S, low: float = BREATH_MIN) -> str:
+    """Filtre ffmpeg : l'opacite du point suit une respiration (sinus doux)
+    entre `low` et 1. Fonction pure."""
+    amp = (1 - low) / 2
+    return (f"format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+            f"a='alpha(X,Y)*({low + amp:.3f}+{amp:.3f}*sin(2*PI*T/{period}))'")
 
 
 def choose_top(face_samples, height: float, preferred: float,
@@ -208,12 +248,27 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
                          avoid=(INTRO_ZONE,) if intro else (),
                          avoid_weight=min(0.3, INTRO_SECONDS / max(duration, 1.0)))
         y = int(round(top * out_h)) // 2 * 2
+        dot = image.info.get("dot")
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
             png = Path(tmp) / "bandeau.png"
             image.save(png)
             out = Path(tmp) / "avec_texte.mp4"
-            run_ffmpeg(["-i", str(video_path), "-i", str(png),
-                        "-filter_complex", f"[0:v][1:v]overlay=0:{y}:format=auto,format=yuv420p[v]",
+            inputs = ["-i", str(video_path), "-i", str(png)]
+            graph = f"[0:v][1:v]overlay=0:{y}:format=auto[b]"
+            if dot:
+                # Point rouge qui « respire », comme le voyant d'une camera.
+                layer = dot_layer(dot[2])
+                dot_png = Path(tmp) / "point.png"
+                layer.save(dot_png)
+                dx, dy = dot[0] - layer.width // 2, y + dot[1] - layer.height // 2
+                inputs += ["-loop", "1", "-framerate", "30", "-i", str(dot_png)]
+                graph += (f";[2:v]{breathing_filter()}[d];"
+                          f"[b][d]overlay={dx}:{dy}:shortest=1:format=auto[b2]")
+                last = "b2"
+            else:
+                last = "b"
+            graph += f";[{last}]format=yuv420p[v]"
+            run_ffmpeg([*inputs, "-filter_complex", graph,
                         "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
                         "-crf", "17", "-c:a", "copy", "-movflags", "+faststart", str(out)],
                        "texte en haut", cancel_token=cancel_token)

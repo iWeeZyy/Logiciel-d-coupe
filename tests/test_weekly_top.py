@@ -400,3 +400,18 @@ def test_texte_en_haut_titre_twitch_et_nettoyage():
     text = hook_text.choose_text(spoken, max_words=10, preferred="W")
     assert "c'est" in text and not text.endswith("qui…")
     assert text == "44 000 dégâts mais Kali c'est plus que mes enfants…"
+
+
+def test_point_rouge_qui_respire():
+    from video import hook_text
+
+    image, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920, tag="Kamet0")
+    x, y, diameter = image.info["dot"]
+    assert diameter > 0 and 0 < x < 300
+    layer = hook_text.dot_layer(diameter)
+    assert layer.getpixel((layer.width // 2, layer.height // 2))[:3] == hook_text.LIVE_RED
+    f = hook_text.breathing_filter()
+    assert "sin(2*PI*T/1.6)" in f and "geq=" in f
+    # Sans pastille, pas de point.
+    plain, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920)
+    assert plain.info["dot"] is None
