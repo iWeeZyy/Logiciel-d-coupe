@@ -390,6 +390,8 @@ def run(
             # decide desormais de l'incrustation ET de l'export.
             ass_path = (str(Path(tmp_dir) / f"{clip_stem(i)}.ass")
                         if settings.editing_module_enabled("captions") else None)
+            hook = _hook_for_clip(settings, sentence_index, c,
+                                  Path(tmp_dir) / f"{clip_stem(i)}_texte.png")
 
             try:
                 build_clip(
@@ -422,6 +424,7 @@ def run(
                     fit=(FIT_SPLIT_WEBCAM if webcam_plan is not None else settings.fit_mode),
                     intro=intro,
                     webcam_plan=webcam_plan,
+                    hook=hook,
                 )
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
@@ -861,6 +864,39 @@ def _floating_webcam_plan(video_path: str, candidate, samples) -> Optional[Frami
                 f"({', '.join(f'{v:.2f}' for v in rect)}).")
     return FramingPlan((FramingKeyframe(t=0.0, cx=webcam.cx, cy=webcam.cy),), "static", 1.0,
                        ("fond fixe : la webcam seule",), box=rect)
+
+
+def _hook_for_clip(settings, sentence_index, candidate, out_png: Path):
+    """Le texte en haut du clip (video/hook_text.py) : une phrase REELLEMENT
+    prononcee, une question d'abord. None si le module est coupe ou s'il n'y
+    a rien de dit -- jamais une erreur qui empecherait le clip."""
+    if not settings.editing_module_enabled("hook_text"):
+        return None
+    try:
+        from editing.metadata import build_metadata
+        from video import hook_text
+
+        cfg = settings.editing_module("hook_text")
+        meta_cfg = settings.editing_module("metadata")
+        sentences = sentences_in_range(sentence_index, candidate.start, candidate.end)
+        if not sentences:
+            return None
+        meta = build_metadata(
+            sentences, keyword_terms=settings.keywords_config.get("strong_keywords", []),
+            max_title_words=int(cfg.get("max_words", hook_text.MAX_WORDS)),
+            punchy_max_words=int(meta_cfg.get("punchy_max_words", 6)),
+            min_title_words=int(meta_cfg.get("min_title_words", 3)),
+            max_description_sentences=1, max_hashtags=0)
+        text = hook_text.choose_text(meta.titles, int(cfg.get("max_words", hook_text.MAX_WORDS)))
+        out_w, out_h = settings.target_size()
+        hook = hook_text.draw(text, out_png, out_w, out_h,
+                              float(cfg.get("top_percent", hook_text.TOP_PERCENT)))
+        if hook is not None:
+            logger.info(f"Texte en haut : « {text} »")
+        return hook
+    except Exception as e:  # noqa: BLE001 -- le clip passe avant le texte
+        logger.warning(f"Texte en haut non ajouté : {e}")
+        return None
 
 
 def _ultra_wide(video_path: str, limit: float = 2.0) -> bool:

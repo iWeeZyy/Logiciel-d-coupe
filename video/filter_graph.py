@@ -638,6 +638,7 @@ def build_ffmpeg_args(
     delire_plan=None,
     intro=None,
     webcam_plan: FramingPlan | None = None,
+    hook=None,
 ) -> list[str]:
     """Arguments complets de l'appel ffmpeg produisant le clip fini."""
     offset = edit_list.source_start
@@ -690,6 +691,9 @@ def build_ffmpeg_args(
                                  layer.position, None, True))
                 continue
             overlays.append((layer.input_args(), layer.prep_filter, layer.position))
+    if hook is not None:
+        # Texte en haut (video/hook_text.py) : image fixe, comme le filigrane.
+        overlays.append((["-i", hook.path], "format=rgba", f"{hook.x}:{hook.y}"))
     if watermark is not None:
         from video.watermark import overlay_position, prepare_filter
 

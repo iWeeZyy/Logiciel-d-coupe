@@ -322,3 +322,45 @@ def test_numero_avec_phrase_et_ecran_de_fin_sur_deux_lignes(tmp_path):
     assert Image.open(with_label.path).height > Image.open(plain.path).height
     card = draw_end_card(ASK_NEXT_TEXT, tmp_path / "c.png")
     assert Image.open(card.path).width <= 1080
+
+
+def test_texte_en_haut_question_d_abord(tmp_path):
+    from PIL import Image
+
+    from video import hook_text
+
+    titles = [{"kind": "punchy", "text": "C'EST FINI"},
+              {"kind": "direct", "text": "On met un terme à la run de T1"},
+              {"kind": "curiosite", "text": "Et vous vous allez faire quoi en novembre ?"}]
+    assert hook_text.choose_text(titles) == "Et vous vous allez faire quoi en novembre ?"
+    assert hook_text.choose_text(titles[:2]) == "On met un terme à la run de T1"
+    assert hook_text.choose_text([]) == ""
+    assert hook_text.choose_text([{"kind": "direct", "text": "un 3 -2 contre un 3 - 1"}]) \
+        == "un 3-2 contre un 3-1"
+    assert hook_text.draw("", tmp_path / "x.png", 1080, 1920) is None
+    hook = hook_text.draw("Et vous vous allez faire quoi en novembre ?", tmp_path / "h.png",
+                          1080, 1920)
+    image = Image.open(hook.path)
+    assert hook.y >= round(1920 * hook_text.TOP_PERCENT / 100) - 2
+    assert hook.x > 0 and hook.x + image.width < 1080          # centre, dans le cadre
+
+
+def test_texte_en_haut_dans_le_rendu():
+    from editing.timeline import EditList
+    from video.filter_graph import build_ffmpeg_args
+    from video.hook_text import HookText
+
+    args = build_ffmpeg_args(
+        video_path="in.mp4", edit_list=EditList.identity(0, 10), framing_plan=None,
+        zoom_track=None, src_w=1920, src_h=1080, fps=30, ass_path=None, audio_cfg=None,
+        export_settings={}, out_mp4_path="out.mp4", hook=HookText("texte.png", 80, 210))
+    assert "texte.png" in args
+    graph = args[args.index("-filter_complex") + 1]
+    assert "overlay=80:210" in graph
+
+
+def test_compilation_sans_texte_en_haut():
+    from editing.production import QUICK_MODULES, default_production
+
+    assert ("hook_text", "Texte en haut") in QUICK_MODULES
+    assert default_production()["editing_overrides"]["hook_text"] is True

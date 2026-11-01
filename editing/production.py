@@ -20,6 +20,7 @@ QUICK_MODULES = [
     ("montage", "Montage auto"),
     ("captions", "Sous-titres"),
     ("metadata", "Titres et descriptions"),
+    ("hook_text", "Texte en haut"),
     ("thumbnails", "Miniatures"),
     ("watermark", "Filigrane"),
     ("intro", "Intro ClipsOfStreams"),

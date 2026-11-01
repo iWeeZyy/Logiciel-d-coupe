@@ -222,6 +222,9 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
     production = dict(production)
     overrides = dict(production.get("editing_overrides") or {})
     overrides["intro"] = False
+    # Dans une compilation, la phrase de chaque clip est sous son numero
+    # (clip_label) : pas de second texte en haut.
+    overrides["hook_text"] = False
     if clip_titles:
         # Pour la phrase affichee sous chaque numero (clip_label) ; ce module
         # ne produit que du texte, le rendu du clip n'en depend pas.

@@ -45,6 +45,7 @@ def build_clip(
     fit: str = "recadrer",
     delire_plan=None,
     intro=None,
+    hook=None,
     webcam_plan=None,
 ) -> None:
     """`edit_list`, `framing_plan`, `zoom_track` et `audio_cfg` viennent des
@@ -129,6 +130,7 @@ def build_clip(
         fit=fit,
         intro=intro_overlay,
         webcam_plan=webcam_plan,
+        hook=hook,
         **({"target_size": tuple(target_size)} if target_size else {}),
     )
     try:
