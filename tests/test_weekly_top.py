@@ -306,8 +306,12 @@ def test_phrase_du_clip(tmp_path):
         {"kind": "direct", "text": "Il a vraiment osé faire ça devant tout le monde en live hier soir."}]}}]),
         encoding="utf-8")
     assert clip_label(str(clip)) == "Il a vraiment osé faire ça devant…"
-    # Rien de prononce : le titre Twitch s'il dit quelque chose, sinon rien.
+    # Le titre Twitch (3 mots ou plus) passe devant une phrase dite...
+    assert clip_label(str(clip), O(title="anyme en mode rp halloween")) \
+        == "anyme en mode rp halloween"
+    # ... sans emoji (absent de la police : carre vide).
     (folder / "results.json").write_text(json.dumps([{"metadata": {}}]), encoding="utf-8")
+    assert clip_label(str(clip), O(title="HALLOWEEN 26 🎃 trop drole")) == "HALLOWEEN 26 trop drole"
     assert clip_label(str(clip), O(title="plus fort zongo")) == "plus fort zongo"
     assert clip_label(str(clip), O(title="W")) == ""
 

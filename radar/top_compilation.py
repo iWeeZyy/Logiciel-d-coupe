@@ -183,13 +183,17 @@ def portrait_variant(opportunity, cancel_token, clips_dir: Path | None = None) -
 
 
 def clip_label(clip_path: str, opportunity=None, max_words: int = 9) -> str:
-    """Le texte affiche sous le numero d'un clip : sa phrase la plus
-    percutante, REELLEMENT prononcee (module « Titres et descriptions »,
-    editing/metadata.py -- extraction, jamais invention), sinon le titre
-    donne au clip sur Twitch s'il dit quelque chose (2 mots au moins), sinon
-    rien. C'est le texte unique qu'Instagram demande pour ne pas classer le
-    compte en simple republication (2026-11-01)."""
+    """Le texte affiche sous le numero d'un clip : les MEMES regles que le
+    bandeau des clips seuls (video/hook_text.choose_text) -- une vraie
+    question posee dans le clip, sinon le titre Twitch du clip (3 mots ou
+    plus), sinon une phrase dite d'au moins 5 mots sans petit mot ampute en
+    fin ; rien sinon. Extraction, jamais invention. C'est le texte unique
+    qu'Instagram demande pour ne pas classer le compte en simple
+    republication (2026-11-01). Avant : la phrase dite passait d'abord,
+    meme mal transcrite (« Mon écompte d'Abiens habillé sur la L »)."""
     import json
+
+    from video.hook_text import choose_text
 
     try:
         results = json.loads((Path(clip_path).parent.parent / "results.json")
@@ -197,24 +201,8 @@ def clip_label(clip_path: str, opportunity=None, max_words: int = 9) -> str:
         titles = (results[0].get("metadata") or {}).get("titles") or []
     except (OSError, ValueError, IndexError, AttributeError):
         titles = []
-    by_kind = {t.get("kind"): t.get("text", "") for t in titles if isinstance(t, dict)}
-    text = by_kind.get("direct") or by_kind.get("curiosite") or by_kind.get("punchy") or ""
-    if not text and opportunity is not None:
-        title = " ".join((getattr(opportunity, "title", "") or "").split())
-        text = title if len(title.split()) >= 2 else ""
-    words = text.split()
-    if len(words) > max_words:
-        kept = words[:max_words]
-        # Pas de « … devant tout le… » : on ne finit pas sur un petit mot.
-        while len(kept) > 3 and kept[-1].lower().strip(",;:") in _SMALL_WORDS:
-            kept.pop()
-        text = " ".join(kept).rstrip(" ,;:") + "…"
-    return text.strip(" .")
-
-
-_SMALL_WORDS = {"le", "la", "les", "l'", "de", "du", "des", "d'", "un", "une", "et", "à", "a",
-                "en", "que", "qui", "pour", "par", "sur", "dans", "au", "aux", "ce", "cette",
-                "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "tout", "toute"}
+    title = getattr(opportunity, "title", "") if opportunity is not None else ""
+    return choose_text(titles, max_words, preferred=title or "").strip(" .")
 
 
 def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1,

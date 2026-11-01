@@ -40,13 +40,17 @@ class HookText:
 _SMALL_WORDS = {"le", "la", "les", "l'", "de", "du", "des", "d'", "un", "une", "et", "à", "a",
                 "en", "que", "qui", "pour", "par", "sur", "dans", "au", "aux", "ce", "cette",
                 "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "mais", "ou",
-                "c'est", "je", "tu", "il", "on", "nous", "vous"}
+                "c'est", "je", "tu", "il", "on", "nous", "vous", "tout", "toute"}
 
 
 def clean(text: str) -> str:
     """Nettoie une phrase transcrite ou un titre : guillemets autour, espace
     parasite avant une apostrophe (« c 'est »), score coupe (« 3 -2 »)."""
-    text = " ".join((text or "").split())
+    import unicodedata
+
+    # Emojis et symboles : la police du logiciel ne les a pas (carre vide).
+    text = "".join(ch for ch in (text or "") if unicodedata.category(ch) not in ("So", "Cs", "Co"))
+    text = " ".join(text.split())
     text = re.sub(r"(\w) ?['’] ?(\w)", r"\1'\2", text)
     text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
     # « Saint -Hurigol » -> « Saint-Hurigol » (tiret colle par la transcription)
