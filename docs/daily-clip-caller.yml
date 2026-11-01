@@ -24,7 +24,7 @@ jobs:
     with:
       config-path: weekly_compilation.json
       memory-path: clips_publies.json
-      retention-days: 3
+      retention-days: 1
     secrets:
       TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
       TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}

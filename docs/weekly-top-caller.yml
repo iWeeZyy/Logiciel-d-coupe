@@ -39,7 +39,7 @@ jobs:
     uses: iWeeZyy/Logiciel-d-coupe/.github/workflows/weekly-top.yml@main
     with:
       config-path: weekly_compilation.json
-      retention-days: 3
+      retention-days: 1
       only: ${{ inputs.streamer }}
       accept-long: ${{ inputs.accepter_duree }}
     secrets:

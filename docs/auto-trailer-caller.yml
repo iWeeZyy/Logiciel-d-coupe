@@ -28,6 +28,6 @@ jobs:
     uses: iWeeZyy/Logiciel-d-coupe/.github/workflows/auto-trailer.yml@main
     with:
       force: ${{ inputs.force }}
-      retention-days: 3
+      retention-days: 1
     secrets:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
