@@ -324,9 +324,7 @@ def test_numero_avec_phrase_et_ecran_de_fin_sur_deux_lignes(tmp_path):
     assert Image.open(card.path).width <= 1080
 
 
-def test_texte_en_haut_question_d_abord(tmp_path):
-    from PIL import Image
-
+def test_texte_en_haut_question_d_abord():
     from video import hook_text
 
     titles = [{"kind": "punchy", "text": "C'EST FINI"},
@@ -337,12 +335,33 @@ def test_texte_en_haut_question_d_abord(tmp_path):
     assert hook_text.choose_text([]) == ""
     assert hook_text.choose_text([{"kind": "direct", "text": "un 3 -2 contre un 3 - 1"}]) \
         == "un 3-2 contre un 3-1"
-    assert hook_text.draw("", tmp_path / "x.png", 1080, 1920) is None
-    hook = hook_text.draw("Et vous vous allez faire quoi en novembre ?", tmp_path / "h.png",
-                          1080, 1920)
-    image = Image.open(hook.path)
-    assert hook.y >= round(1920 * hook_text.TOP_PERCENT / 100) - 2
-    assert hook.x > 0 and hook.x + image.width < 1080          # centre, dans le cadre
+
+
+def test_bandeau_design_e():
+    from video import hook_text
+
+    assert hook_text.render_band("", 1080, 1920) is None
+    image, pill = hook_text.render_band("Caliste je t'aime", 1080, 1920, tag="Kamet0")
+    assert image.width == 1080 and pill > 0
+    # Pixel de la bande : noir translucide ; filet du haut : rose.
+    assert image.getpixel((540, pill + 2))[:3] == hook_text.PINK
+    assert image.getpixel((5, pill + 30))[3] == hook_text.BAND_ALPHA
+    plain, no_pill = hook_text.render_band("Caliste je t'aime", 1080, 1920)
+    assert no_pill == 0 and plain.height < image.height
+
+
+def test_bandeau_jamais_sur_un_visage():
+    from video.hook_text import choose_top
+
+    # Visage du streamer en haut (12-24 %), commentateur au milieu (55-70 %).
+    faces = [[(0.12, 0.12), (0.55, 0.15)]] * 10
+    top = choose_top(faces, 0.10, preferred=0.50, avoid=())
+    assert 0.12 + 0.12 * 1.5 <= top and top + 0.10 <= 0.55 - 0.15 * 0.25
+    # Sans visage : la position preferee.
+    assert choose_top([[]], 0.10, preferred=0.12, avoid=()) == 0.12
+    # Le medaillon de l'intro est evite quand on peut.
+    top = choose_top([[]], 0.10, preferred=0.30)
+    assert top + 0.10 <= 0.255 or top >= 0.465
 
 
 def test_texte_en_haut_dans_le_rendu():

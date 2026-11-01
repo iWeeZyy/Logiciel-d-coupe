@@ -83,38 +83,145 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "") -> str:
     return shorten(text, max_words)
 
 
-def draw(text: str, out_path, out_w: int, out_h: int,
-         top_percent: float = TOP_PERCENT) -> HookText | None:
-    """Encadre blanc, texte noir gras, centre en haut. None si pas de texte."""
+PINK = (255, 46, 99)          # rose du medaillon ClipsOfStreams (video/compilation.BRAND)
+BAND_ALPHA = 190
+CANDIDATE_TOPS = [t / 100 for t in range(8, 78, 2)]   # hauts possibles du bandeau
+# Medaillon « Follow » de l'intro, a droite : de 26,5 % a ~46 % du haut
+# pendant ses premieres secondes (video/intro_overlay.py).
+INTRO_ZONE = (0.255, 0.465)
+INTRO_SECONDS = 4.0
+MIN_FACE_H = 0.035              # visage plus petit : decor, pas une personne a l'ecran
+
+
+def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
+    """Design « bandeau » choisi par l'utilisateur (design E, 2026-11-01) :
+    bande noire translucide sur toute la largeur, filets roses en haut et en
+    bas, texte blanc gras, et au-dessus a gauche une pastille rose
+    « ● <STREAMER> EN LIVE » si `tag` est donne. Renvoie (image RGBA de
+    largeur out_w, hauteur de la pastille au-dessus du bandeau) ou None."""
     text = " ".join((text or "").split())
     if not text:
         return None
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageFont
 
-    from news_story.post_composer import _font
+    from core.paths import app_base_dir
     from video.compilation import wrap_text
 
+    fonts = app_base_dir() / "assets" / "fonts"
     scale = min(out_w, out_h) / 1080
-    image = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
-    canvas = ImageDraw.Draw(image)
-    font = _font(round(54 * scale))
-    max_w = out_w * MAX_WIDTH_PERCENT / 100
-    lines = wrap_text(canvas, text, font, max_w - 2 * round(30 * scale), max_lines=MAX_LINES)
-    pad_x, pad_y = round(30 * scale), round(20 * scale)
-    line_h = round(font.size * 1.2)
-    width = max(canvas.textlength(line, font=font) for line in lines) + 2 * pad_x
-    height = line_h * len(lines) + 2 * pad_y
-    left = round((out_w - width) / 2)
-    top = round(out_h * top_percent / 100)
-    canvas.rounded_rectangle([left, top, left + width, top + height], radius=round(22 * scale),
-                             fill=(255, 255, 255, 245))
-    y = top + pad_y
+
+    def font(name, size):
+        try:
+            return ImageFont.truetype(str(fonts / name), round(size * scale))
+        except OSError:
+            from news_story.post_composer import _font
+            return _font(round(size * scale))
+
+    title_font = font("BarlowCondensed-ExtraBoldItalic.ttf", 68)
+    tag_font = font("BarlowCondensed-SemiBold.ttf", 40)
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    lines = wrap_text(probe, text.upper(), title_font, out_w - round(140 * scale),
+                      max_lines=MAX_LINES)
+    line_h = round(78 * scale)
+    pad, rule = round(26 * scale), max(3, round(8 * scale))
+    band_h = line_h * len(lines) + 2 * pad
+    pill_h = round(60 * scale) if tag else 0
+    image = Image.new("RGBA", (out_w, pill_h + band_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    top = pill_h
+    draw.rectangle([0, top, out_w, top + band_h], fill=(0, 0, 0, BAND_ALPHA))
+    draw.rectangle([0, top, out_w, top + rule], fill=PINK + (255,))
+    draw.rectangle([0, top + band_h - rule, out_w, top + band_h], fill=PINK + (255,))
+    if tag:
+        label = f"{tag} EN LIVE".upper()
+        x = round(60 * scale)
+        tw = draw.textlength(label, font=tag_font)
+        dot = round(20 * scale)
+        draw.rounded_rectangle([x, 0, x + tw + round(56 * scale), pill_h + rule],
+                               radius=round(16 * scale), fill=PINK + (255,))
+        draw.ellipse([x + round(18 * scale), (pill_h - dot) // 2,
+                      x + round(18 * scale) + dot, (pill_h + dot) // 2], fill=(255, 255, 255))
+        draw.text((x + round(48 * scale), round(4 * scale)), label, font=tag_font,
+                  fill=(255, 255, 255))
+    y = top + pad
     for line in lines:
-        canvas.text(((out_w - canvas.textlength(line, font=font)) / 2, y), line, font=font,
-                    fill=(0, 0, 0, 255))
+        draw.text(((out_w - draw.textlength(line, font=title_font)) / 2, y), line,
+                  font=title_font, fill=(255, 255, 255))
         y += line_h
-    box = image.getchannel("A").getbbox()
-    x0, y0 = box[0] - box[0] % 2, box[1] - box[1] % 2
-    out_path = Path(out_path)
-    image.crop((x0, y0, box[2], box[3])).save(out_path)
-    return HookText(str(out_path), x0, y0)
+    return image, pill_h
+
+
+def choose_top(face_samples, height: float, preferred: float,
+               avoid=(INTRO_ZONE,), avoid_weight: float = 0.3) -> float:
+    """Haut du bandeau (fraction de la hauteur) qui ne cache aucun visage
+    (fonction pure). `face_samples` : pour chaque image analysee, la liste
+    des visages (y, h en fractions, y = haut). Cout d'une position : la part
+    des images ou il recouvre un visage (agrandi : cheveux, menton), plus
+    `avoid_weight` s'il recouvre une zone a eviter (medaillon de l'intro) ;
+    a cout egal, la plus proche de `preferred`."""
+    samples = [list(faces) for faces in face_samples] or [[]]
+
+    def covers(top, faces):
+        # Marge : un quart de visage au-dessus (cheveux), une moitie dessous
+        # (menton, bouche qui parle). Les tout petits visages (portraits de
+        # l'interface d'un jeu, public au loin) ne comptent pas.
+        bottom = top + height
+        return any(top < y + h * 1.5 and y - h * 0.25 < bottom
+                   for y, h in faces if h >= MIN_FACE_H)
+
+    best = None
+    for top in CANDIDATE_TOPS:
+        if top + height > 0.80:          # plus bas : filigrane et legende TikTok
+            continue
+        cost = sum(covers(top, faces) for faces in samples) / len(samples)
+        cost += sum(avoid_weight for lo, hi in avoid if top < hi and lo < top + height)
+        key = (round(cost, 3), abs(top - preferred))
+        if best is None or key < best[0]:
+            best = (key, top)
+    return best[1] if best else preferred
+
+
+def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
+          preferred: float = TOP_PERCENT / 100, intro: bool = True, cancel_token=None) -> bool:
+    """Pose le bandeau sur un clip DEJA rendu : les visages sont cherches sur
+    la video finie (quel que soit le cadrage : recadre, webcam + jeu, webcam
+    seule), le bandeau va la ou il n'y en a pas, puis une seconde passe
+    ffmpeg l'incruste. Faux (clip inchange) si rien a poser ou en cas
+    d'echec -- jamais d'exception qui ferait perdre le clip."""
+    import tempfile
+
+    rendered = render_band(text, out_w, out_h, tag)
+    if rendered is None:
+        return False
+    image, _pill_h = rendered
+    try:
+        from video.face_detector import detect_face_track
+        from video.ffmpeg_utils import run_ffmpeg, video_duration
+
+        duration = video_duration(video_path)
+        samples = detect_face_track(video_path, 0.0, duration, sample_interval_s=0.5,
+                                    max_samples=80, confidence_threshold=0.6, max_faces=6)
+        faces = [[(f.y, f.h) for f in (getattr(s, "faces", ()) or ())] for s in samples]
+        # Le medaillon ne reste que quelques secondes : le recouvrir coute en
+        # proportion de sa duree, comme un visage present le meme temps.
+        top = choose_top(faces, image.height / out_h, preferred,
+                         avoid=(INTRO_ZONE,) if intro else (),
+                         avoid_weight=min(0.3, INTRO_SECONDS / max(duration, 1.0)))
+        y = int(round(top * out_h)) // 2 * 2
+        with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
+            png = Path(tmp) / "bandeau.png"
+            image.save(png)
+            out = Path(tmp) / "avec_texte.mp4"
+            run_ffmpeg(["-i", str(video_path), "-i", str(png),
+                        "-filter_complex", f"[0:v][1:v]overlay=0:{y}:format=auto,format=yuv420p[v]",
+                        "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
+                        "-crf", "17", "-c:a", "copy", "-movflags", "+faststart", str(out)],
+                       "texte en haut", cancel_token=cancel_token)
+            Path(out).replace(video_path)
+        logger.info(f"Texte en haut : « {text} » a {top:.0%} du haut (aucun visage dessous).")
+        return True
+    except Exception as e:  # noqa: BLE001
+        if type(e).__name__ == "CancelledError":
+            raise
+        logger.warning(f"Texte en haut non ajouté : {e}")
+        return False

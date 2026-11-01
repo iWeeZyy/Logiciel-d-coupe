@@ -167,6 +167,14 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
     on_status(f"Clip du jour : {creator.label} — « {chosen.title} » "
               f"({chosen.view_count} vues, {chosen.duration_s} s)")
     production = default_production(**(config.get("production") or {}))
+    overrides = dict(production.get("editing_overrides") or {})
+    current = overrides.get("hook_text", True)
+    if current:
+        # Pastille « ● <STREAMER> EN LIVE » au-dessus du bandeau (design E).
+        block = dict(current) if isinstance(current, dict) else {"enabled": True}
+        block["tag"] = creator.label
+        overrides["hook_text"] = block
+        production = {**production, "editing_overrides": overrides}
     try:
         path = producer(chosen, with_face(production, config, auth.login, config_dir), None,
                         on_status, projects_dir=work_dir / "projets", clips_dir=work_dir / "clips")

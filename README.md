@@ -458,10 +458,18 @@ module Qt n'est importe sur ce chemin (verifie par un test).
 - **Texte en haut des clips seuls** (module « Texte en haut », `hook_text`,
   coche par defaut ; 2026-11-01 : la video la plus vue de la semaine, 11 K
   vues contre ~800 par compilation, portait une phrase dans un encadre blanc
-  en haut) : une phrase REELLEMENT prononcee dans le clip, une question
-  d'abord, sinon la plus percutante (`video/hook_text.py`, extraction sans
-  IA via `editing/metadata.py`) ; rien de dit, pas de texte. Coupe dans les
-  compilations, ou la phrase est sous chaque numero.
+  en haut) : une question posee dans le clip, sinon le titre Twitch du clip
+  (3 mots ou plus), sinon la phrase la plus percutante prononcee
+  (`video/hook_text.py`, extraction sans IA via `editing/metadata.py`) ;
+  rien, pas de texte. Design choisi par l'utilisateur parmi cinq essais
+  (« E », 2026-11-01) : bandeau noir translucide pleine largeur, filets
+  roses, texte blanc gras, pastille « ● <STREAMER> EN LIVE » au-dessus
+  (clip du jour). POSE APRES LE RENDU : les visages sont cherches sur la
+  video finie et le bandeau va la ou il n'y en a pas (marges : un quart de
+  visage au-dessus, une moitie dessous ; visages minuscules ignores), au-dessus
+  du filigrane ; le medaillon de l'intro est evite quand c'est possible. Une
+  seconde passe ffmpeg l'incruste. Coupe dans les compilations, ou la
+  phrase est sous chaque numero.
 - **Duree** : 2 min 30 au plus (les Reels de plus de 3 minutes ne sont plus
   recommandes aux nouvelles audiences). Un top 3, et plus de clips
   seulement s'ils tiennent dans la duree (`radar/top_compilation.fit_count`,
