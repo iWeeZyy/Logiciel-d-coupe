@@ -138,17 +138,23 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
         x = round(60 * scale)
         tw = draw.textlength(label, font=tag_font)
         dot = round(26 * scale)
-        draw.rounded_rectangle([x, 0, x + tw + round(56 * scale), pill_h + rule],
+        ring = max(2, round(4 * scale))
+        hole_r = dot // 2 + ring
+        pad, gap = round(16 * scale), round(12 * scale)
+        # La pastille se prolonge dans le filet rose du bandeau : son milieu
+        # visible est a (pill_h + rule) / 2, pas a pill_h / 2.
+        cy = (pill_h + rule) // 2
+        cx = x + pad + hole_r
+        text_x = cx + hole_r + gap
+        draw.rounded_rectangle([x, 0, text_x + tw + round(22 * scale), pill_h + rule],
                                radius=round(16 * scale), fill=PINK + (255,))
         # Rond evide (transparent) dans la pastille ; le point rouge qui
         # grandit et rapetisse y est pose a l'incrustation (dot_frames).
-        ring = max(2, round(4 * scale))
-        cx, cy = x + round(18 * scale) + dot // 2, pill_h // 2
-        draw.ellipse([cx - dot // 2 - ring, cy - dot // 2 - ring,
-                      cx + dot // 2 + ring, cy + dot // 2 + ring], fill=(0, 0, 0, 0))
-        dot_center = (cx, cy, dot)
-        draw.text((x + round(48 * scale), round(4 * scale)), label, font=tag_font,
+        draw.ellipse([cx - hole_r, cy - hole_r, cx + hole_r, cy + hole_r], fill=(0, 0, 0, 0))
+        top_t, bottom_t = draw.textbbox((0, 0), label, font=tag_font)[1::2]
+        draw.text((text_x, cy - (top_t + bottom_t) / 2), label, font=tag_font,
                   fill=(255, 255, 255))
+        dot_center = (cx, cy, dot)
     y = top + pad
     for line in lines:
         draw.text(((out_w - draw.textlength(line, font=title_font)) / 2, y), line,
@@ -159,11 +165,12 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
 
 
 LIVE_RED = (255, 23, 23)
-BREATH_PERIOD_S = 1.6       # un cycle complet : s'allume puis s'eteint doucement
+BREATH_PERIOD_S = 1.4       # un battement complet (plus lent que le voyant REC de reference, ~0,65 s)
 BREATH_MIN = 0.25           # le point ne disparait jamais tout a fait
 
 
-BREATH_SMALL = 0.45         # taille minimale du point (fraction de sa taille maximale)
+BREATH_SMALL = 0.12         # presque un point d'epingle au plus petit
+GLOW_SPREAD = 2.6           # cote de l'image du point : la place du halo
 FPS = 30
 
 
@@ -175,28 +182,29 @@ def breath(t: float, period: float = BREATH_PERIOD_S) -> float:
 
 
 def dot_frames(diameter: int, period: float = BREATH_PERIOD_S, fps: int = FPS):
-    """Une periode d'animation du point « en direct » : il grandit puis
-    rapetisse (de BREATH_SMALL a 1 x `diameter`), s'eclaire en grandissant,
-    avec un halo. Images carrees transparentes, point au centre ; elles
-    bouclent sans saut (la derniere precede la premiere)."""
+    """Une periode d'animation du point « en direct », sur le modele du
+    voyant REC montre par l'utilisateur (2026-11-01), plus lent et lumineux a
+    sa demande : un point rouge vif PLEIN qui retrecit presque jusqu'a
+    disparaitre puis regrossit, entoure d'un halo rouge doux qui suit sa
+    taille. Images carrees transparentes, point au centre, bord lisse
+    (dessine 4 fois plus grand puis reduit) ; elles bouclent sans saut."""
     from PIL import Image, ImageDraw, ImageFilter
 
-    size = int(diameter * 2.2) // 2 * 2 + 2
-    center = size / 2
+    size = int(diameter * GLOW_SPREAD) // 2 * 2 + 4
+    big = size * 4
     frames = []
     for k in range(max(2, round(period * fps))):
         b = breath(k / fps, period)
-        radius = diameter / 2 * (BREATH_SMALL + (1 - BREATH_SMALL) * b)
-        alpha = int(255 * (BREATH_MIN + (1 - BREATH_MIN) * b))
-        image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        ImageDraw.Draw(image).ellipse([center - radius * 1.5, center - radius * 1.5,
-                                       center + radius * 1.5, center + radius * 1.5],
-                                      fill=LIVE_RED + (int(alpha * 0.55),))
-        image = image.filter(ImageFilter.GaussianBlur(max(1.0, radius * 0.45)))
-        ImageDraw.Draw(image).ellipse([center - radius, center - radius,
-                                       center + radius, center + radius],
-                                      fill=LIVE_RED + (max(alpha, 200),))
-        frames.append(image)
+        radius = diameter / 2 * (BREATH_SMALL + (1 - BREATH_SMALL) * b) * 4
+        glow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+        g = radius * 1.9
+        ImageDraw.Draw(glow).ellipse([big / 2 - g, big / 2 - g, big / 2 + g, big / 2 + g],
+                                     fill=LIVE_RED + (int(140 + 80 * b),))
+        image = glow.filter(ImageFilter.GaussianBlur(max(2.0, radius * 0.7)))
+        ImageDraw.Draw(image).ellipse([big / 2 - radius, big / 2 - radius,
+                                       big / 2 + radius, big / 2 + radius],
+                                      fill=LIVE_RED + (255,))
+        frames.append(image.resize((size, size), Image.LANCZOS))
     return frames
 
 

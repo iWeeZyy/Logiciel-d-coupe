@@ -413,11 +413,14 @@ def test_point_rouge_qui_respire():
     assert len(frames) == round(hook_text.BREATH_PERIOD_S * hook_text.FPS)
 
     def width(frame):
-        box = frame.getchannel("A").point(lambda a: 255 if a >= 200 else 0).getbbox()
-        return box[2] - box[0]
+        box = frame.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
+        return (box[2] - box[0]) if box else 0
 
     sizes = [width(f) for f in frames]
-    assert max(sizes) > 1.8 * min(sizes)                    # grandit et rapetisse
+    assert max(sizes) >= diameter - 2 and min(sizes) <= diameter * 0.2   # presque disparu
     assert abs(sizes[0] - sizes[-1]) <= 2                   # boucle sans saut
+    # Plein : au plus gros, le centre est rouge vif opaque.
+    big = frames[sizes.index(max(sizes))]
+    assert big.getpixel((big.width // 2, big.height // 2)) == hook_text.LIVE_RED + (255,)
     plain, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920)
     assert plain.info["dot"] is None

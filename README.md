@@ -464,8 +464,8 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   rien, pas de texte. Design choisi par l'utilisateur parmi cinq essais
   (« E », 2026-11-01) : bandeau noir translucide pleine largeur, filets
   roses, texte blanc gras, pastille « ● <STREAMER> EN LIVE » au-dessus dont le
-  point rouge grandit et rapetisse comme le voyant d'une camera (cycle
-  1,6 s), dans un rond evide (transparent) de la pastille
+  point rouge plein, avec halo, grandit et rapetisse comme un voyant REC (cycle
+  1,4 s), dans un rond evide (transparent) centre dans la pastille
   (clip du jour). POSE APRES LE RENDU : les visages sont cherches sur la
   video finie et le bandeau va la ou il n'y en a pas (marges : un quart de
   visage au-dessus, une moitie dessous ; visages minuscules ignores), au-dessus
