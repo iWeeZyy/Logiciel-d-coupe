@@ -444,3 +444,24 @@ def test_curiosite_sans_question_ignoree():
               {"kind": "direct", "text": "Ouais, je suis"}]
     assert hook_text.choose_text(titles, fallback="Le clip le plus vu du jour") \
         == "Le clip le plus vu du jour"
+
+
+def test_intro_au_premier_plan(tmp_path):
+    """L'intro est posee APRES le bandeau, dans la meme passe : derniere couche."""
+    from video import hook_text
+
+    inputs = ["-i", "clip.mp4", "-i", "bandeau.png"]
+    parts = ["[0:v][1:v]overlay=0:600:format=auto[b]"]
+
+    class Intro:
+        exists = True
+    from video import intro_overlay
+    fake = intro_overlay.IntroOverlay(path="intro.mp4", src_w=1080, src_h=1920, duration=7.0)
+    original = intro_overlay.prepare
+    intro_overlay.prepare = lambda intro, w, h, d: fake
+    try:
+        last = hook_text._add_intro(inputs, parts, "b", Intro(), 1080, 1920, tmp_path)
+    finally:
+        intro_overlay.prepare = original
+    assert last == "i0" and "intro.mp4" in inputs
+    assert parts[0].index("[b][intro0]overlay") > parts[0].index("overlay=0:600")

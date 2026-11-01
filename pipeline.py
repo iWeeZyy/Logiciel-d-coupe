@@ -421,7 +421,9 @@ def run(
                     # Webcam d'angle detectee : mode portrait webcam+jeu
                     # pour ce clip (voir _analyse_framing).
                     fit=(FIT_SPLIT_WEBCAM if webcam_plan is not None else settings.fit_mode),
-                    intro=intro,
+                    # Avec un texte en haut, l'intro est posee APRES le
+                    # bandeau (hook_text.apply), pour rester au premier plan.
+                    intro=None if hook_text_value else intro,
                     webcam_plan=webcam_plan,
                 )
                 if hook_text_value:
@@ -436,7 +438,7 @@ def run(
                         tag=str(hook_cfg.get("tag") or ""),
                         preferred=(0.37 if webcam_plan is not None
                                    else float(hook_cfg.get("top_percent", 11)) / 100),
-                        intro=intro is not None, cancel_token=cancel_token)
+                        intro=intro, cancel_token=cancel_token)
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
                 # incomplet/corrompu, on le supprime plutot que de laisser un

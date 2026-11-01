@@ -12,9 +12,8 @@ from typing import Optional
 
 from core.cancellation import CancelToken
 from editing.timeline import EditList
-from video.ffmpeg_utils import run_ffmpeg, video_duration, video_resolution
+from video.ffmpeg_utils import run_ffmpeg
 from video.filter_graph import build_ffmpeg_args
-from video.intro_overlay import IntroOverlay
 from video.subtitle_renderer import render_ass_file
 
 
@@ -71,35 +70,14 @@ def build_clip(
     # disque -> aucun calque ajoute, le clip sort exactement comme avant
     # cette fonctionnalite.
     import tempfile
-    from dataclasses import replace
 
     from video.cropper import TARGET_H, TARGET_W
 
     workdir = tempfile.TemporaryDirectory(prefix="clipfarming_intro_")
-    intro_overlay = None
-    if intro is not None and intro.exists:
-        intro_w, intro_h = video_resolution(intro.video)
-        intro_overlay = IntroOverlay(
-            path=intro.video, src_w=intro_w, src_h=intro_h,
-            duration=video_duration(intro.video),
-        )
-        # Phrase d'accroche sous le medaillon (« Les clips que tu n'as pas
-        # vus en live ») : dessinee ici, posee par build_ffmpeg_args.
-        text = getattr(intro, "text", "")
-        if text:
-            from pathlib import Path
+    out_w, out_h = tuple(target_size) if target_size else (TARGET_W, TARGET_H)
+    from video.intro_overlay import prepare as prepare_intro
 
-            from video.intro_text import render_intro_text
-
-            out_w, out_h = tuple(target_size) if target_size else (TARGET_W, TARGET_H)
-            png = Path(workdir.name) / "intro_text.png"
-            try:
-                render_intro_text(intro_overlay, text, out_w, out_h, png)
-                intro_overlay = replace(intro_overlay, text_png=str(png))
-            except Exception as error:  # noqa: BLE001 -- le clip sort sans la phrase
-                from core.logging_setup import get_logger
-
-                get_logger().warning(f"Phrase de l'intro non dessinee : {error}")
+    intro_overlay = prepare_intro(intro, out_w, out_h, workdir.name)
 
     # Themes en mosaique (confettis, euros, fleurs en vertical) : la copie
     # reduite de leur video est faite une fois, avant le premier export.

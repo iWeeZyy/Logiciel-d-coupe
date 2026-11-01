@@ -123,7 +123,7 @@ CANDIDATE_TOPS = [t / 100 for t in range(8, 78, 2)]   # hauts possibles du bande
 # Medaillon « Follow » de l'intro, a droite : de 26,5 % a ~46 % du haut
 # pendant ses premieres secondes (video/intro_overlay.py).
 INTRO_ZONE = (0.255, 0.465)
-INTRO_SECONDS = 4.0
+INTRO_SECONDS = 7.0             # repli si la duree de l'intro ne se lit pas
 MIN_FACE_H = 0.035              # visage plus petit : decor, pas une personne a l'ecran
 
 
@@ -215,18 +215,22 @@ def stack_layout(band_h: int, badge_h: int, scale: float) -> tuple[int, int]:
 
 
 def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
-          preferred: float = TOP_PERCENT / 100, intro: bool = True, cancel_token=None) -> bool:
+          preferred: float = TOP_PERCENT / 100, intro=None, cancel_token=None) -> bool:
     """Pose le bandeau sur un clip DEJA rendu, et au-dessus a gauche, si `tag`
     est donne, le badge neon anime « REPLAY » + « <STREAMER> EN LIVE »
     (video/neon_badge.py). Les visages sont cherches sur la video finie
     (quel que soit le cadrage : recadre, webcam + jeu, webcam seule) et
     l'ensemble va la ou il n'y en a pas, puis une seconde passe ffmpeg
-    l'incruste. Faux (clip inchange) si rien a poser ou en cas d'echec --
-    jamais d'exception qui ferait perdre le clip."""
+    l'incruste. `intro` (video/intro.py) : le clip a ete rendu SANS elle,
+    elle est posee ici en dernier, PAR-DESSUS le bandeau (demande de
+    l'utilisateur, 2026-11-01). Faux si le bandeau n'a pas pu etre pose --
+    l'intro l'est quand meme (passe de secours) ; jamais d'exception qui
+    ferait perdre le clip.""" 
     import tempfile
 
     band = render_band(text, out_w, out_h)
     if band is None:
+        _intro_only(video_path, intro, out_w, out_h, cancel_token)
         return False
     scale = min(out_w, out_h) / 1080
     try:
@@ -246,8 +250,8 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
         # Le medaillon ne reste que quelques secondes : le recouvrir coute en
         # proportion de sa duree, comme un visage present le meme temps.
         top = choose_top(faces, total_h / out_h, preferred,
-                         avoid=(INTRO_ZONE,) if intro else (),
-                         avoid_weight=min(0.3, INTRO_SECONDS / max(duration, 1.0)))
+                         avoid=(INTRO_ZONE,) if intro is not None else (),
+                         avoid_weight=min(0.3, _intro_seconds(intro) / max(duration, 1.0)))
         y = int(round(top * out_h)) // 2 * 2
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
             png = Path(tmp) / "bandeau.png"
@@ -265,6 +269,8 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
                 graph += (f";[b][2:v]overlay={round(BADGE_LEFT * scale)}:{y}"
                           f":shortest=1:format=auto[b2]")
                 last = "b2"
+            last = _add_intro(inputs, graph_parts := [graph], last, intro, out_w, out_h, tmp)
+            graph = graph_parts[0]
             graph += f";[{last}]format=yuv420p[v]"
             run_ffmpeg([*inputs, "-filter_complex", graph,
                         "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
@@ -277,4 +283,62 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
         if type(e).__name__ == "CancelledError":
             raise
         logger.warning(f"Texte en haut non ajouté : {e}")
+        _intro_only(video_path, intro, out_w, out_h, cancel_token)
         return False
+
+
+def _intro_seconds(intro) -> float:
+    """Duree reelle de l'intro (7 s pour celle de ClipsOfStreams), sinon
+    INTRO_SECONDS."""
+    try:
+        from video.ffmpeg_utils import video_duration
+
+        return float(video_duration(intro.video)) if intro is not None else 0.0
+    except Exception:  # noqa: BLE001
+        return INTRO_SECONDS
+
+
+def _add_intro(inputs: list, graph_parts: list, last: str, intro, out_w: int, out_h: int,
+               workdir) -> str:
+    """Ajoute l'intro (et sa phrase) en DERNIER au graphe : au premier plan.
+    Renvoie la nouvelle etiquette de sortie."""
+    from video.intro_overlay import layers, prepare
+
+    overlay = prepare(intro, out_w, out_h, workdir) if intro is not None else None
+    if overlay is None:
+        return last
+    first = inputs.count("-i")
+    for n, (args, filt, position, enable) in enumerate(layers(overlay, out_w, out_h, first)):
+        inputs += args
+        graph_parts[0] += (f";{filt};[{last}][intro{n}]overlay={position}"
+                           f":enable='{enable}':format=auto[i{n}]")
+        last = f"i{n}"
+    return last
+
+
+def _intro_only(video_path: str, intro, out_w: int, out_h: int, cancel_token=None) -> None:
+    """Secours : pas de bandeau, mais l'intro (retiree du rendu pour passer
+    au premier plan) doit quand meme etre la."""
+    if intro is None:
+        return
+    import tempfile
+
+    from video.ffmpeg_utils import run_ffmpeg
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="clipfarming_intro_") as tmp:
+            inputs = ["-i", str(video_path)]
+            parts = ["[0:v]null[b]"]
+            last = _add_intro(inputs, parts, "b", intro, out_w, out_h, tmp)
+            if last == "b":
+                return
+            out = Path(tmp) / "avec_intro.mp4"
+            run_ffmpeg([*inputs, "-filter_complex", parts[0] + f";[{last}]format=yuv420p[v]",
+                        "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
+                        "-crf", "17", "-c:a", "copy", "-movflags", "+faststart", str(out)],
+                       "intro", cancel_token=cancel_token)
+            Path(out).replace(video_path)
+    except Exception as e:  # noqa: BLE001
+        if type(e).__name__ == "CancelledError":
+            raise
+        logger.warning(f"Intro non ajoutée : {e}")

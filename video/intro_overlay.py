@@ -199,3 +199,50 @@ def overlay_spec(intro: IntroOverlay, out_w: int, out_h: int,
     position = overlay_position(intro, out_w, out_h)
     enable = f"between(t,0,{max(0.0, intro.duration):.3f})"
     return filt, position, enable
+
+
+def prepare(intro, out_w: int, out_h: int, workdir) -> "IntroOverlay | None":
+    """L'incrustation prete a poser (dimensions, duree, phrase dessinee dans
+    `workdir`) pour une intro de config (video/intro.py), ou None si elle
+    manque. Partagee par le rendu du clip (video/clip_builder.py) et par la
+    passe du texte en haut (video/hook_text.py), qui doit poser l'intro
+    PAR-DESSUS le bandeau."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    from video.ffmpeg_utils import video_duration, video_resolution
+
+    if intro is None or not intro.exists:
+        return None
+    intro_w, intro_h = video_resolution(intro.video)
+    overlay = IntroOverlay(path=intro.video, src_w=intro_w, src_h=intro_h,
+                           duration=video_duration(intro.video))
+    text = getattr(intro, "text", "")
+    if text:
+        from video.intro_text import render_intro_text
+
+        png = Path(workdir) / "intro_text.png"
+        try:
+            render_intro_text(overlay, text, out_w, out_h, png)
+            overlay = replace(overlay, text_png=str(png))
+        except Exception as error:  # noqa: BLE001 -- l'intro sort sans la phrase
+            from core.logging_setup import get_logger
+
+            get_logger().warning(f"Phrase de l'intro non dessinee : {error}")
+    return overlay
+
+
+def layers(overlay: "IntroOverlay", out_w: int, out_h: int, first_index: int):
+    """[(arguments d'entree, sous-graphe prepare, position, condition), ...]
+    pour poser l'intro (et sa phrase) dans un graphe dont la prochaine entree
+    libre est `first_index`. Les sous-graphes referencent deja leurs
+    entrees ; chacun sort sous l'etiquette [introN]."""
+    out = []
+    filt, position, enable = overlay_spec(overlay, out_w, out_h, first_index, first_index + 1)
+    out.append((["-i", overlay.path, "-i", mask_asset_path()], f"{filt}[intro0]", position,
+                enable))
+    if overlay.text_png:
+        inputs, text_filt, text_position, text_enable = text_overlay_spec(overlay)
+        out.append((inputs, f"[{first_index + 2}:v]{text_filt}[intro1]", text_position,
+                    text_enable))
+    return out
