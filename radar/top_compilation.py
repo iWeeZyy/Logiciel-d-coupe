@@ -247,6 +247,10 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
                      "number": number,
                      # L'intro « Follow » de la compilation passe sur le 1er clip.
                      "avoid_intro_s": INTRO_SECONDS if index == 1 and intro else 0.0}
+            if index == 1:
+                # Titre ephemere en neon au-dessus du 1er numero (2026-11-01).
+                block["headline"] = [f"TOP {total}",
+                                     f"DES CLIPS {replay_label(streamer)} CETTE SEMAINE"]
             clip_production = {**production,
                                "editing_overrides": {**overrides, "hook_text": block}}
         paths.append(produce_clip(

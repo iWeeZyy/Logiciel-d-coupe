@@ -198,3 +198,68 @@ def number_frames(number: int, scale: float = 1.0, fps: int = FPS, period: float
         image = Image.alpha_composite(image, _neon(ImageChops.multiply(comet, track), 1.3, tube))
         out.append(image.resize((width // s, height // s), Image.LANCZOS))
     return out
+
+
+PINK_TUBE = ((255, 46, 99), (255, 120, 160), (255, 226, 236))
+HEADLINE_S = 5.5                 # titre ephemere du top (« 5-6 secondes »)
+HEADLINE_OFF_S = 0.45            # extinction en gresillant
+
+
+def headline_level(t: float, duration: float = HEADLINE_S) -> float:
+    """Eclat du titre a l'instant t (pure) : allumage gresillant, respiration,
+    extinction gresillante, puis 0."""
+    if t >= duration:
+        return 0.0
+    left = duration - t
+    if left < HEADLINE_OFF_S:
+        off = (1.0, 0.3, 0.9, 0.1, 0.6, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        return off[min(len(off) - 1, int((HEADLINE_OFF_S - left) * FPS))]
+    return intensity(t, PERIOD_S)
+
+
+def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: int = FPS,
+                    duration: float = HEADLINE_S):
+    """Titre ephemere d'un top (demande du 2026-11-01, design « B » sans la
+    plaque sombre) : `big` (« TOP 5 ») en neon rose, `small` (« DES CLIPS
+    D'ANYME023 CETTE SEMAINE ») en blanc dessous. Images de `duration`
+    secondes, la derniere entierement transparente (le titre a disparu)."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    s = SUPERSAMPLE
+    _, name = _fonts(scale)
+    big_font = name.font_variant(size=max(8, round(150 * scale * s)))
+    small_font = name.font_variant(size=max(8, round(46 * scale * s)))
+    probe = ImageDraw.Draw(Image.new("L", (1, 1)))
+    bb = probe.textbbox((0, 0), big, font=big_font)
+    sb = probe.textbbox((0, 0), small, font=small_font)
+    while sb[2] - sb[0] > (width - 60 * scale) * s and small_font.size > 10:
+        small_font = small_font.font_variant(size=small_font.size - 2)
+        sb = probe.textbbox((0, 0), small, font=small_font)
+    pad = round(40 * scale * s)
+    gap = round(18 * scale * s)
+    w = width * s
+    h = pad + (bb[3] - bb[1]) + gap + (sb[3] - sb[1]) + pad
+    h = h // (2 * s) * (2 * s) + 2 * s
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).text(((w - (bb[2] - bb[0])) / 2 - bb[0], pad - bb[1]), big,
+                              font=big_font, fill=0, stroke_width=max(1, round(4 * scale * s)),
+                              stroke_fill=255)
+    lit = _neon(mask, 1.0, PINK_TUBE)
+    text = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ty = pad + (bb[3] - bb[1]) + gap - sb[1]
+    tx = (w - (sb[2] - sb[0])) / 2 - sb[0]
+    shadow = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).text((tx, ty + 3 * s), small, font=small_font, fill=(0, 0, 0, 230))
+    text = Image.alpha_composite(text, shadow.filter(ImageFilter.GaussianBlur(5 * s)))
+    ImageDraw.Draw(text).text((tx, ty), small, font=small_font, fill=(255, 255, 255, 255))
+    lit = Image.alpha_composite(lit, text).resize((w // s, h // s), Image.LANCZOS)
+    alpha = lit.getchannel("A")
+    out, cache = [], {}
+    for n in range(max(2, round(duration * fps)) + 1):
+        level = round(min(1.0, headline_level(n / fps, duration)), 2)
+        if level not in cache:
+            frame = lit.copy()
+            frame.putalpha(alpha.point(lambda v, lv=level: int(v * lv)))
+            cache[level] = frame
+        out.append(cache[level])
+    return out

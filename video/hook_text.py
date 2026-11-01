@@ -235,7 +235,7 @@ def replay_label(name: str) -> str:
 def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
           preferred: float = TOP_PERCENT / 100, intro=None, cancel_token=None,
           badge_label: str | None = None, number: int | None = None,
-          avoid_intro_s: float = 0.0) -> bool:
+          avoid_intro_s: float = 0.0, headline: tuple[str, str] | None = None) -> bool:
     """Pose le bandeau sur un clip DEJA rendu, et au-dessus a gauche, si `tag`
     est donne, le badge neon anime « REPLAY » + « <STREAMER> EN LIVE »
     (video/neon_badge.py ; `badge_label` remplace ce texte de droite). Les
@@ -246,6 +246,9 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
     sans phrase a afficher, badge et numero restent seuls. `intro`
     (video/intro.py) : le clip a ete rendu SANS elle, elle est posee ici en
     dernier, PAR-DESSUS le bandeau (demande de l'utilisateur, 2026-11-01).
+    `headline` : (« TOP 5 », « DES CLIPS DE … CETTE SEMAINE ») -- titre
+    ephemere en neon rose, centre au-dessus du badge, eteint apres
+    neon_badge.HEADLINE_S (1er clip d'un top).
     `avoid_intro_s` : l'intro sera posee plus tard sur ce clip (compilation)
     pendant ce temps, eviter aussi sa zone. Faux si rien n'a pu etre pose --
     l'intro l'est quand meme (passe de secours) ; jamais d'exception qui
@@ -277,6 +280,13 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
                                                 row_h if (badge or number_anim) else 0, scale)
         else:
             total_h, band_offset = row_h, 0
+        head = []
+        if headline:
+            from video import neon_badge
+
+            head = neon_badge.headline_frames(headline[0], headline[1], out_w, scale)
+        head_h = head[0].height if head else 0
+        total_h += head_h
         duration = video_duration(video_path)
         samples = detect_face_track(video_path, 0.0, duration, sample_interval_s=0.5,
                                     max_samples=80, confidence_threshold=0.6, max_faces=6)
@@ -287,7 +297,7 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
         top = choose_top(faces, total_h / out_h, preferred,
                          avoid=(INTRO_ZONE,) if intro_s > 0 else (),
                          avoid_weight=min(0.3, intro_s / max(duration, 1.0)))
-        y = int(round(top * out_h)) // 2 * 2
+        y = (int(round(top * out_h)) + head_h) // 2 * 2       # haut de la ligne du badge
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
             out = Path(tmp) / "avec_texte.mp4"
             inputs = ["-i", str(video_path)]
@@ -325,6 +335,14 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
                 add(f"{inputs.count('-i') - 1}:v",
                     f"{out_w - round(BADGE_LEFT * scale) - number_anim[0].width}:"
                     f"{y + (row_h - number_anim[0].height) // 2}", ":shortest=1")
+            if head:
+                from video import neon_badge
+
+                for k, frame in enumerate(head):
+                    frame.save(Path(tmp) / f"titre_{k:03d}.png")
+                inputs += ["-framerate", str(neon_badge.FPS),
+                           "-i", str(Path(tmp) / "titre_%03d.png")]
+                add(f"{inputs.count('-i') - 1}:v", f"0:{max(0, y - head_h)}", ":eof_action=pass")
             last = _add_intro(inputs, graph_parts := [graph], last, intro, out_w, out_h, tmp)
             graph = graph_parts[0]
             graph += f";[{last}]format=yuv420p[v]"

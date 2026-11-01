@@ -447,7 +447,9 @@ def run(
                         intro=intro, cancel_token=cancel_token,
                         badge_label=None if badge_label is None else str(badge_label),
                         number=int(hook_number) if hook_number else None,
-                        avoid_intro_s=float(hook_cfg.get("avoid_intro_s") or 0))
+                        avoid_intro_s=float(hook_cfg.get("avoid_intro_s") or 0),
+                        headline=(tuple(hook_cfg["headline"])
+                                  if hook_cfg.get("headline") else None))
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
                 # incomplet/corrompu, on le supprime plutot que de laisser un

@@ -519,3 +519,31 @@ def test_top_chaque_clip_porte_replay_et_son_numero(monkeypatch, tmp_path):
     assert blocks[0]["avoid_intro_s"] > 0 and blocks[1]["avoid_intro_s"] == 0
     # Pas de seconde pastille ni de petite phrase par la compilation.
     assert composed["numbers"] is False and composed["labels"] is None
+
+
+def test_titre_ephemere_du_top():
+    from video import neon_badge as nb
+
+    assert nb.headline_level(0.0) < 0.5 < nb.headline_level(1.0)
+    assert nb.headline_level(nb.HEADLINE_S) == 0.0 == nb.headline_level(9.0)
+    frames = nb.headline_frames("TOP 5", "DES CLIPS DE KAMET0 CETTE SEMAINE", 1080)
+    assert frames[0].width == 1080
+    assert frames[-1].getchannel("A").getbbox() is None          # disparu a la fin
+    assert frames[30].getchannel("A").getbbox() is not None
+
+
+def test_titre_seulement_sur_le_premier_clip(monkeypatch, tmp_path):
+    from types import SimpleNamespace as O
+
+    import video.compilation
+    from radar import top_compilation
+
+    blocks = []
+    monkeypatch.setattr(top_compilation, "produce_clip",
+                        lambda o, production, *a, **k: blocks.append(
+                            production["editing_overrides"]["hook_text"]) or o.title)
+    monkeypatch.setattr(video.compilation, "compose", lambda *a, **k: [])
+    clips = [O(title=str(i)) for i in range(3)]
+    top_compilation.build(clips, {}, tmp_path, name="x", countdown=False, streamer="Anyme023")
+    assert blocks[0]["headline"] == ["TOP 3", "DES CLIPS D'ANYME023 CETTE SEMAINE"]
+    assert all("headline" not in b for b in blocks[1:])
