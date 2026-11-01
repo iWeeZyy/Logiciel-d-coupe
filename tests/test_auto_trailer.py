@@ -82,7 +82,8 @@ def test_publication_marque_toutes_les_versions_du_film(tmp_path, monkeypatch):
         published.mark([article.url])
         return video, video.with_suffix(".txt"), "Légende"
 
-    result = at.run(tmp_path / "out", today=TODAY, fetch=lambda: FEED, producer=producer)
+    result = at.run(tmp_path / "out", today=TODAY, fetch=lambda: FEED, producer=producer,
+                    lookup=None)
     assert result["status"] == "produit" and result["title"].startswith("SLAYGROUND")
     assert "288p" in result["skipped"][0]                    # RIVER VF ecartee, rapportee
     done = published.load()
@@ -127,3 +128,54 @@ def test_deja_sous_titree_pas_de_seconde_couche():
     assert already_subtitled("MALFAISANTE | Bande-annonce officielle VOST")
     assert not already_subtitled("Karma Bande-annonce VF")
     assert not already_subtitled("Jusqu'au bout du rêve Bande-annonce VO")
+
+
+
+# --------------------------------------------------- popularite (AlloCine)
+
+def _info(rank, views=0, release="2026-11-20", video="123", film="456", label="X"):
+    from news_story.popularity import FilmInfo
+
+    return FilmInfo(film, label, views, rank,
+                    date.fromisoformat(release) if release else None, video)
+
+
+def test_seulement_les_films_populaires_le_plus_populaire_d_abord():
+    infos = {"RIVER": _info(800), "SLAYGROUND": _info(40, label="Slayground"),
+             "Vieux film": _info(3, release="2026-08-12")}
+    decision = at.decide(FEED, {}, TODAY, lookup=lambda title: infos.get(title))
+    titles = [a.title for a in decision.candidates]
+    # RIVER : rang 800, peu connu ; Vieux film : en salle depuis aout.
+    assert titles == ["SLAYGROUND Bande Annonce VF (2026)"]
+
+
+def test_film_youtube_remplace_par_la_video_allocine():
+    infos = {"SLAYGROUND": _info(40, video="20646154", film="324508", label="Slayground")}
+    decision = at.decide(FEED, {}, TODAY, skip_youtube=True, lookup=lambda title: infos.get(title))
+    article = decision.article
+    assert article.url == ("https://www.allocine.fr/video/player_gen_cmedia=20646154"
+                           "&cfilm=324508.html")
+    assert article.title == "Slayground Bande-annonce VF"
+
+
+def test_aucun_film_populaire_rien_a_faire():
+    decision = at.decide(FEED, {}, TODAY, force=True, lookup=lambda title: _info(1118))
+    assert decision.article is None and "populaire" in decision.reason
+
+
+def test_popularite_lecture_et_titre_qui_ne_correspond_pas():
+    from news_story import popularity
+
+    payload = {"results": [
+        {"entity_type": "movie", "entity_id": "1", "label": "Mystic River", "viewcount": 9,
+         "irankpopular": 900, "last_release": "2003-10-15T00:00:00+01:00", "data": {}},
+        {"entity_type": "movie", "entity_id": "324508", "label": "Dune : Troisième partie",
+         "original_label": "Dune: Part Three", "viewcount": 222566, "irankpopular": 12,
+         "last_release": "2026-12-16T00:00:00.000000+01:00",
+         "data": {"default_video": 20646154}}]}
+    info = popularity.parse(payload, "Dune : Troisième Partie")
+    assert info.rank == 12 and info.release == date(2026, 12, 16) and info.video_id == "20646154"
+    assert popularity.parse(payload, "RIVER") is None             # pas « Mystic River »
+    assert popularity.is_popular(info, TODAY)
+    assert not popularity.is_popular(_info(1118, release="2026-08-12"), TODAY)
+    assert popularity.is_popular(_info(None, views=250_000), TODAY)

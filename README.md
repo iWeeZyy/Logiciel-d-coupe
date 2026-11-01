@@ -444,6 +444,14 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   « Dimanche prochain tu veux voir quel top ? Dis-le moi en commentaire ! »
   (une seule question dans la legende). Cles `clip_titles` / `ask_next`
   (vrai par defaut) ; la fenetre du logiciel garde l'ancien texte.
+- **Bande-annonce ActuaFilms : seulement des films connus**
+  (`news_story/popularity.py`, 2026-11-01, apres « Arcobaleno », rang 1118
+  sur AlloCine : « Personne ne regardera cette bande-annonce »). Chaque film
+  du fil est cherche sur AlloCine (autocompletion du site : vues, rang de
+  popularite, date de sortie, derniere video) ; ne sont gardes que le top 150
+  ou plus de 100 000 vues, a venir ou sortis depuis moins d'un mois, le plus
+  populaire d'abord. Les gros films trouves sur YouTube (studios, Netflix,
+  Prime…), inaccessible depuis GitHub, sont pris dans leur video AlloCine.
 - **Clip du jour** (`radar/daily_clip.py`, `python gui_main.py --daily-clip
   --config weekly_compilation.json --memory clips_publies.json --out sortie/`,
   workflow reutilisable `.github/workflows/daily-clip.yml`, appelant

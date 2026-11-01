@@ -115,12 +115,44 @@ def one_per_film(articles) -> list:
     return [best[key] for key in order]
 
 
-def decide(articles, done: dict, today: date, force: bool = False,
-           skip_youtube: bool = False) -> Decision:
-    """Quelle bande-annonce faire aujourd'hui (fonction pure).
+def popular_only(articles, today: date, lookup, skip_youtube: bool = False) -> list:
+    """Les bandes-annonces de films POPULAIRES et d'actualite, le plus
+    populaire d'abord (news_story/popularity.py) ; pour un film sur YouTube
+    quand YouTube est inaccessible, la video AlloCine du meme film a sa place.
+    `lookup(titre)` -> FilmInfo | None (injecte : pas de reseau en test)."""
+    from dataclasses import replace
 
-    Les plus recentes d'abord ; une bande-annonce sans date passe apres les
-    datees. Jamais une deja publiee."""
+    from news_story import popularity
+    from news_story.trailer_title import film_title
+
+    kept = []
+    for article in articles:
+        info = lookup(film_title(article.title))
+        if not popularity.is_popular(info, today):
+            logger.info(f"Écartée (film peu connu ou trop ancien) : {article.title}"
+                        + (f" — rang {info.rank}, {info.views} vues, sortie {info.release}"
+                           if info else " — introuvable sur AlloCiné"))
+            continue
+        if skip_youtube and on_youtube(article):
+            url = popularity.allocine_video_url(info)
+            if not url:
+                continue
+            version = " VOST" if _is_vo(article) else " VF"
+            article = replace(article, url=url, title=f"{info.label} Bande-annonce{version}",
+                              source_label=f"AlloCiné (au lieu de {article.source_label})")
+        kept.append((popularity.popularity_key(info), article))
+    kept.sort(key=lambda pair: pair[0])
+    return [article for _key, article in kept]
+
+
+def decide(articles, done: dict, today: date, force: bool = False,
+           skip_youtube: bool = False, lookup=None) -> Decision:
+    """Quelle bande-annonce faire aujourd'hui (fonction pure si `lookup` est
+    fourni sans reseau).
+
+    Sans `lookup` : les plus recentes d'abord. Avec : seulement des films
+    populaires et d'actualite, le plus populaire d'abord (demande de
+    l'utilisateur, 2026-11-01). Jamais une deja publiee."""
     from news_story.published import published_on
 
     posted_films = {film_key(a) for a in articles if published_on(a.url, done)}
@@ -129,10 +161,13 @@ def decide(articles, done: dict, today: date, force: bool = False,
     fresh.sort(key=lambda a: (_published_day(a) is not None, _published_day(a) or date.min),
                reverse=True)
     fresh = one_per_film(fresh)
+    if lookup is not None:
+        fresh = popular_only(fresh, today, lookup, skip_youtube=skip_youtube)
     if skip_youtube:
         fresh = [a for a in fresh if not on_youtube(a)]
     if not fresh:
-        return Decision(reason="Aucune bande-annonce nouvelle dans le fil.")
+        return Decision(reason="Aucune bande-annonce nouvelle d'un film populaire dans le fil."
+                        if lookup is not None else "Aucune bande-annonce nouvelle dans le fil.")
     last = last_post_day(done)
     if force or last is None:
         return Decision(fresh[0], "Essai forcé." if force else "Première bande-annonce.",
@@ -213,7 +248,7 @@ def produce(article, out_dir: Path, on_status=logger.info):
 
 def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         fetch=fetch_trailers, producer=produce, on_status=logger.info,
-        skip_youtube: bool = False) -> dict:
+        skip_youtube: bool = False, lookup="allocine") -> dict:
     """{"status": "produit"|"rien"|"erreur", "reason", "title", "video",
     "caption"}. Ne leve pas."""
     from news_story import published
@@ -223,8 +258,13 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         articles = fetch()
     except Exception as e:  # noqa: BLE001 -- rapporte
         return {"status": "erreur", "reason": f"Fil Bandes-annonces illisible : {e}"}
+    if lookup == "allocine":
+        from news_story.popularity import lookup as allocine_lookup
+
+        cache: dict = {}
+        lookup = lambda title: cache.setdefault(title, allocine_lookup(title))  # noqa: E731
     decision = decide(articles, published.load(), today, force=force,
-                      skip_youtube=skip_youtube)
+                      skip_youtube=skip_youtube, lookup=lookup)
     on_status(decision.reason)
     if decision.article is None:
         return {"status": "rien", "reason": decision.reason}
