@@ -391,7 +391,8 @@ def run(
             ass_path = (str(Path(tmp_dir) / f"{clip_stem(i)}.ass")
                         if settings.editing_module_enabled("captions") else None)
             hook = _hook_for_clip(settings, sentence_index, c,
-                                  Path(tmp_dir) / f"{clip_stem(i)}_texte.png")
+                                  Path(tmp_dir) / f"{clip_stem(i)}_texte.png",
+                                  split=webcam_plan is not None)
 
             try:
                 build_clip(
@@ -866,7 +867,7 @@ def _floating_webcam_plan(video_path: str, candidate, samples) -> Optional[Frami
                        ("fond fixe : la webcam seule",), box=rect)
 
 
-def _hook_for_clip(settings, sentence_index, candidate, out_png: Path):
+def _hook_for_clip(settings, sentence_index, candidate, out_png: Path, split: bool = False):
     """Le texte en haut du clip (video/hook_text.py) : une phrase REELLEMENT
     prononcee, une question d'abord. None si le module est coupe ou s'il n'y
     a rien de dit -- jamais une erreur qui empecherait le clip."""
@@ -878,19 +879,29 @@ def _hook_for_clip(settings, sentence_index, candidate, out_png: Path):
 
         cfg = settings.editing_module("hook_text")
         meta_cfg = settings.editing_module("metadata")
+        max_words = int(cfg.get("max_words", hook_text.MAX_WORDS))
         sentences = sentences_in_range(sentence_index, candidate.start, candidate.end)
-        if not sentences:
-            return None
-        meta = build_metadata(
-            sentences, keyword_terms=settings.keywords_config.get("strong_keywords", []),
-            max_title_words=int(cfg.get("max_words", hook_text.MAX_WORDS)),
-            punchy_max_words=int(meta_cfg.get("punchy_max_words", 6)),
-            min_title_words=int(meta_cfg.get("min_title_words", 3)),
-            max_description_sentences=1, max_hashtags=0)
-        text = hook_text.choose_text(meta.titles, int(cfg.get("max_words", hook_text.MAX_WORDS)))
+        titles = ()
+        if sentences:
+            # Phrases entieres (pas de coupe a max_words ici) : shorten() coupe
+            # ensuite proprement, sans finir sur un petit mot.
+            titles = build_metadata(
+                sentences, keyword_terms=settings.keywords_config.get("strong_keywords", []),
+                max_title_words=max_words + 8,
+                punchy_max_words=int(meta_cfg.get("punchy_max_words", 6)),
+                min_title_words=int(meta_cfg.get("min_title_words", 3)),
+                max_description_sentences=1, max_hashtags=0).titles
+        text = hook_text.choose_text(titles, max_words, preferred=str(cfg.get("preferred") or ""))
         out_w, out_h = settings.target_size()
-        hook = hook_text.draw(text, out_png, out_w, out_h,
-                              float(cfg.get("top_percent", hook_text.TOP_PERCENT)))
+        if split:
+            # Webcam en haut, jeu en bas : pas sur le visage du streamer
+            # (constate sur le premier clip du jour) ni sous le medaillon
+            # « Follow » de l'intro (26,5 % -> ~45 % du haut, a droite) : en
+            # haut de la bande du jeu, juste sous le medaillon.
+            top = float(cfg.get("split_top_percent", 46))
+        else:
+            top = float(cfg.get("top_percent", hook_text.TOP_PERCENT))
+        hook = hook_text.draw(text, out_png, out_w, out_h, top)
         if hook is not None:
             logger.info(f"Texte en haut : « {text} »")
         return hook

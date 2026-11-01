@@ -37,23 +37,50 @@ class HookText:
     y: int
 
 
-def choose_text(titles, max_words: int = MAX_WORDS) -> str:
-    """La phrase a afficher parmi les propositions du module de titres
-    (dicts {kind, text} ou objets .kind/.text) : une question d'abord, sinon
-    la phrase directe. "" si aucune. Fonction pure."""
+_SMALL_WORDS = {"le", "la", "les", "l'", "de", "du", "des", "d'", "un", "une", "et", "à", "a",
+                "en", "que", "qui", "pour", "par", "sur", "dans", "au", "aux", "ce", "cette",
+                "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "mais", "ou",
+                "c'est", "je", "tu", "il", "on", "nous", "vous"}
+
+
+def clean(text: str) -> str:
+    """Nettoie une phrase transcrite ou un titre : guillemets autour, espace
+    parasite avant une apostrophe (« c 'est »), score coupe (« 3 -2 »)."""
+    text = " ".join((text or "").split())
+    text = re.sub(r"(\w) ?['’] ?(\w)", r"\1'\2", text)
+    text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
+    return text.strip(' "«»“”').strip()
+
+
+def shorten(text: str, max_words: int = MAX_WORDS) -> str:
+    """Au plus `max_words` mots, sans finir sur un petit mot (« … mes
+    enfants qui… » -> « … mes enfants… »)."""
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    kept = words[:max_words]
+    while len(kept) > 3 and kept[-1].lower().strip(",;:") in _SMALL_WORDS:
+        kept.pop()
+    return " ".join(kept).rstrip(" ,;:") + "…"
+
+
+def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "") -> str:
+    """La phrase a afficher : une QUESTION reellement posee dans le clip
+    d'abord (elle fait commenter) ; sinon `preferred` -- le titre donne au
+    clip sur Twitch, ecrit par un humain et souvent la chute du moment --
+    s'il fait au moins 3 mots ; sinon la phrase la plus percutante prononcee.
+    "" si rien. Fonction pure."""
     by_kind = {}
     for title in titles or ():
         kind = title.get("kind") if isinstance(title, dict) else getattr(title, "kind", "")
         text = title.get("text") if isinstance(title, dict) else getattr(title, "text", "")
         if kind and text and kind not in by_kind:
             by_kind[kind] = " ".join(str(text).split())
-    text = by_kind.get("curiosite") or by_kind.get("direct") or ""
-    # La transcription separe parfois un score : « 3 -2 » -> « 3-2 ».
-    text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
-    words = text.split()
-    if len(words) > max_words:
-        text = " ".join(words[:max_words]).rstrip(" ,;:") + "…"
-    return text
+    preferred = clean(preferred)
+    if len(preferred.split()) < 3:
+        preferred = ""
+    text = clean(by_kind.get("curiosite") or preferred or by_kind.get("direct") or "")
+    return shorten(text, max_words)
 
 
 def draw(text: str, out_path, out_w: int, out_h: int,

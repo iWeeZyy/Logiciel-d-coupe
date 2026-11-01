@@ -131,7 +131,15 @@ def produce_clip(opportunity, production: dict, cancel_token, on_status=lambda m
         fit_mode=fit_mode,
     )
     settings = load_settings(cli_args)
-    apply_editing_overrides(settings, production.get("editing_overrides") or {})
+    overrides = dict(production.get("editing_overrides") or {})
+    if overrides.get("hook_text", True) and getattr(opportunity, "title", ""):
+        # « Texte en haut » : le titre donne au clip sur Twitch est un
+        # candidat (video/hook_text.choose_text).
+        current = overrides.get("hook_text", True)
+        block = dict(current) if isinstance(current, dict) else {"enabled": bool(current)}
+        block["preferred"] = opportunity.title
+        overrides["hook_text"] = block
+    apply_editing_overrides(settings, overrides)
     project_store.write_manifest(
         folder, name=name, source_label=title, source_kind="local",
         settings_used={

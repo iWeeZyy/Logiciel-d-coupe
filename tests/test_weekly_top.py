@@ -364,3 +364,20 @@ def test_compilation_sans_texte_en_haut():
 
     assert ("hook_text", "Texte en haut") in QUICK_MODULES
     assert default_production()["editing_overrides"]["hook_text"] is True
+
+
+def test_texte_en_haut_titre_twitch_et_nettoyage():
+    from video import hook_text
+
+    spoken = [{"kind": "direct", "text": "44 000 dégâts mais Kali c 'est plus que mes enfants qui vont naître"}]
+    # Le titre Twitch (3 mots ou plus) passe devant la phrase prononcee...
+    assert hook_text.choose_text(spoken, preferred='"CALISTE JE T\'AIME PLUS QUE MES ENFANTS"') \
+        == "CALISTE JE T'AIME PLUS QUE MES ENFANTS"
+    # ... mais pas devant une vraie question.
+    question = spoken + [{"kind": "curiosite", "text": "Tu ferais quoi à sa place ?"}]
+    assert hook_text.choose_text(question, preferred="Un titre de clip long") \
+        == "Tu ferais quoi à sa place ?"
+    # Titre trop court (« W ») : la phrase, nettoyee et coupee proprement.
+    text = hook_text.choose_text(spoken, max_words=10, preferred="W")
+    assert "c'est" in text and not text.endswith("qui…")
+    assert text == "44 000 dégâts mais Kali c'est plus que mes enfants…"
