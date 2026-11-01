@@ -127,12 +127,11 @@ INTRO_SECONDS = 4.0
 MIN_FACE_H = 0.035              # visage plus petit : decor, pas une personne a l'ecran
 
 
-def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
+def render_band(text: str, out_w: int, out_h: int):
     """Design « bandeau » choisi par l'utilisateur (design E, 2026-11-01) :
     bande noire translucide sur toute la largeur, filets roses en haut et en
-    bas, texte blanc gras, et au-dessus a gauche une pastille rose
-    « ● <STREAMER> EN LIVE » si `tag` est donne. Renvoie (image RGBA de
-    largeur out_w, hauteur de la pastille au-dessus du bandeau) ou None."""
+    bas, texte blanc gras. Le badge neon se pose au-dessus (apply). Renvoie
+    l'image RGBA (largeur out_w) ou None."""
     text = " ".join((text or "").split())
     if not text:
         return None
@@ -152,94 +151,24 @@ def render_band(text: str, out_w: int, out_h: int, tag: str = ""):
             return _font(round(size * scale))
 
     title_font = font("BarlowCondensed-ExtraBoldItalic.ttf", 68)
-    tag_font = font("BarlowCondensed-SemiBold.ttf", 40)
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     lines = wrap_text(probe, text.upper(), title_font, out_w - round(140 * scale),
                       max_lines=MAX_LINES)
     line_h = round(78 * scale)
     pad, rule = round(26 * scale), max(3, round(8 * scale))
     band_h = line_h * len(lines) + 2 * pad
-    pill_h = round(60 * scale) if tag else 0
-    image = Image.new("RGBA", (out_w, pill_h + band_h), (0, 0, 0, 0))
-    dot_center = None
+    image = Image.new("RGBA", (out_w, band_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    top = pill_h
+    top = 0
     draw.rectangle([0, top, out_w, top + band_h], fill=(0, 0, 0, BAND_ALPHA))
     draw.rectangle([0, top, out_w, top + rule], fill=PINK + (255,))
     draw.rectangle([0, top + band_h - rule, out_w, top + band_h], fill=PINK + (255,))
-    if tag:
-        label = f"{tag} EN LIVE".upper()
-        x = round(60 * scale)
-        tw = draw.textlength(label, font=tag_font)
-        dot = round(26 * scale)
-        ring = max(2, round(4 * scale))
-        hole_r = dot // 2 + ring
-        pad, gap = round(16 * scale), round(12 * scale)
-        # La pastille se prolonge dans le filet rose du bandeau : son milieu
-        # visible est a (pill_h + rule) / 2, pas a pill_h / 2.
-        cy = (pill_h + rule) // 2
-        cx = x + pad + hole_r
-        text_x = cx + hole_r + gap
-        draw.rounded_rectangle([x, 0, text_x + tw + round(22 * scale), pill_h + rule],
-                               radius=round(16 * scale), fill=PINK + (255,))
-        # Rond evide (transparent) dans la pastille ; le point rouge qui
-        # grandit et rapetisse y est pose a l'incrustation (dot_frames).
-        draw.ellipse([cx - hole_r, cy - hole_r, cx + hole_r, cy + hole_r], fill=(0, 0, 0, 0))
-        top_t, bottom_t = draw.textbbox((0, 0), label, font=tag_font)[1::2]
-        draw.text((text_x, cy - (top_t + bottom_t) / 2), label, font=tag_font,
-                  fill=(255, 255, 255))
-        dot_center = (cx, cy, dot)
     y = top + pad
     for line in lines:
         draw.text(((out_w - draw.textlength(line, font=title_font)) / 2, y), line,
                   font=title_font, fill=(255, 255, 255))
         y += line_h
-    image.info["dot"] = dot_center       # (x, y, diametre) du point « en direct »
-    return image, pill_h
-
-
-LIVE_RED = (255, 23, 23)
-BREATH_PERIOD_S = 1.4       # un battement complet (plus lent que le voyant REC de reference, ~0,65 s)
-BREATH_MIN = 0.25           # le point ne disparait jamais tout a fait
-
-
-BREATH_SMALL = 0.12         # presque un point d'epingle au plus petit
-GLOW_SPREAD = 2.6           # cote de l'image du point : la place du halo
-FPS = 30
-
-
-def breath(t: float, period: float = BREATH_PERIOD_S) -> float:
-    """0 -> 1 -> 0 en douceur sur une periode (fonction pure)."""
-    import math
-
-    return 0.5 - 0.5 * math.cos(2 * math.pi * (t % period) / period)
-
-
-def dot_frames(diameter: int, period: float = BREATH_PERIOD_S, fps: int = FPS):
-    """Une periode d'animation du point « en direct », sur le modele du
-    voyant REC montre par l'utilisateur (2026-11-01), plus lent et lumineux a
-    sa demande : un point rouge vif PLEIN qui retrecit presque jusqu'a
-    disparaitre puis regrossit, entoure d'un halo rouge doux qui suit sa
-    taille. Images carrees transparentes, point au centre, bord lisse
-    (dessine 4 fois plus grand puis reduit) ; elles bouclent sans saut."""
-    from PIL import Image, ImageDraw, ImageFilter
-
-    size = int(diameter * GLOW_SPREAD) // 2 * 2 + 4
-    big = size * 4
-    frames = []
-    for k in range(max(2, round(period * fps))):
-        b = breath(k / fps, period)
-        radius = diameter / 2 * (BREATH_SMALL + (1 - BREATH_SMALL) * b) * 4
-        glow = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-        g = radius * 1.9
-        ImageDraw.Draw(glow).ellipse([big / 2 - g, big / 2 - g, big / 2 + g, big / 2 + g],
-                                     fill=LIVE_RED + (int(140 + 80 * b),))
-        image = glow.filter(ImageFilter.GaussianBlur(max(2.0, radius * 0.7)))
-        ImageDraw.Draw(image).ellipse([big / 2 - radius, big / 2 - radius,
-                                       big / 2 + radius, big / 2 + radius],
-                                      fill=LIVE_RED + (255,))
-        frames.append(image.resize((size, size), Image.LANCZOS))
-    return frames
+    return image
 
 
 def choose_top(face_samples, height: float, preferred: float,
@@ -272,54 +201,70 @@ def choose_top(face_samples, height: float, preferred: float,
     return best[1] if best else preferred
 
 
+BADGE_OVERLAP = 10              # le badge chevauche le filet rose du bandeau (px a 1080)
+BADGE_LEFT = 46
+
+
+def stack_layout(band_h: int, badge_h: int, scale: float) -> tuple[int, int]:
+    """(hauteur totale, decalage du bandeau) quand le badge neon est pose
+    au-dessus du bandeau en le chevauchant un peu. Fonction pure."""
+    if not badge_h:
+        return band_h, 0
+    offset = badge_h - round(BADGE_OVERLAP * scale)
+    return offset + band_h, offset
+
+
 def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
           preferred: float = TOP_PERCENT / 100, intro: bool = True, cancel_token=None) -> bool:
-    """Pose le bandeau sur un clip DEJA rendu : les visages sont cherches sur
-    la video finie (quel que soit le cadrage : recadre, webcam + jeu, webcam
-    seule), le bandeau va la ou il n'y en a pas, puis une seconde passe
-    ffmpeg l'incruste. Faux (clip inchange) si rien a poser ou en cas
-    d'echec -- jamais d'exception qui ferait perdre le clip."""
+    """Pose le bandeau sur un clip DEJA rendu, et au-dessus a gauche, si `tag`
+    est donne, le badge neon anime « REPLAY » + « <STREAMER> EN LIVE »
+    (video/neon_badge.py). Les visages sont cherches sur la video finie
+    (quel que soit le cadrage : recadre, webcam + jeu, webcam seule) et
+    l'ensemble va la ou il n'y en a pas, puis une seconde passe ffmpeg
+    l'incruste. Faux (clip inchange) si rien a poser ou en cas d'echec --
+    jamais d'exception qui ferait perdre le clip."""
     import tempfile
 
-    rendered = render_band(text, out_w, out_h, tag)
-    if rendered is None:
+    band = render_band(text, out_w, out_h)
+    if band is None:
         return False
-    image, _pill_h = rendered
+    scale = min(out_w, out_h) / 1080
     try:
         from video.face_detector import detect_face_track
         from video.ffmpeg_utils import run_ffmpeg, video_duration
 
+        badge = []
+        if tag:
+            from video import neon_badge
+
+            badge = neon_badge.frames(tag, scale)
+        total_h, band_offset = stack_layout(band.height, badge[0].height if badge else 0, scale)
         duration = video_duration(video_path)
         samples = detect_face_track(video_path, 0.0, duration, sample_interval_s=0.5,
                                     max_samples=80, confidence_threshold=0.6, max_faces=6)
         faces = [[(f.y, f.h) for f in (getattr(s, "faces", ()) or ())] for s in samples]
         # Le medaillon ne reste que quelques secondes : le recouvrir coute en
         # proportion de sa duree, comme un visage present le meme temps.
-        top = choose_top(faces, image.height / out_h, preferred,
+        top = choose_top(faces, total_h / out_h, preferred,
                          avoid=(INTRO_ZONE,) if intro else (),
                          avoid_weight=min(0.3, INTRO_SECONDS / max(duration, 1.0)))
         y = int(round(top * out_h)) // 2 * 2
-        dot = image.info.get("dot")
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
             png = Path(tmp) / "bandeau.png"
-            image.save(png)
+            band.save(png)
             out = Path(tmp) / "avec_texte.mp4"
             inputs = ["-i", str(video_path), "-i", str(png)]
-            graph = f"[0:v][1:v]overlay=0:{y}:format=auto[b]"
-            if dot:
-                # Point rouge qui grandit et rapetisse, comme le voyant d'une
-                # camera : une periode d'images, bouclee sur tout le clip.
-                frames = dot_frames(dot[2])
-                for k, frame in enumerate(frames):
-                    frame.save(Path(tmp) / f"point_{k:03d}.png")
-                side = frames[0].width
-                dx, dy = dot[0] - side // 2, y + dot[1] - side // 2
-                inputs += ["-stream_loop", "-1", "-framerate", str(FPS),
-                           "-i", str(Path(tmp) / "point_%03d.png")]
-                graph += f";[b][2:v]overlay={dx}:{dy}:shortest=1:format=auto[b2]"
+            graph = f"[0:v][1:v]overlay=0:{y + band_offset}:format=auto[b]"
+            last = "b"
+            if badge:
+                # Une periode d'animation, bouclee sur tout le clip.
+                for k, frame in enumerate(badge):
+                    frame.save(Path(tmp) / f"badge_{k:03d}.png")
+                inputs += ["-stream_loop", "-1", "-framerate", str(neon_badge.FPS),
+                           "-i", str(Path(tmp) / "badge_%03d.png")]
+                graph += (f";[b][2:v]overlay={round(BADGE_LEFT * scale)}:{y}"
+                          f":shortest=1:format=auto[b2]")
                 last = "b2"
-            else:
-                last = "b"
             graph += f";[{last}]format=yuv420p[v]"
             run_ffmpeg([*inputs, "-filter_complex", graph,
                         "-map", "[v]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",

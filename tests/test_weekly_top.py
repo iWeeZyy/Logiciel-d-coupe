@@ -341,13 +341,10 @@ def test_bandeau_design_e():
     from video import hook_text
 
     assert hook_text.render_band("", 1080, 1920) is None
-    image, pill = hook_text.render_band("Caliste je t'aime", 1080, 1920, tag="Kamet0")
-    assert image.width == 1080 and pill > 0
-    # Pixel de la bande : noir translucide ; filet du haut : rose.
-    assert image.getpixel((540, pill + 2))[:3] == hook_text.PINK
-    assert image.getpixel((5, pill + 30))[3] == hook_text.BAND_ALPHA
-    plain, no_pill = hook_text.render_band("Caliste je t'aime", 1080, 1920)
-    assert no_pill == 0 and plain.height < image.height
+    image = hook_text.render_band("Caliste je t'aime", 1080, 1920)
+    assert image.width == 1080
+    assert image.getpixel((540, 2))[:3] == hook_text.PINK            # filet du haut
+    assert image.getpixel((5, 30))[3] == hook_text.BAND_ALPHA         # bande translucide
 
 
 def test_bandeau_jamais_sur_un_visage():
@@ -402,28 +399,23 @@ def test_texte_en_haut_titre_twitch_et_nettoyage():
     assert text == "44 000 dégâts mais Kali c'est plus que mes enfants…"
 
 
-def test_point_rouge_qui_respire():
-    from video import hook_text
+def test_badge_neon_replay():
+    from video import hook_text, neon_badge
 
-    image, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920, tag="Kamet0")
-    x, y, diameter = image.info["dot"]
-    assert diameter > 0 and 0 < x < 300
-    assert image.getpixel((x, y))[3] == 0                 # rond evide : transparent
-    frames = hook_text.dot_frames(diameter)
-    assert len(frames) == round(hook_text.BREATH_PERIOD_S * hook_text.FPS)
-
-    def width(frame):
-        box = frame.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
-        return (box[2] - box[0]) if box else 0
-
-    sizes = [width(f) for f in frames]
-    assert max(sizes) >= diameter - 2 and min(sizes) <= diameter * 0.2   # presque disparu
-    assert abs(sizes[0] - sizes[-1]) <= 2                   # boucle sans saut
-    # Plein : au plus gros, le centre est rouge vif opaque.
-    big = frames[sizes.index(max(sizes))]
-    assert big.getpixel((big.width // 2, big.height // 2)) == hook_text.LIVE_RED + (255,)
-    plain, _ = hook_text.render_band("Caliste je t'aime", 1080, 1920)
-    assert plain.info["dot"] is None
+    frames = neon_badge.frames("Kamet0")
+    assert len(frames) == round(neon_badge.PERIOD_S * neon_badge.FPS)
+    assert len({f.size for f in frames}) == 1                          # taille fixe : boucle propre
+    w, h = frames[0].size
+    assert w % 2 == 0 and h % 2 == 0
+    # Fond rouge pastel derriere, a droite (cote « KAMETO EN LIVE »).
+    assert frames[0].getpixel((w - 6, h // 2))[:3] == neon_badge.PASTEL
+    # Allumage qui gresille puis respiration, sans saut d'une boucle a l'autre.
+    assert neon_badge.intensity(0.0) < 0.5 < neon_badge.intensity(0.1)
+    assert abs(neon_badge.intensity(neon_badge.PERIOD_S - 0.001) - 1.0) < 0.01
+    assert neon_badge.perimeter_point(0, 0, 10, 4, 0.0) == (0, 0)
+    assert neon_badge.perimeter_point(0, 0, 10, 4, 0.5) == (10, 4)
+    total, offset = hook_text.stack_layout(200, h, 1.0)
+    assert offset == h - hook_text.BADGE_OVERLAP and total == offset + 200
 
 
 def test_texte_en_haut_jamais_ampute():

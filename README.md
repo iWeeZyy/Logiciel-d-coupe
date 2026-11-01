@@ -463,10 +463,13 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   (`video/hook_text.py`, extraction sans IA via `editing/metadata.py`) ;
   rien, pas de texte. Design choisi par l'utilisateur parmi cinq essais
   (« E », 2026-11-01) : bandeau noir translucide pleine largeur, filets
-  roses, texte blanc gras, pastille « ● <STREAMER> EN LIVE » au-dessus dont le
-  point rouge plein, avec halo, grandit et rapetisse comme un voyant REC (cycle
-  1,4 s), dans un rond evide (transparent) centre dans la pastille
-  (clip du jour). POSE APRES LE RENDU : les visages sont cherches sur la
+  roses, texte blanc gras ; au-dessus a gauche (clip du jour), un badge neon
+  anime ORIGINAL dessine en code (`video/neon_badge.py`) : cadre, rond et
+  « REPLAY » en tube rouge qui s'allume en gresillant puis respire, lumiere
+  qui fait le tour du cadre, « <STREAMER> EN LIVE » a droite, fond rouge
+  pastel, boucle de 2,4 s. (L'utilisateur avait envoye un apercu
+  Shutterstock filigrane ; rien n'en est repris, et le filigrane n'a pas ete
+  retire.) POSE APRES LE RENDU : les visages sont cherches sur la
   video finie et le bandeau va la ou il n'y en a pas (marges : un quart de
   visage au-dessus, une moitie dessous ; visages minuscules ignores), au-dessus
   du filigrane ; le medaillon de l'intro est evite quand c'est possible. Une
