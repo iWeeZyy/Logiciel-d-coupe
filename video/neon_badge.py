@@ -205,6 +205,8 @@ HEADLINE_S = 5.5                 # titre ephemere du top (« 5-6 secondes »)
 HEADLINE_FADE_IN_S = 0.4
 HEADLINE_FADE_OUT_S = 0.6
 HEADLINE_BREATH_S = 1.8          # une respiration du halo
+HEADLINE_PAD = 110               # marge autour du texte : le halo s'y estompe sans bord net
+HEADLINE_TEXT_PAD = 40           # marge « utile » sous le texte (mise en page)
 
 
 def headline_level(t: float, duration: float = HEADLINE_S) -> float:
@@ -230,7 +232,7 @@ def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: i
     plaque sombre) : `big` (« TOP 5 ») en neon rose, `small` (« DES CLIPS
     D'ANYME023 CETTE SEMAINE ») en blanc dessous. Images de `duration`
     secondes, la derniere entierement transparente (le titre a disparu)."""
-    from PIL import Image, ImageDraw, ImageFilter
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
     s = SUPERSAMPLE
     _, name = _fonts(scale)
@@ -242,7 +244,9 @@ def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: i
     while sb[2] - sb[0] > (width - 60 * scale) * s and small_font.size > 10:
         small_font = small_font.font_variant(size=small_font.size - 2)
         sb = probe.textbbox((0, 0), small, font=small_font)
-    pad = round(40 * scale * s)
+    # Marge large : le halo (flou de 26 px) doit s'eteindre AVANT le bord de
+    # l'image, sinon sa limite se voit (retour utilisateur du 2026-11-01).
+    pad = round(HEADLINE_PAD * scale * s)
     gap = round(18 * scale * s)
     w = width * s
     h = pad + (bb[3] - bb[1]) + gap + (sb[3] - sb[1]) + pad
@@ -262,9 +266,15 @@ def headline_frames(big: str, small: str, width: int, scale: float = 1.0, fps: i
     core = Image.new("RGBA", (w, h), core_color + (0,))
     core.putalpha(mask)
     tube = Image.alpha_composite(tube, core)
-    halo_mask = mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(26 * s))
+    halo_mask = mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(30 * s))
     halo = Image.new("RGBA", (w, h), glow + (0,))
-    halo.putalpha(halo_mask.point(lambda v: min(255, int(v * 3.0))))
+    halo.putalpha(halo_mask.point(lambda v: min(255, int(v * 6.5))))
+    # Securite : le halo s'annule en douceur sur les bords de l'image.
+    edge = Image.new("L", (w, h), 0)
+    margin = round(HEADLINE_PAD * 0.45 * scale * s)
+    ImageDraw.Draw(edge).rectangle([margin, margin, w - margin, h - margin], fill=255)
+    edge = edge.filter(ImageFilter.GaussianBlur(margin / 2))
+    halo.putalpha(ImageChops.multiply(halo.getchannel("A"), edge))
     text = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     ty = pad + (bb[3] - bb[1]) + gap - sb[1]
     tx = (w - (sb[2] - sb[0])) / 2 - sb[0]

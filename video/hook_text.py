@@ -285,7 +285,11 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
             from video import neon_badge
 
             head = neon_badge.headline_frames(headline[0], headline[1], out_w, scale)
-        head_h = head[0].height if head else 0
+        # Hauteur utile du titre : sans sa grande marge transparente (le halo
+        # s'y estompe), sauf une marge normale sous le texte.
+        head_pad = round((neon_badge.HEADLINE_PAD - neon_badge.HEADLINE_TEXT_PAD) * scale) \
+            if head else 0
+        head_h = head[0].height - 2 * head_pad if head else 0
         total_h += head_h
         duration = video_duration(video_path)
         samples = detect_face_track(video_path, 0.0, duration, sample_interval_s=0.5,
@@ -342,7 +346,8 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
                     frame.save(Path(tmp) / f"titre_{k:03d}.png")
                 inputs += ["-framerate", str(neon_badge.FPS),
                            "-i", str(Path(tmp) / "titre_%03d.png")]
-                add(f"{inputs.count('-i') - 1}:v", f"0:{max(0, y - head_h)}", ":eof_action=pass")
+                add(f"{inputs.count('-i') - 1}:v", f"0:{y - head_h - head_pad}",
+                    ":eof_action=pass")
             last = _add_intro(inputs, graph_parts := [graph], last, intro, out_w, out_h, tmp)
             graph = graph_parts[0]
             graph += f";[{last}]format=yuv420p[v]"
