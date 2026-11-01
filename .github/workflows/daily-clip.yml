@@ -1,0 +1,135 @@
+# Clip du jour (radar/daily_clip.py) : le clip Twitch le plus vu des dernieres
+# 24 h parmi les streamers autorises, traite par le logiciel.
+#
+# Workflow REUTILISABLE, appele par le depot PRIVE (docs/daily-clip-caller.yml) :
+# artefact, journaux et secrets Twitch restent prives. Meme configuration et
+# meme liste d'autorisations que la compilation de la semaine. La memoire des
+# clips deja publies (clips_publies.json) vit dans le depot prive et y est
+# remise a jour apres chaque clip. Aucune publication sur un reseau social.
+name: Clip du jour (réutilisable)
+
+on:
+  workflow_call:
+    inputs:
+      config-path:
+        type: string
+        default: weekly_compilation.json
+      memory-path:
+        type: string
+        default: clips_publies.json
+      retention-days:
+        type: number
+        default: 3
+      app-ref:
+        type: string
+        default: main
+    secrets:
+      TWITCH_CLIENT_ID:
+        required: true
+      TWITCH_CLIENT_SECRET:
+        required: true
+    outputs:
+      produit:
+        description: "true si un clip a ete fait"
+        value: ${{ jobs.clip.outputs.produit }}
+
+jobs:
+  clip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write                 # memoire des clips publies, depot appelant
+    outputs:
+      produit: ${{ steps.run.outputs.produit }}
+    env:
+      PYTHONUNBUFFERED: "1"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Configuration du depot appelant
+        uses: actions/checkout@v4
+        with:
+          path: appelant
+
+      - name: Code du logiciel
+        uses: actions/checkout@v4
+        with:
+          repository: iWeeZyy/Logiciel-d-coupe
+          ref: ${{ inputs.app-ref }}
+          path: app
+
+      - name: ffmpeg (libass) et polices des sous-titres
+        run: |
+          # Les styles de sous-titres utilisent Arial / Arial Black : sans elles,
+          # libass prendrait une police de repli et le rendu changerait.
+          echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
+            | sudo debconf-set-selections
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fontconfig ttf-mscorefonts-installer > /dev/null
+          sudo fc-cache -f > /dev/null
+          ffmpeg -hide_banner -filters | grep -E " (subtitles|ass) " \
+            || { echo "::error::ffmpeg sans libass"; exit 1; }
+          fc-list | grep -qi "Arial Black" \
+            || echo "::warning::Police Arial Black absente : sous-titres en police de repli"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Dependances Python
+        working-directory: app
+        run: |
+          # requirements.txt reste la seule liste ; on n'en retire que ce que
+          # la commande sans fenetre n'utilise pas (interface Qt, IA locale
+          # llama -- longue a compiler --, voix Windows, coffre de mots de
+          # passe, tests). test_weekly_top.py verifie que Qt n'est jamais
+          # importe sur ce chemin.
+          grep -v -i -E "^(PySide6|llama-cpp-python|pyttsx3|keyring|gradio_client|pytest)" \
+            requirements.txt > "$RUNNER_TEMP/requirements-sans-fenetre.txt"
+          python -m pip install -q -r "$RUNNER_TEMP/requirements-sans-fenetre.txt"
+
+      - name: Modeles Whisper et reconnaissance des visages (cache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/whisper-models
+            app/.cache/models
+            ~/.cache/huggingface
+          key: modeles-${{ runner.os }}-v2
+
+      - name: Clip du jour
+        id: run
+        working-directory: app
+        env:
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          CONFIG_PATH: ${{ inputs.config-path }}
+          MEMORY_PATH: ${{ inputs.memory-path }}
+        run: |
+          python gui_main.py --daily-clip \
+            --config "$GITHUB_WORKSPACE/appelant/$CONFIG_PATH" \
+            --memory "$GITHUB_WORKSPACE/appelant/$MEMORY_PATH" \
+            --out "$RUNNER_TEMP/clip" --work-dir "$RUNNER_TEMP/travail"
+
+      - name: Memoire des clips publies
+        if: steps.run.outputs.produit == 'true'
+        working-directory: appelant
+        env:
+          MEMORY_PATH: ${{ inputs.memory-path }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$MEMORY_PATH"
+          git commit -m "Clip du jour : memoire mise a jour" || exit 0
+          git push
+
+      - name: Clip en artefact
+        if: steps.run.outputs.produit == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: clip-du-jour-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/clip/*.mp4
+            ${{ runner.temp }}/clip/*.txt
+          retention-days: ${{ inputs.retention-days }}

@@ -45,6 +45,11 @@ def main() -> int:
         from radar.weekly_top import main_cli as weekly_top
 
         return weekly_top()
+    # Clip du jour (radar/daily_clip.py), meme chemin sans Qt.
+    if "--daily-clip" in sys.argv[1:]:
+        from radar.daily_clip import main_cli as daily_clip
+
+        return daily_clip()
     # Bande-annonce ActuaFilms automatique (news_story/auto_trailer.py) : la
     # fenetre « Créer un visuel » y est ouverte sans ecran (Qt offscreen).
     if "--auto-trailer" in sys.argv[1:]:
