@@ -358,8 +358,9 @@ def test_bandeau_jamais_sur_un_visage():
     faces = [[(0.12, 0.12), (0.55, 0.15)]] * 10
     top = choose_top(faces, 0.10, preferred=0.50, avoid=())
     assert 0.12 + 0.12 * 1.5 <= top and top + 0.10 <= 0.55 - 0.15 * 0.25
-    # Sans visage : la position preferee.
-    assert choose_top([[]], 0.10, preferred=0.12, avoid=()) == 0.12
+    # Sans visage : la position preferee (ou la plus proche dans la grille).
+    assert choose_top([[]], 0.10, preferred=0.21, avoid=()) == 0.21
+    assert choose_top([[]], 0.10, preferred=0.12, avoid=()) == 0.15
     # Le medaillon de l'intro est evite quand on peut.
     top = choose_top([[]], 0.10, preferred=0.30)
     assert top + 0.10 <= 0.255 or top >= 0.465
@@ -553,3 +554,15 @@ def test_titre_seulement_sur_le_premier_clip(monkeypatch, tmp_path):
     top_compilation.build(clips, {}, tmp_path, name="x", countdown=False, streamer="Anyme023")
     assert blocks[0]["headline"] == ["TOP 3", "DES CLIPS D'ANYME023 CETTE SEMAINE"]
     assert all("headline" not in b for b in blocks[1:])
+
+
+def test_bandeau_dans_la_zone_de_la_grille():
+    """TikTok et Instagram montrent la video recadree au centre dans la
+    grille du profil : jamais de bandeau au-dessus de 15 % ni sous 80 %."""
+    from video.hook_text import GRID_SAFE, choose_top
+
+    # Visages partout sauf tout en haut : il ne remonte pas pour autant.
+    faces = [[(0.16, 0.6)] for _ in range(5)]
+    top = choose_top(faces, 0.12, 0.11, avoid=())
+    assert GRID_SAFE[0] <= top and top + 0.12 <= GRID_SAFE[1]
+    assert choose_top([[]], 0.12, 0.05, avoid=()) >= GRID_SAFE[0]

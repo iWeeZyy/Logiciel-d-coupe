@@ -24,7 +24,7 @@ from core.logging_setup import get_logger
 
 logger = get_logger()
 
-TOP_PERCENT = 11.0          # sous la barre « Abonnements | Pour toi » de TikTok
+TOP_PERCENT = 15.0          # haut de la zone visible dans la grille du profil (GRID_SAFE)
 MAX_WIDTH_PERCENT = 86.0
 MAX_WORDS = 12
 MAX_LINES = 3
@@ -128,7 +128,13 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
 
 PINK = (255, 46, 99)          # rose du medaillon ClipsOfStreams (video/compilation.BRAND)
 BAND_ALPHA = 190
-CANDIDATE_TOPS = [t / 100 for t in range(8, 78, 2)]   # hauts possibles du bandeau
+# Grille du profil (demande du 2026-11-02, « point 4 ») : TikTok et Instagram
+# y montrent la video recadree au centre en portrait court (3:4 ou 4:5),
+# soit, sur une video 9:16, a peu pres de 15 % a 85 % de la hauteur. Badge,
+# numero et bandeau restent dans cette zone pour etre lisibles dans la grille
+# (et sous la barre « Abonnements | Pour toi » de TikTok).
+GRID_SAFE = (0.15, 0.80)       # bas : 80 %, filigrane et legende TikTok plus bas
+CANDIDATE_TOPS = [t / 100 for t in range(15, 78, 2)]  # hauts possibles du bandeau
 # Medaillon « Follow » de l'intro, a droite : de 26,5 % a ~46 % du haut
 # pendant ses premieres secondes (video/intro_overlay.py).
 INTRO_ZONE = (0.255, 0.465)
@@ -200,7 +206,7 @@ def choose_top(face_samples, height: float, preferred: float,
 
     best = None
     for top in CANDIDATE_TOPS:
-        if top + height > 0.80:          # plus bas : filigrane et legende TikTok
+        if top < GRID_SAFE[0] or top + height > GRID_SAFE[1]:
             continue
         cost = sum(covers(top, faces) for faces in samples) / len(samples)
         cost += sum(avoid_weight for lo, hi in avoid if top < hi and lo < top + height)

@@ -456,13 +456,17 @@ module Qt n'est importe sur ce chemin (verifie par un test).
 - **Clip du jour** (`radar/daily_clip.py`, `python gui_main.py --daily-clip
   --config weekly_compilation.json --memory clips_publies.json --out sortie/`,
   workflow reutilisable `.github/workflows/daily-clip.yml`, appelant
-  `docs/daily-clip-caller.yml`) : un clip seul par jour, le plus vu des
-  dernieres 24 h (a defaut 3 jours) parmi les streamers autorises de la meme
+  `docs/daily-clip-caller.yml`) : deux clips seuls par jour (12 h 41 et
+  18 h 41, 2026-11-02), le plus vu des 16 dernieres heures -- le live de la
+  veille au soir, le plus frais d'abord --, a defaut 24 h, puis 3 jours,
+  parmi les streamers autorises de la meme
   configuration, jamais deux fois le meme clip ni le meme passage du live
   (memoire `clips_publies.json` dans le depot prive, mise a jour apres chaque
   clip). Memes reglages de production, intro et « Texte en haut » compris.
-  Legende : « <Streamer> — <titre du clip> 🔥 / Abonne-toi pour le clip de
-  demain 👀 » + les hashtags. Lance chaque jour par une tache programmee de
+  Legende : « <Streamer> — <titre du clip> 🔥 / Abonne-toi pour le prochain
+  clip 👀 » + les hashtags. Badge, numero et bandeau restent entre 15 % et
+  80 % de la hauteur : la zone que TikTok et Instagram montrent dans la
+  grille du profil (vignette recadree au centre). Lance chaque jour par une tache programmee de
   la session Claude, qui envoie la video et la legende.
 - **Texte en haut des clips seuls** (module « Texte en haut », `hook_text`,
   coche par defaut ; 2026-11-01 : la video la plus vue de la semaine, 11 K

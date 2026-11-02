@@ -25,7 +25,7 @@ def test_clip_du_jour_le_plus_vu_puis_jamais_le_meme_moment(tmp_path):
     assert files[0].name == "Clip_Anyme023.mp4"
     text = files[1].read_text(encoding="utf-8")
     assert text.endswith("#clip #twitch #stream #anyme023 #drole")
-    assert "Abonne-toi pour le clip de demain" in text
+    assert "Abonne-toi pour le prochain clip" in text
     # Le lendemain : « copie » montre le meme passage du live -> ecarte.
     report, files = daily_clip.run(_config(), tmp_path / "out2", tmp_path / "w2",
                                    memory_path=memory, adapter=_FakeTwitch(),
@@ -56,3 +56,12 @@ def test_sans_qt():
 def test_legende_sans_guillemets_du_titre():
     assert daily_clip.caption('"CALISTE JE T\'AIME"', "Kamet0").startswith(
         "Kamet0 — CALISTE JE T'AIME 🔥")
+
+
+def test_le_plus_frais_d_abord():
+    """« Publier le plus vite possible apres le live » : les 16 dernieres
+    heures d'abord, puis 24 h, puis 3 jours."""
+    from radar import daily_clip
+
+    windows = [d for _period, ws in daily_clip.WINDOWS for d in ws]
+    assert windows == sorted(windows) and windows[0] < 1 and windows[-1] == 3

@@ -189,7 +189,7 @@
   "hook_text": {
     "_comment": "Texte en haut du clip, dans un encadre blanc (demande du 2026-11-01). Une phrase REELLEMENT prononcee dans le clip (module metadata, extraction sans IA) : une question d'abord, sinon la plus percutante. Rien de dit : pas de texte.",
     "enabled": true,
-    "top_percent": 11,
+    "top_percent": 15,
     "max_words": 12
   },
   "metadata": {

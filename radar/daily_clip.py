@@ -34,7 +34,11 @@ from core.logging_setup import get_logger
 logger = get_logger()
 
 CLI_FLAG = "--daily-clip"
-WINDOWS = (("24h", 1), ("3j", 3))       # periode du Radar, jours
+# (periode du Radar a rafraichir, fenetres essayees dans l'ordre, en jours).
+# Le plus FRAIS d'abord (demande du 2026-11-02, « publier le plus vite
+# possible apres le live ») : les clips des 16 dernieres heures -- le live
+# de la veille au soir --, puis 24 h, puis 3 jours. Dans une fenetre, le plus vu.
+WINDOWS = (("24h", (16 / 24, 1)), ("3j", (3,)))
 MEMORY_KEEP = 400                       # entrees gardees dans la memoire
 
 
@@ -82,7 +86,7 @@ def choose(opportunities, memory: list[dict]) -> object | None:
 # ------------------------------------------------------------------ legende
 
 def caption(clip_title: str, creator: str) -> str:
-    """Legende : le titre du clip, une promesse precise (le clip de demain)
+    """Legende : le titre du clip, une promesse precise (le prochain clip)
     et les hashtags demandes (#clip #twitch #stream #<createur> #drole)."""
     from video.compilation import HASHTAGS, creator_hashtag
 
@@ -91,7 +95,7 @@ def caption(clip_title: str, creator: str) -> str:
     title = clean(clip_title)            # sans les guillemets du titre Twitch
     head = f"{creator} — {title}" if title else creator
     tags = " ".join([*HASHTAGS, creator_hashtag(creator), "#drole"]).replace("  ", " ")
-    return "\n\n".join([f"{head} 🔥", "Abonne-toi pour le clip de demain 👀", tags])
+    return "\n\n".join([f"{head} 🔥", "Abonne-toi pour le prochain clip 👀", tags])
 
 
 def file_name(creator: str) -> str:
@@ -150,13 +154,16 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
 
     memory = load_memory(memory_path)
     chosen = None
-    for period, days in WINDOWS:
+    for period, windows in WINDOWS:
         on_status(f"Rafraîchissement du Radar ({period})…")
         scan = engine.scan(platforms=["twitch"], period=period, max_results=max_results,
                            reference=now)
         report.errors += list(scan.errors)
-        chosen = choose([o for o in candidates(store, None, days, now=now)
-                         if o.creator_key in by_key], memory)
+        for days in windows:
+            chosen = choose([o for o in candidates(store, None, days, now=now)
+                             if o.creator_key in by_key], memory)
+            if chosen is not None:
+                break
         if chosen is not None:
             break
     if chosen is None:

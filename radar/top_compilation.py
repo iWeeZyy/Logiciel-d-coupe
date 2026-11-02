@@ -68,7 +68,7 @@ def total_length(opportunities) -> float:
     return sum(clip_length(o) for o in opportunities)
 
 
-def candidates(store, creator_key: str | None, days: int, now=None, limit: int = 300):
+def candidates(store, creator_key: str | None, days: float, now=None, limit: int = 300):
     """Clips Twitch de la periode, les plus vus d'abord."""
     from radar.display import ORDER_VIEWS
 
