@@ -129,17 +129,18 @@ def best_of(*options):
 
 # ------------------------------------------------------------------ legende
 
-def caption(clip_title: str, creator: str) -> str:
-    """Legende : le titre du clip, une promesse precise (le prochain clip)
-    et les hashtags demandes (#clip #twitch #stream #<createur> #drole)."""
-    from video.compilation import HASHTAGS, creator_hashtag
-
+def caption(clip_title: str, creator: str, search_name: str = "") -> str:
+    """Legende : le streamer tel qu'on le tape dans la recherche (radar/naming),
+    le titre du clip, une promesse precise (le prochain clip) et les hashtags
+    (#clip #twitch #stream #<createur> [#<nom cherche>] #drole)."""
+    from video.compilation import hashtags
     from video.hook_text import clean
 
     title = clean(clip_title)            # sans les guillemets du titre Twitch
-    head = f"{creator} — {title}" if title else creator
-    tags = " ".join([*HASHTAGS, creator_hashtag(creator), "#drole"]).replace("  ", " ")
-    return "\n\n".join([f"{head} 🔥", "Abonne-toi pour le prochain clip 👀", tags])
+    who = search_name or creator
+    head = f"{who} — {title}" if title else who
+    return "\n\n".join([f"{head} 🔥", "Abonne-toi pour le prochain clip 👀",
+                         hashtags(creator, search_name)])
 
 
 def file_name(creator: str) -> str:
@@ -245,15 +246,21 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         return report, []
     video = out_dir / file_name(creator.label)
     shutil.copyfile(path, video)
-    text = caption(chosen.title, creator.label)
+    from radar.naming import clip_comment, search_name
+    from radar.top_compilation import COMMENT_FILE
+
+    text = caption(chosen.title, creator.label, search_name(config, auth.login, creator.label))
     legend = video.with_suffix(".txt")
     legend.write_text(text, encoding="utf-8")
+    comment = out_dir / COMMENT_FILE
+    comment.write_text(clip_comment(chosen.content_id) + "\n", encoding="utf-8")
     report.captions.append((auth.login, text))
-    report.produced.append((auth.login, [str(video), str(legend)]))
+    report.notes.append(f"{auth.login} : commentaire à épingler — {clip_comment(chosen.content_id)}")
+    report.produced.append((auth.login, [str(video), str(legend), str(comment)]))
     if memory_path:
         memory.append(memory_entry(chosen, auth.login, now))
         save_memory(memory_path, memory)
-    return report, [video, legend]
+    return report, [video, legend, comment]
 
 
 def main_cli(argv=None) -> int:

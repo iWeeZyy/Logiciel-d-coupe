@@ -25,7 +25,9 @@ from types import SimpleNamespace
 
 
 def default_title(count: int, creator_label: str, period_label: str) -> str:
-    who = f" de {creator_label}" if creator_label else ""
+    from radar.naming import of
+
+    who = f" {of(creator_label)}" if creator_label else ""
     return f"Top {count} des moments{who} {period_label}"
 
 
@@ -267,8 +269,14 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
                    on_progress=on_status, cancel_token=cancel_token)
 
 
-def write_captions(written, title: str, creator: str = "", ask_next: bool = False) -> list[Path]:
-    """La legende .txt a cote de chaque partie ; renvoie leurs chemins."""
+COMMENT_FILE = "commentaire_epingle.txt"
+
+
+def write_captions(written, title: str, creator: str = "", ask_next: bool = False,
+                   search_name: str = "", count: int = 0) -> list[Path]:
+    """La legende .txt a cote de chaque partie, et le commentaire a epingler
+    (COMMENT_FILE, si `count`) ; renvoie leurs chemins."""
+    from radar.naming import top_comment
     from video.compilation import caption_text
 
     title = " ".join((title or "").split())
@@ -276,7 +284,11 @@ def write_captions(written, title: str, creator: str = "", ask_next: bool = Fals
     for index, (path, _duration) in enumerate(written, 1):
         caption = Path(path).with_suffix(".txt")
         caption.write_text(caption_text(title, index, len(written), creator=creator,
-                                        ask_next=ask_next),
+                                        ask_next=ask_next, search_name=search_name),
                            encoding="utf-8")
         captions.append(caption)
+    if count and written:
+        comment = Path(written[0][0]).parent / COMMENT_FILE
+        comment.write_text(top_comment(count) + "\n", encoding="utf-8")
+        captions.append(comment)
     return captions

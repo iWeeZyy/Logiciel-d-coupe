@@ -511,8 +511,15 @@ def creator_hashtag(creator: str) -> str:
     return f"#{tag}" if tag else ""
 
 
+def hashtags(creator: str, search_name: str = "") -> str:
+    """#clip #twitch #stream, le createur (login), son nom tel qu'on le tape
+    s'il differe (« #kameto » a cote de « #kamet0 »), puis #drole."""
+    tags = [*HASHTAGS, creator_hashtag(creator), creator_hashtag(search_name), "#drole"]
+    return " ".join(dict.fromkeys(t for t in tags if t))
+
+
 def caption_text(title: str, part_index: int = 1, part_total: int = 1,
-                 creator: str = "", ask_next: bool = False) -> str:
+                 creator: str = "", ask_next: bool = False, search_name: str = "") -> str:
     """Legende proposee pour TikTok (modifiable). Hashtags demandes par
     l'utilisateur : #clip #twitch #stream, le createur, #drole."""
     title = " ".join((title or "").split()) or "Les meilleurs moments de stream"
@@ -526,5 +533,5 @@ def caption_text(title: str, part_index: int = 1, part_total: int = 1,
         lines.append("Abonne-toi pour la prochaine compil 👀")
     if not ask_next or (part_total > 1 and part_index < part_total):
         lines.append("Lequel est ton préféré ? 👇")
-    lines.append(" ".join([*HASHTAGS, creator_hashtag(creator), "#drole"]).replace("  ", " "))
+    lines.append(hashtags(creator, search_name))
     return "\n\n".join(lines)

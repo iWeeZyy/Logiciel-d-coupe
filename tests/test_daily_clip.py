@@ -167,3 +167,19 @@ def test_clip_du_jour_demande_la_fleche():
     from radar import daily_clip
 
     assert 'block["follow_arrow"] = True' in inspect.getsource(daily_clip.run)
+
+
+def test_nom_tel_qu_on_le_tape_et_commentaire_epingle():
+    from radar import daily_clip, naming
+
+    config = {"search_names": {"kamet0": "Kameto", "anyme023": "Anyme"}}
+    assert naming.search_name(config, "Kamet0", "Kamet0") == "Kameto"
+    assert naming.search_name(config, "squeezie", "Squeezie") == "Squeezie"
+    assert naming.of("Anyme") == "d'Anyme" and naming.of("Kameto") == "de Kameto"
+    text = daily_clip.caption("HOLD ON", "Kamet0", "Kameto")
+    assert text.startswith("Kameto — HOLD ON")
+    assert "#kamet0 #kameto #drole" in text
+    assert "#squeezie #drole" in daily_clip.caption("x y", "Squeezie", "Squeezie")
+    assert naming.clip_comment("abc") == naming.clip_comment("abc")     # stable
+    assert naming.clip_comment("abc").endswith("👇")
+    assert naming.top_comment(5) == "Ton préféré : #1, #2, #3, #4 ou #5 ? 👇"

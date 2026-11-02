@@ -136,13 +136,16 @@ def test_compilation_de_la_semaine(tmp_path):
     assert report.refused[0][0] == "inconnu"
     # Les plus vus de la semaine, un seul par moment ; le clip de 12 jours est exclu.
     assert calls[0]["ids"] == ["anyme023-top", "anyme023-deux", "anyme023-trois"]
-    assert calls[0]["name"] == "Top 3 des moments de Anyme023 cette semaine"
+    assert calls[0]["name"] == "Top 3 des moments d'Anyme023 cette semaine"
     assert calls[0]["intro"] is True and calls[0]["parts"] == 1
     assert any("copie" in n for n in report.notes)
     login, files = report.produced[0]
     assert login == "anyme023"
-    caption = Path(files[-1])
+    caption = Path(files[-2])
     assert caption.suffix == ".txt" and "Top 3 des moments" in caption.read_text(encoding="utf-8")
+    # Le commentaire a epingler, a part : voter pour son prefere.
+    assert Path(files[-1]).name == "commentaire_epingle.txt"
+    assert any("Ton préféré : #1, #2 ou #3" in n for n in report.notes)
     assert any("maigre" in e and "au moins 2" in e for e in report.errors)
     assert any("fantome" in e and "introuvable" in e for e in report.errors)
     # Base du Radar propre au run, jamais celle de l'utilisateur.

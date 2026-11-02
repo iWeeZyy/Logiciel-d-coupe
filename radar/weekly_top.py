@@ -299,7 +299,10 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
                 f"{int(max_seconds // 60)} min {int(max_seconds % 60):02d} s. "
                 f"Clips : {detail}. Relancer avec la confirmation pour produire.")
             continue
-        title = default_title(len(kept), creator.label, PERIOD_LABEL)
+        from radar.naming import search_name
+
+        name = search_name(config, auth.login, creator.label)   # « Kameto », pas « Kamet0 »
+        title = default_title(len(kept), name, PERIOD_LABEL)
         for i, o in enumerate(kept, 1):
             on_status(f"  {i}. {o.title} — {o.view_count} vues, {o.duration_s} s")
         try:
@@ -324,13 +327,21 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
             report.errors.append(f"{auth.login} : compilation impossible ({e})")
             continue
         captions = write_captions(written, title, creator=creator.label,
-                                  ask_next=bool(config.get("ask_next", True)))
+                                  ask_next=bool(config.get("ask_next", True)),
+                                  search_name=name, count=len(kept))
         for _path, seconds in written:
             line = f"{auth.login} : vidéo de {int(seconds // 60)} min {int(seconds % 60):02d} s"
             too_long = seconds >= max_seconds + ASK_ABOVE_S and not accept_long
             (report.errors if too_long else report.notes).append(
                 line + (" — au-delà de la durée maximale" if too_long else ""))
-        report.captions += [(auth.login, c.read_text(encoding="utf-8")) for c in captions]
+        from radar.top_compilation import COMMENT_FILE
+
+        for c in captions:
+            text = c.read_text(encoding="utf-8")
+            if c.name == COMMENT_FILE:
+                report.notes.append(f"{auth.login} : commentaire à épingler — {text.strip()}")
+            else:
+                report.captions.append((auth.login, text))
         report.produced.append((auth.login, [p for p, _ in written] + [str(c) for c in captions]))
         if memory_path:
             # Memes clips jamais repris en clip du jour (radar/daily_clip.py).
