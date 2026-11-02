@@ -123,3 +123,14 @@ def test_top_ecrit_ses_clips_dans_la_memoire(tmp_path):
     path = tmp_path / "m.json"
     dc.save_memory(path, [entry])
     assert dc.load_memory(path)[0]["title"] == "Moment"
+
+
+def test_paroles_en_anglais_jamais_dans_le_bandeau():
+    from video.hook_text import choose_text, foreign
+
+    assert foreign("I bet it's on the beat of the door")
+    assert not foreign("Il a vraiment cru que c'était fini")
+    assert not foreign("On fait le check les gars")
+    spoken = [{"kind": "direct", "text": "I bet it's on the beat of the door"}]
+    assert choose_text(spoken, preferred="thriller", fallback="Le clip du moment") \
+        == "Le clip du moment"

@@ -97,6 +97,23 @@ def unsafe(text: str) -> bool:
     return bool(SENSITIVE.search(text or ""))
 
 
+_EN_WORDS = {"the", "it's", "is", "of", "on", "and", "you", "i", "my", "your", "bet", "what",
+             "this", "that", "with", "for", "are", "was", "be", "to", "in", "me", "oh", "yeah"}
+_FR_WORDS = {"le", "la", "les", "de", "des", "du", "un", "une", "et", "est", "c'est", "je", "tu",
+             "il", "on", "nous", "vous", "que", "qui", "pas", "ne", "en", "à", "au", "mais", "ça"}
+
+
+def foreign(text: str) -> bool:
+    """Phrase PRONONCEE qui n'est pas en francais (fonction pure) : souvent des
+    paroles de chanson mal transcrites (« I bet it's on the beat of the
+    door », 2026-11-02). La chaine est francaise ; un titre Twitch en
+    anglais (« HOLD ON ») reste permis -- il est ecrit, pas transcrit."""
+    words = [w.strip(".,;:!?…\"«»").lower() for w in (text or "").split()]
+    english = sum(w in _EN_WORDS and w not in _FR_WORDS for w in words)
+    french = sum(w in _FR_WORDS and w not in _EN_WORDS for w in words)
+    return english >= 2 and french == 0
+
+
 def garbled(text: str) -> bool:
     """Phrase a ne jamais afficher (fonction pure) : un mot repete 3 fois ou
     plus (« … parti parti parti parti », transcription d'un cri ou d'une
@@ -137,6 +154,8 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
                                  (by_kind.get("direct"), MIN_SPOKEN_WORDS)):
         text = clean(candidate or "")
         if not text or garbled(text) or unsafe(text):
+            continue
+        if candidate is not preferred and candidate is not question and foreign(text):
             continue
         if candidate is preferred:
             # Ecrit par un humain : rien n'y est ampute (« HOLD ON » -- « on »
