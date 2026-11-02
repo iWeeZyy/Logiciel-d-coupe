@@ -231,6 +231,9 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         # amputee (constate le 2026-11-01 : « Saint -Hurigol et le »). Neutre : avec
         # deux clips par jour, le second n'est pas « le plus vu du jour ».
         block["fallback"] = "Le clip du moment"
+        # Fleche rouge vers le « + » d'abonnement TikTok, au milieu du clip
+        # (demande du 2026-11-02 : sur les clips seuls, pas sur les tops).
+        block["follow_arrow"] = True
         overrides["hook_text"] = block
         production = {**production, "editing_overrides": overrides}
     try:

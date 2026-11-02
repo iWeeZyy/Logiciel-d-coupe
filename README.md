@@ -467,7 +467,10 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   Legende : « <Streamer> — <titre du clip> 🔥 / Abonne-toi pour le prochain
   clip 👀 » + les hashtags. Badge, numero et bandeau restent entre 15 % et
   80 % de la hauteur : la zone que TikTok et Instagram montrent dans la
-  grille du profil (vignette recadree au centre). Lance chaque jour par une tache programmee de
+  grille du profil (vignette recadree au centre). Fleche rouge courbee vers
+  le « + » d'abonnement TikTok, 3 s au milieu du clip (`video/follow_arrow.py`,
+  animation « Trace » validee le 2026-11-02 ; clips seuls, pas les tops) : le
+  bandeau evite sa zone pendant ce temps. Lance chaque jour par une tache programmee de
   la session Claude, qui envoie la video et la legende.
 - **Texte en haut des clips seuls** (module « Texte en haut », `hook_text`,
   coche par defaut ; 2026-11-01 : la video la plus vue de la semaine, 11 K

@@ -261,7 +261,9 @@ def choose_top(face_samples, height: float, preferred: float,
         if top < GRID_SAFE[0] or top + height > GRID_SAFE[1]:
             continue
         cost = sum(covers(top, faces) for faces in samples) / len(samples)
-        cost += sum(avoid_weight for lo, hi in avoid if top < hi and lo < top + height)
+        # Zone (lo, hi) au poids `avoid_weight`, ou (lo, hi, poids) a part.
+        cost += sum((zone[2] if len(zone) > 2 else avoid_weight) for zone in avoid
+                    if top < zone[1] and zone[0] < top + height)
         key = (round(cost, 3), abs(top - preferred))
         if best is None or key < best[0]:
             best = (key, top)
@@ -293,7 +295,8 @@ def replay_label(name: str) -> str:
 def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
           preferred: float = TOP_PERCENT / 100, intro=None, cancel_token=None,
           badge_label: str | None = None, number: int | None = None,
-          avoid_intro_s: float = 0.0, headline: tuple[str, str] | None = None) -> bool:
+          avoid_intro_s: float = 0.0, headline: tuple[str, str] | None = None,
+          follow_arrow: bool = False) -> bool:
     """Pose le bandeau sur un clip DEJA rendu, et au-dessus a gauche, si `tag`
     est donne, le badge neon anime « REPLAY » + « <STREAMER> EN LIVE »
     (video/neon_badge.py ; `badge_label` remplace ce texte de droite). Les
@@ -307,6 +310,9 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
     `headline` : (« TOP 5 », « DES CLIPS DE … CETTE SEMAINE ») -- titre
     ephemere en neon rose, centre au-dessus du badge, eteint apres
     neon_badge.HEADLINE_S (1er clip d'un top).
+    `follow_arrow` (clips seuls) : la fleche rouge vers le « + » d'abonnement
+    de TikTok, 3 s au milieu du clip (video/follow_arrow.py) ; le bandeau
+    evite sa zone pendant ce temps, comme le medaillon de l'intro.
     `avoid_intro_s` : l'intro sera posee plus tard sur ce clip (compilation)
     pendant ce temps, eviter aussi sa zone. Faux si rien n'a pu etre pose --
     l'intro l'est quand meme (passe de secours) ; jamais d'exception qui
@@ -356,8 +362,13 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
         # Le medaillon ne reste que quelques secondes : le recouvrir coute en
         # proportion de sa duree, comme un visage present le meme temps.
         intro_s = _intro_seconds(intro) if intro is not None else float(avoid_intro_s or 0)
-        top = choose_top(faces, total_h / out_h, preferred,
-                         avoid=(INTRO_ZONE,) if intro_s > 0 else (),
+        avoid = [INTRO_ZONE] if intro_s > 0 else []
+        arrow = follow_arrow and (out_w, out_h) == (1080, 1920)
+        if arrow:
+            from video import follow_arrow as fa
+
+            avoid.append((*fa.ZONE, min(0.3, fa.DURATION_S / max(duration, 1.0))))
+        top = choose_top(faces, total_h / out_h, preferred, avoid=tuple(avoid),
                          avoid_weight=min(0.3, intro_s / max(duration, 1.0)))
         y = (int(round(top * out_h)) + head_h) // 2 * 2       # haut de la ligne du badge
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
@@ -406,6 +417,13 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
                            "-i", str(Path(tmp) / "titre_%03d.png")]
                 add(f"{inputs.count('-i') - 1}:v", f"0:{y - head_h - head_pad}",
                     ":eof_action=pass")
+            if arrow:
+                # Au milieu du clip, 3 s, puis plus rien (eof_action=pass).
+                for k, frame in enumerate(fa.frames()):
+                    frame.save(Path(tmp) / f"fleche_{k:03d}.png")
+                inputs += ["-framerate", str(fa.FPS), "-itsoffset", f"{fa.start_for(duration):.3f}",
+                           "-i", str(Path(tmp) / "fleche_%03d.png")]
+                add(f"{inputs.count('-i') - 1}:v", f"{fa.X0}:{fa.Y0}", ":eof_action=pass")
             last = _add_intro(inputs, graph_parts := [graph], last, intro, out_w, out_h, tmp)
             graph = graph_parts[0]
             graph += f";[{last}]format=yuv420p[v]"

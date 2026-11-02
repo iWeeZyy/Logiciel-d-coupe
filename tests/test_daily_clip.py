@@ -137,3 +137,33 @@ def test_paroles_en_anglais_jamais_dans_le_bandeau():
     spoken = [{"kind": "direct", "text": "I bet it's on the beat of the door"}]
     assert choose_text(spoken, preferred="thriller", fallback="Le clip du moment") \
         == "Le clip du moment"
+
+
+def test_fleche_vers_le_plus_tiktok():
+    from video import follow_arrow as fa
+
+    frames = fa.frames()
+    assert len(frames) == 90                                       # 3 s a 30 i/s
+    assert frames[-1].getchannel("A").getbbox() is None             # derniere image vide
+    assert frames[15].getchannel("A").getbbox() is not None         # trait en cours
+    assert fa.start_for(60) == 28.5 and fa.start_for(2) == 0.0      # au milieu du clip
+    # Elle s'arrete juste a gauche du + (vers (955, 1027) dans la video).
+    end = fa.bez(1.0)
+    assert end[0] < 955 and abs(end[1] - 1027) < 60
+
+
+def test_bandeau_evite_la_zone_de_la_fleche():
+    from video import follow_arrow as fa
+    from video.hook_text import choose_top
+
+    zone = (*fa.ZONE, 0.3)
+    top = choose_top([[]], 0.10, preferred=0.52, avoid=(zone,))
+    assert top + 0.10 <= fa.ZONE[0] or top >= fa.ZONE[1]
+
+
+def test_clip_du_jour_demande_la_fleche():
+    import inspect
+
+    from radar import daily_clip
+
+    assert 'block["follow_arrow"] = True' in inspect.getsource(daily_clip.run)
