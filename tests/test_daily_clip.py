@@ -92,3 +92,34 @@ def test_titre_twitch_court_et_mots_sensibles():
     assert not unsafe("Il a tué le game")
     assert choose_text(spoken, preferred="HOLD ON", fallback="x") == "HOLD ON"
     assert choose_text(spoken, preferred="", fallback="Le clip du moment") == "Le clip du moment"
+
+
+def test_clip_deja_passe_dans_un_top_jamais_repris():
+    """2026-11-02 : « HOLD ON » (Kamet0) etait dans le top de la semaine et
+    est revenu en clip du jour. Une entree de memoire ajoutee depuis un top
+    (login + titre, sans creator_key) doit l'ecarter."""
+    from types import SimpleNamespace as O
+
+    from radar import daily_clip as dc
+
+    memory = dc.with_keys([{"id": "top:kamet0:1", "creator": "kamet0", "title": "HOLD ON"}],
+                          {"kamet0": "twitch:27115917"})
+    hold_on = O(kind="clip", is_live=False, content_id="Suspicious", creator_key="twitch:27115917",
+                title="HOLD ON", view_count=2291, duration_s=60, published_at="", extra={})
+    other = O(kind="clip", is_live=False, content_id="Other", creator_key="twitch:27115917",
+              title="Autre moment", view_count=900, duration_s=30, published_at="", extra={})
+    assert dc.choose([hold_on, other], memory) is other
+
+
+def test_top_ecrit_ses_clips_dans_la_memoire(tmp_path):
+    from types import SimpleNamespace as O
+
+    from radar import daily_clip as dc
+
+    clip = O(content_id="X1", creator_key="twitch:1", title="Moment", view_count=10,
+             duration_s=30, published_at="", extra={"vod_offset": 5})
+    entry = dc.memory_entry(clip, "anyme023")
+    assert entry["id"] == "X1" and entry["creator"] == "anyme023"
+    path = tmp_path / "m.json"
+    dc.save_memory(path, [entry])
+    assert dc.load_memory(path)[0]["title"] == "Moment"

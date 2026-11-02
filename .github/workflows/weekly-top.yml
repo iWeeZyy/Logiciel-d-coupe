@@ -28,6 +28,10 @@ on:
         description: "Produire meme si la compilation depasse 2 min 45 (confirme par l'utilisateur)"
         type: boolean
         default: false
+      memory-path:
+        description: "Memoire des clips publies dans le depot appelant (partagee avec le clip du jour) ; vide = aucune"
+        type: string
+        default: ""
       app-ref:
         description: "Version du logiciel (branche ou tag de Logiciel-d-coupe)"
         type: string
@@ -38,13 +42,12 @@ on:
       TWITCH_CLIENT_SECRET:
         required: true
 
-permissions:
-  contents: read
-
 jobs:
   compilation:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: write                 # memoire des clips publies, depot appelant
     env:
       PYTHONUNBUFFERED: "1"
       QT_QPA_PLATFORM: offscreen      # filet : la commande n'importe pas Qt
@@ -110,12 +113,27 @@ jobs:
           CONFIG_PATH: ${{ inputs.config-path }}
           ONLY: ${{ inputs.only }}
           ACCEPT_LONG: ${{ inputs.accept-long }}
+          MEMORY_PATH: ${{ inputs.memory-path }}
         run: |
           extra=()
           [ "$ACCEPT_LONG" = "true" ] && extra+=(--accepter-duree)
+          [ -n "$MEMORY_PATH" ] && extra+=(--memory "$GITHUB_WORKSPACE/appelant/$MEMORY_PATH")
           python gui_main.py --weekly-top \
             --config "$GITHUB_WORKSPACE/appelant/$CONFIG_PATH" --only "$ONLY" \
             --out "$RUNNER_TEMP/compilation" --work-dir "$RUNNER_TEMP/travail" "${extra[@]}"
+
+      - name: Memoire des clips publies
+        if: inputs.memory-path != ''
+        working-directory: appelant
+        env:
+          MEMORY_PATH: ${{ inputs.memory-path }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$MEMORY_PATH"
+          git commit -m "Top de la semaine : memoire mise a jour" || exit 0
+          git pull --rebase -q || true
+          git push
 
       - name: Quelques images de controle
         if: always()

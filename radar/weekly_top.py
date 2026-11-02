@@ -202,7 +202,7 @@ def _make_engine(store, adapter=None):
 def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=None,
         adapter=None, accept_long: bool = False,
         builder=None, today: date | None = None, now: datetime | None = None,
-        on_status=logger.info) -> Report:
+        on_status=logger.info, memory_path: Path | None = None) -> Report:
     """Une compilation par streamer autorise. Ne leve que si la configuration
     est inutilisable ; l'echec d'un streamer est rapporte, les autres
     continuent (comme un scan du Radar)."""
@@ -332,6 +332,14 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
                 line + (" — au-delà de la durée maximale" if too_long else ""))
         report.captions += [(auth.login, c.read_text(encoding="utf-8")) for c in captions]
         report.produced.append((auth.login, [p for p, _ in written] + [str(c) for c in captions]))
+        if memory_path:
+            # Memes clips jamais repris en clip du jour (radar/daily_clip.py).
+            from radar.daily_clip import load_memory, memory_entry, save_memory
+
+            memory = load_memory(memory_path)
+            done = {e.get("id") for e in memory}
+            memory += [memory_entry(o, auth.login, now) for o in kept if o.content_id not in done]
+            save_memory(memory_path, memory)
     return report
 
 
@@ -347,6 +355,8 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--work-dir", type=Path, default=None)
     parser.add_argument("--only", default="",
                         help="un seul streamer (essai) ; il doit etre autorise")
+    parser.add_argument("--memory", type=Path, default=None,
+                        help="memoire des clips publies (partagee avec le clip du jour)")
     parser.add_argument("--accepter-duree", dest="accept_long", action="store_true",
                         help="produire meme si la compilation depasse la duree maximale")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
@@ -356,6 +366,7 @@ def main_cli(argv=None) -> int:
         config = load_config(args.config)
         report = run(config, args.out, args.work_dir or args.out.parent / "_travail",
                      only=args.only or None, accept_long=args.accept_long,
+                     memory_path=args.memory,
                      config_dir=(args.config or default_config_path()).parent)
     except Exception as e:  # noqa: BLE001 -- tache de fond : on journalise
         logger.error(f"Compilation de la semaine : {e}")

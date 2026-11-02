@@ -64,6 +64,29 @@ def save_memory(path: Path, entries: list[dict]) -> None:
                                      indent=2) + "\n", encoding="utf-8")
 
 
+def memory_entry(clip, login: str, now=None) -> dict:
+    """Ce qu'on garde d'un clip publie (clip du jour OU top de la semaine :
+    un clip deja passe dans un top ne doit jamais revenir en clip du jour,
+    constate le 2026-11-02 avec « HOLD ON » de Kamet0)."""
+    return {"id": clip.content_id, "creator": login, "creator_key": clip.creator_key,
+            "title": clip.title, "views": clip.view_count, "duration_s": clip.duration_s,
+            "published_at": clip.published_at,
+            "extra": {k: (clip.extra or {}).get(k) for k in ("source_video_id", "vod_offset")},
+            "date": (now or datetime.now(timezone.utc)).date().isoformat()}
+
+
+def with_keys(memory: list[dict], keys_by_login: dict) -> list[dict]:
+    """Les entrees sans `creator_key` (ajoutees a la main depuis les journaux
+    des tops) le recoivent d'apres le login, pour que same_moment() les
+    compare au meme streamer (fonction pure)."""
+    out = []
+    for e in memory:
+        if not e.get("creator_key") and (e.get("creator") or "").lower() in keys_by_login:
+            e = {**e, "creator_key": keys_by_login[e["creator"].lower()]}
+        out.append(e)
+    return out
+
+
 def _as_clip(entry: dict):
     """Une entree de la memoire, avec ce qu'il faut a same_moment()."""
     from types import SimpleNamespace
@@ -174,6 +197,7 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         return report, []
 
     memory = load_memory(memory_path)
+    known = with_keys(memory, {auth.login.lower(): key for key, (auth, _c) in by_key.items()})
     chosen = None
     def pool(days):
         return [o for o in candidates(store, None, days, now=now) if o.creator_key in by_key]
@@ -184,9 +208,9 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
                            reference=now)
         report.errors += list(scan.errors)
         if period == "24h":
-            chosen = pick(choose(pool(FRESH_HOURS / 24), memory), choose(pool(1), memory))
+            chosen = pick(choose(pool(FRESH_HOURS / 24), known), choose(pool(1), known))
         else:
-            chosen = best_of(chosen, choose(pool(3), memory))
+            chosen = best_of(chosen, choose(pool(3), known))
         if chosen is not None and views(chosen) >= MIN_VIEWS:
             break
     if chosen is None:
@@ -224,13 +248,7 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
     report.captions.append((auth.login, text))
     report.produced.append((auth.login, [str(video), str(legend)]))
     if memory_path:
-        memory.append({"id": chosen.content_id, "creator": auth.login,
-                       "creator_key": chosen.creator_key, "title": chosen.title,
-                       "views": chosen.view_count, "duration_s": chosen.duration_s,
-                       "published_at": chosen.published_at,
-                       "extra": {k: (chosen.extra or {}).get(k)
-                                 for k in ("source_video_id", "vod_offset")},
-                       "date": (now or datetime.now(timezone.utc)).date().isoformat()})
+        memory.append(memory_entry(chosen, auth.login, now))
         save_memory(memory_path, memory)
     return report, [video, legend]
 
