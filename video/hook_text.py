@@ -86,6 +86,17 @@ def shorten(text: str, max_words: int = MAX_WORDS) -> str:
 MIN_SPOKEN_WORDS = 5        # une phrase dite plus courte ne fait pas un titre (« Ouais, je suis »)
 
 
+# Mots qui font reduire la diffusion d'une video (TikTok, Instagram) ou que la
+# chaine ne doit pas afficher hors contexte : jamais dans le bandeau
+# (2026-11-02 : « … on me suicide les gars », transcription d'une blague).
+SENSITIVE = re.compile(r"(?i)\b(suicid\w*|(me|te|se|nous|vous) tuer|viol\w*|nazi\w*|terroris\w*|"
+                       r"pendre|pendu\w*|overdose)\b")
+
+
+def unsafe(text: str) -> bool:
+    return bool(SENSITIVE.search(text or ""))
+
+
 def garbled(text: str) -> bool:
     """Phrase a ne jamais afficher (fonction pure) : un mot repete 3 fois ou
     plus (« … parti parti parti parti », transcription d'un cri ou d'une
@@ -102,8 +113,9 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
     """La phrase a afficher : une QUESTION reellement posee dans le clip
     d'abord (elle fait commenter) ; sinon `preferred` -- le titre donne au
     clip sur Twitch, ecrit par un humain et souvent la chute du moment --
-    s'il fait au moins 3 mots ; sinon la phrase la plus percutante prononcee
+    s'il fait au moins 2 mots ; sinon la phrase la plus percutante prononcee
     (5 mots au moins, sans petit mot ampute en fin) ; sinon `fallback`.
+    Jamais une phrase brouillee (garbled) ni un mot sensible (unsafe).
     Fonction pure."""
     by_kind = {}
     for title in titles or ():
@@ -112,7 +124,8 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
         if kind and text and kind not in by_kind:
             by_kind[kind] = " ".join(str(text).split())
     preferred = clean(preferred)
-    if len(preferred.split()) < 3:
+    # Titre Twitch : ecrit par un humain, 2 mots suffisent (« HOLD ON »).
+    if len(preferred.split()) < 2:
         preferred = ""
     # « curiosite » sans point d'interrogation = une phrase volontairement
     # coupee par le module de titres (editing/metadata.py) : pas pour le
@@ -120,12 +133,16 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
     question = by_kind.get("curiosite") or ""
     if not question.rstrip().endswith("?"):
         question = ""
-    for candidate, min_words in ((question, 3), (preferred, 3),
+    for candidate, min_words in ((question, 3), (preferred, 2),
                                  (by_kind.get("direct"), MIN_SPOKEN_WORDS)):
         text = clean(candidate or "")
-        if not text or garbled(text):
+        if not text or garbled(text) or unsafe(text):
             continue
-        if not text.endswith("?"):
+        if candidate is preferred:
+            # Ecrit par un humain : rien n'y est ampute (« HOLD ON » -- « on »
+            # n'y est pas le pronom qu'enleve trim_tail).
+            text = text if len(text.split()) >= min_words else ""
+        elif not text.endswith("?"):
             text = trim_tail(text, min_words)
         elif len(text.split()) < min_words:
             text = ""

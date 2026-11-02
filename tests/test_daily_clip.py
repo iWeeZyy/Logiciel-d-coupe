@@ -82,3 +82,13 @@ def test_phrase_brouillee_jamais_affichee():
     titles = [{"kind": "direct", "text": "C'est très comamé on sait parti parti parti parti"}]
     assert choose_text(titles, preferred="MARTIIIIIIII", fallback="Le clip du moment") \
         == "Le clip du moment"
+
+
+def test_titre_twitch_court_et_mots_sensibles():
+    from video.hook_text import choose_text, unsafe
+
+    spoken = [{"kind": "direct", "text": "Coyve on fait coyve on me suicide les gars"}]
+    assert unsafe("on me suicide les gars") and unsafe("Je vais me tuer")
+    assert not unsafe("Il a tué le game")
+    assert choose_text(spoken, preferred="HOLD ON", fallback="x") == "HOLD ON"
+    assert choose_text(spoken, preferred="", fallback="Le clip du moment") == "Le clip du moment"
