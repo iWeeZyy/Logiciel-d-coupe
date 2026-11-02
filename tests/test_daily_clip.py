@@ -58,10 +58,27 @@ def test_legende_sans_guillemets_du_titre():
         "Kamet0 — CALISTE JE T'AIME 🔥")
 
 
-def test_le_plus_frais_d_abord():
-    """« Publier le plus vite possible apres le live » : les 16 dernieres
-    heures d'abord, puis 24 h, puis 3 jours."""
-    from radar import daily_clip
+def test_le_frais_seulement_a_qualite_comparable():
+    """Le live de la veille au soir passe devant seulement s'il vaut au
+    moins 70 % des vues du plus vu des 24 h (2026-11-02 : un clip frais a
+    154 vues etait passe devant)."""
+    from types import SimpleNamespace as O
 
-    windows = [d for _period, ws in daily_clip.WINDOWS for d in ws]
-    assert windows == sorted(windows) and windows[0] < 1 and windows[-1] == 3
+    from radar import daily_clip as dc
+
+    best = O(view_count=1000)
+    assert dc.pick(O(view_count=800), best).view_count == 800
+    assert dc.pick(O(view_count=154), best) is best
+    assert dc.pick(None, best) is best and dc.pick(best, None) is best
+    assert dc.best_of(None, O(view_count=5), O(view_count=9)).view_count == 9
+
+
+def test_phrase_brouillee_jamais_affichee():
+    from video.hook_text import choose_text, garbled
+
+    assert garbled("C'est très comamé on sait parti parti parti parti")
+    assert garbled("MARTIIIIIIIIII")
+    assert not garbled("Il a vraiment cru que c'était fini")
+    titles = [{"kind": "direct", "text": "C'est très comamé on sait parti parti parti parti"}]
+    assert choose_text(titles, preferred="MARTIIIIIIII", fallback="Le clip du moment") \
+        == "Le clip du moment"

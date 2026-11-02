@@ -457,8 +457,9 @@ module Qt n'est importe sur ce chemin (verifie par un test).
   --config weekly_compilation.json --memory clips_publies.json --out sortie/`,
   workflow reutilisable `.github/workflows/daily-clip.yml`, appelant
   `docs/daily-clip-caller.yml`) : deux clips seuls par jour (vers 11 h 30 et
-  18 h 41, 2026-11-02), le plus vu des 16 dernieres heures -- le live de la
-  veille au soir, le plus frais d'abord --, a defaut 24 h, puis 3 jours,
+  18 h 41, 2026-11-02), le plus vu des 24 dernieres heures -- ou, s'il vaut
+  au moins 70 % de ses vues, le plus vu des 16 dernieres heures (le live de
+  la veille au soir) ; sous 300 vues, les 3 derniers jours sont regardes --,
   parmi les streamers autorises de la meme
   configuration, jamais deux fois le meme clip ni le meme passage du live
   (memoire `clips_publies.json` dans le depot prive, mise a jour apres chaque

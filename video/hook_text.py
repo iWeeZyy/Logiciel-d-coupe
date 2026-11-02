@@ -86,6 +86,17 @@ def shorten(text: str, max_words: int = MAX_WORDS) -> str:
 MIN_SPOKEN_WORDS = 5        # une phrase dite plus courte ne fait pas un titre (« Ouais, je suis »)
 
 
+def garbled(text: str) -> bool:
+    """Phrase a ne jamais afficher (fonction pure) : un mot repete 3 fois ou
+    plus (« … parti parti parti parti », transcription d'un cri ou d'une
+    musique, constate le 2026-11-02) ou une lettre etiree (« MARTIIIIII »)."""
+    words = [w.strip(".,;:!?…").lower() for w in (text or "").split()]
+    words = [w for w in words if w]
+    if any(words.count(w) >= 3 and w not in _SMALL_WORDS for w in set(words)):
+        return True
+    return bool(re.search(r"(\w)\1{3,}", text or ""))
+
+
 def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
                 fallback: str = "") -> str:
     """La phrase a afficher : une QUESTION reellement posee dans le clip
@@ -112,7 +123,7 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
     for candidate, min_words in ((question, 3), (preferred, 3),
                                  (by_kind.get("direct"), MIN_SPOKEN_WORDS)):
         text = clean(candidate or "")
-        if not text:
+        if not text or garbled(text):
             continue
         if not text.endswith("?"):
             text = trim_tail(text, min_words)

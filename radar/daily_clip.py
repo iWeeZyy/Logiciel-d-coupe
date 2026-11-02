@@ -34,11 +34,15 @@ from core.logging_setup import get_logger
 logger = get_logger()
 
 CLI_FLAG = "--daily-clip"
-# (periode du Radar a rafraichir, fenetres essayees dans l'ordre, en jours).
-# Le plus FRAIS d'abord (demande du 2026-11-02, « publier le plus vite
-# possible apres le live ») : les clips des 16 dernieres heures -- le live
-# de la veille au soir --, puis 24 h, puis 3 jours. Dans une fenetre, le plus vu.
-WINDOWS = (("24h", (16 / 24, 1)), ("3j", (3,)))
+# Fraicheur (2026-11-02) : le clip le plus vu des 24 dernieres heures, sauf si
+# un clip des FRESH_HOURS dernieres heures (le live de la veille au soir) fait
+# au moins FRESH_RATIO de ses vues -- alors le plus frais. La premiere version
+# prenait le frais d'office et a sorti un clip a 154 vues : un clip frais ne
+# passe devant qu'a qualite comparable. Sous MIN_VIEWS, on regarde aussi les
+# 3 derniers jours et on garde le plus vu.
+FRESH_HOURS = 16
+FRESH_RATIO = 0.7
+MIN_VIEWS = 300
 MEMORY_KEEP = 400                       # entrees gardees dans la memoire
 
 
@@ -81,6 +85,23 @@ def choose(opportunities, memory: list[dict]) -> object | None:
                   and not any(same_moment(o, d) for d in done)]
     return max(candidates, key=lambda o: o.view_count if o.view_count is not None else -1,
                default=None)
+
+
+def views(opportunity) -> int:
+    return opportunity.view_count if opportunity is not None and opportunity.view_count else 0
+
+
+def pick(fresh, best):
+    """Le frais s'il vaut au moins FRESH_RATIO du plus vu, sinon le plus vu
+    (fonction pure)."""
+    if fresh is None or best is None:
+        return fresh or best
+    return fresh if views(fresh) >= FRESH_RATIO * views(best) else best
+
+
+def best_of(*options):
+    options = [o for o in options if o is not None]
+    return max(options, key=views, default=None)
 
 
 # ------------------------------------------------------------------ legende
@@ -154,17 +175,19 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
 
     memory = load_memory(memory_path)
     chosen = None
-    for period, windows in WINDOWS:
+    def pool(days):
+        return [o for o in candidates(store, None, days, now=now) if o.creator_key in by_key]
+
+    for period in ("24h", "3j"):
         on_status(f"Rafraîchissement du Radar ({period})…")
         scan = engine.scan(platforms=["twitch"], period=period, max_results=max_results,
                            reference=now)
         report.errors += list(scan.errors)
-        for days in windows:
-            chosen = choose([o for o in candidates(store, None, days, now=now)
-                             if o.creator_key in by_key], memory)
-            if chosen is not None:
-                break
-        if chosen is not None:
+        if period == "24h":
+            chosen = pick(choose(pool(FRESH_HOURS / 24), memory), choose(pool(1), memory))
+        else:
+            chosen = best_of(chosen, choose(pool(3), memory))
+        if chosen is not None and views(chosen) >= MIN_VIEWS:
             break
     if chosen is None:
         report.notes.append("Aucun nouveau clip ces 3 derniers jours.")
@@ -181,8 +204,9 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         block = dict(current) if isinstance(current, dict) else {"enabled": True}
         block["tag"] = creator.label
         # Rien de solide a citer : un texte vrai sur ce clip, pas une phrase
-        # amputee (constate le 2026-11-01 : « Saint -Hurigol et le »).
-        block["fallback"] = "Le clip le plus vu du jour"
+        # amputee (constate le 2026-11-01 : « Saint -Hurigol et le »). Neutre : avec
+        # deux clips par jour, le second n'est pas « le plus vu du jour ».
+        block["fallback"] = "Le clip du moment"
         overrides["hook_text"] = block
         production = {**production, "editing_overrides": overrides}
     try:
