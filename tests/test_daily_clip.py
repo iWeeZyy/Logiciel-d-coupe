@@ -129,6 +129,9 @@ def test_paroles_en_anglais_jamais_dans_le_bandeau():
     from video.hook_text import choose_text, foreign
 
     assert foreign("I bet it's on the beat of the door")
+    assert foreign("Y que fue y si te nada te quiero")
+    assert not foreign("Non mais pour qui elles se prennent celle-là")
+    assert not foreign("Mais il est fou c'est pas possible")
     assert not foreign("Il a vraiment cru que c'était fini")
     assert not foreign("On fait le check les gars")
     spoken = [{"kind": "direct", "text": "I bet it's on the beat of the door"}]

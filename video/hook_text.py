@@ -103,15 +103,20 @@ _FR_WORDS = {"le", "la", "les", "de", "des", "du", "un", "une", "et", "est", "c'
              "il", "on", "nous", "vous", "que", "qui", "pas", "ne", "en", "à", "au", "mais", "ça"}
 
 
+_ES_WORDS = {"y", "fue", "nada", "quiero", "el", "los", "las", "por", "para", "pero", "muy", "yo",
+             "eres", "es", "como", "esta", "está", "qué", "porque", "amor", "corazón", "mi", "te"}
+
+
 def foreign(text: str) -> bool:
     """Phrase PRONONCEE qui n'est pas en francais (fonction pure) : souvent des
     paroles de chanson mal transcrites (« I bet it's on the beat of the
-    door », 2026-11-02). La chaine est francaise ; un titre Twitch en
+    door », « Y que fue y si te nada te quiero », 2026-11-02). La chaine est francaise ; un titre Twitch en
     anglais (« HOLD ON ») reste permis -- il est ecrit, pas transcrit."""
     words = [w.strip(".,;:!?…\"«»").lower() for w in (text or "").split()]
     english = sum(w in _EN_WORDS and w not in _FR_WORDS for w in words)
-    french = sum(w in _FR_WORDS and w not in _EN_WORDS for w in words)
-    return english >= 2 and french == 0
+    spanish = sum(w in _ES_WORDS and w not in _FR_WORDS for w in words)
+    french = sum(w in _FR_WORDS and w not in _EN_WORDS and w not in _ES_WORDS for w in words)
+    return (english >= 2 and french == 0) or (spanish >= 3 and spanish > french)
 
 
 def garbled(text: str) -> bool:
