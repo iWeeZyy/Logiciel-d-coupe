@@ -50,7 +50,9 @@ def clean(text: str) -> str:
 
     # Emojis et symboles : la police du logiciel ne les a pas (carre vide).
     text = "".join(ch for ch in (text or "") if unicodedata.category(ch) not in ("So", "Cs", "Co"))
-    text = " ".join(text.split())
+    # Espaces en trop retires ; un retour a la ligne VOULU (titre donne a la
+    # main, 2026-11-03) est garde pour le bandeau.
+    text = "\n".join(" ".join(line.split()) for line in text.splitlines() if line.strip())
     text = re.sub(r"(\w) ?['’] ?(\w)", r"\1'\2", text)
     text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
     # « Saint -Hurigol » -> « Saint-Hurigol » (tiret colle par la transcription)
@@ -199,7 +201,7 @@ def render_band(text: str, out_w: int, out_h: int):
     bande noire translucide sur toute la largeur, filets roses en haut et en
     bas, texte blanc gras. Le badge neon se pose au-dessus (apply). Renvoie
     l'image RGBA (largeur out_w) ou None."""
-    text = " ".join((text or "").split())
+    text = "\n".join(" ".join(line.split()) for line in (text or "").splitlines() if line.strip())
     if not text:
         return None
     from PIL import Image, ImageDraw, ImageFont
@@ -219,8 +221,13 @@ def render_band(text: str, out_w: int, out_h: int):
 
     title_font = font("BarlowCondensed-ExtraBoldItalic.ttf", 68)
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    lines = wrap_text(probe, text.upper(), title_font, out_w - round(140 * scale),
-                      max_lines=MAX_LINES)
+    lines = []
+    for paragraph in text.upper().split("\n"):        # retours a la ligne voulus
+        lines += wrap_text(probe, paragraph, title_font, out_w - round(140 * scale),
+                           max_lines=MAX_LINES)
+    if len(lines) > MAX_LINES:
+        lines = lines[:MAX_LINES]
+        lines[-1] = lines[-1].rstrip(" ,.;:!?") + "…"
     line_h = round(78 * scale)
     pad, rule = round(26 * scale), max(3, round(8 * scale))
     band_h = line_h * len(lines) + 2 * pad

@@ -183,3 +183,15 @@ def test_nom_tel_qu_on_le_tape_et_commentaire_epingle():
     assert naming.clip_comment("abc") == naming.clip_comment("abc")     # stable
     assert naming.clip_comment("abc").endswith("👇")
     assert naming.top_comment(5) == "Ton préféré : #1, #2, #3, #4 ou #5 ? 👇"
+
+
+def test_retour_a_la_ligne_voulu_dans_le_bandeau():
+    from video.hook_text import choose_text, clean, render_band
+
+    text = "Date de sortie du son Numéro\nVendredi 6 Novembre"
+    assert clean(text) == text
+    assert choose_text([], preferred=text) == text
+    assert clean("c 'est  bon") == "c'est bon"
+    one = render_band("Date de sortie du son Numéro Vendredi 6 Novembre", 1080, 1920)
+    two = render_band(text, 1080, 1920)
+    assert two.height >= one.height
