@@ -224,3 +224,12 @@ def test_video_donnee_a_la_main(tmp_path):
                     video_title="Une série Bande-annonce VF")
     assert result["status"] == "produit"
     assert made["article"].title == "Une série Bande-annonce VF"
+
+
+def test_fichier_allocine_direct_en_secours():
+    from news_story.video_source import allocine_direct_mp4
+
+    page = ('"url":"https:\\/\\/fr.vid.web.acsta.net\\/nmedia\\/33\\/20640980_sd_013.mp4?x=1",'
+            '"hd":"https:\\/\\/fr.vid.web.acsta.net\\/nmedia\\/33\\/20640980_hd_013.mp4?source=www"')
+    assert allocine_direct_mp4(page) == "https://fr.vid.web.acsta.net/nmedia/33/20640980_hd_013.mp4"
+    assert allocine_direct_mp4("<p>rien</p>") == ""

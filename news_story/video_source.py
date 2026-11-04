@@ -56,6 +56,21 @@ def _allocine_dailymotion_id(page_html: str) -> str:
     return ""
 
 
+_ALLOCINE_MP4_RE = re.compile(r'(https?:\\?/\\?/[a-z0-9.]*acsta\.net[^"\s]*?_(hd|sd|ld)_\d+\.mp4)')
+_QUALITY = {"hd": 0, "sd": 1, "ld": 2}
+
+
+def allocine_direct_mp4(page_html: str) -> str:
+    """Le fichier video d'une page AlloCine, servi par AlloCine lui-meme
+    (« …_hd_013.mp4 »), le meilleur disponible ; "" sinon. Secours quand la
+    video Dailymotion liee n'existe plus (2026-11-04, « Avengers: Doomsday »
+    VF : Dailymotion « Not found »). Fonction pure."""
+    found = []
+    for url, quality in _ALLOCINE_MP4_RE.findall(page_html or ""):
+        found.append((_QUALITY.get(quality, 9), url.replace("\\/", "/")))
+    return min(found)[1] if found else ""
+
+
 def find_video_url(article_url: str, page_html: str = "") -> str:
     """Adresse de la video de l'article, a passer a yt-dlp ; "" si aucune.
     Fonction pure : la page est fournie deja telechargee."""

@@ -224,6 +224,19 @@ def window_job(article, wait_s: float = 120.0):
         app.processEvents()
 
 
+def _allocine_fallback(page_url: str) -> str:
+    """Le fichier video direct de la page AlloCine ("" si aucun)."""
+    if "allocine.fr" not in (page_url or ""):
+        return ""
+    from news_story.image_fetcher import fetch_article_html
+    from news_story.video_source import allocine_direct_mp4
+
+    try:
+        return allocine_direct_mp4(fetch_article_html(page_url, timeout_s=15) or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def produce(article, out_dir: Path, on_status=logger.info):
     """(video, legende .txt, texte de la legende), ou None si l'article n'a
     pas de video."""
@@ -238,8 +251,16 @@ def produce(article, out_dir: Path, on_status=logger.info):
     stem = safe_name(article.title)[:90]
     video = out_dir / f"{stem}.mp4"
     kwargs = {k: v for k, v in job.items() if k != "video_url"}
-    export_video(job["video_url"], str(video), on_status=on_status, min_height=MIN_HEIGHT,
-                 **kwargs)
+    try:
+        export_video(job["video_url"], str(video), on_status=on_status, min_height=MIN_HEIGHT,
+                     **kwargs)
+    except Exception as error:  # noqa: BLE001 -- secours ci-dessous, sinon on relaie
+        fallback = _allocine_fallback(article.url)
+        if not fallback or fallback == job["video_url"] or type(error).__name__ in (
+                "CancelledError", "VostUnavailable"):
+            raise
+        on_status(f"Vidéo introuvable ({error}) : fichier AlloCiné direct.")
+        export_video(fallback, str(video), on_status=on_status, min_height=MIN_HEIGHT, **kwargs)
     text_path = video.with_suffix(".txt")
     text_path.write_text(caption, encoding="utf-8")
     published.mark([article.url])                # comme le bouton « Exporter »
