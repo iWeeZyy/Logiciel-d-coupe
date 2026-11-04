@@ -248,7 +248,8 @@ def produce(article, out_dir: Path, on_status=logger.info):
 
 def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         fetch=fetch_trailers, producer=produce, on_status=logger.info,
-        skip_youtube: bool = False, lookup="allocine", film: str = "") -> dict:
+        skip_youtube: bool = False, lookup="allocine", film: str = "",
+        video_page: str = "", video_title: str = "") -> dict:
     """{"status": "produit"|"rien"|"erreur", "reason", "title", "video",
     "caption"}. Ne leve pas. `film` : ce film-la seulement (demande de
     l'utilisateur), en ignorant le rythme ; jamais une bande-annonce deja
@@ -256,6 +257,16 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
     from news_story import published
 
     today = today or date.today()
+    if video_page:
+        # Une video donnee a la main (page AlloCine), hors du fil : ni rythme ni
+        # filtre de popularite -- c'est l'utilisateur qui l'a choisie (2026-11-04,
+        # bande-annonce VF de la serie Harry Potter, absente du fil).
+        from gaming_news.models import Article
+
+        fetch = lambda: [Article(source_key="manuel", source_label="AlloCiné",  # noqa: E731
+                                 title=video_title or "Bande-annonce", url=video_page)]
+        lookup = lambda title: None  # noqa: E731
+        force = True
     try:
         articles = fetch()
     except Exception as e:  # noqa: BLE001 -- rapporte
@@ -272,8 +283,10 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
 
         cache: dict = {}
         lookup = lambda title: cache.setdefault(title, allocine_lookup(title))  # noqa: E731
-    decision = decide(articles, published.load(), today, force=force,
-                      skip_youtube=skip_youtube, lookup=lookup)
+    decision = (Decision(articles[0], "Vidéo choisie à la main.", tuple(articles))
+                if video_page else
+                decide(articles, published.load(), today, force=force,
+                       skip_youtube=skip_youtube, lookup=lookup))
     on_status(decision.reason)
     if decision.article is None:
         return {"status": "rien", "reason": decision.reason}
@@ -313,11 +326,15 @@ def main_cli(argv=None) -> int:
                         help="ignorer le rythme (essai) ; jamais une deja publiee")
     parser.add_argument("--film", default="",
                         help="ce film-la seulement (titre), au lieu du choix automatique")
+    parser.add_argument("--page-video", default="",
+                        help="adresse d'une page video AlloCine, hors du fil (avec --titre)")
+    parser.add_argument("--titre", default="", help="titre de la video donnee avec --page-video")
     parser.add_argument("--sans-youtube", action="store_true",
                         help="ecarter les videos YouTube (serveur : YouTube les bloque)")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
-    result = run(args.out, force=args.force, skip_youtube=args.sans_youtube, film=args.film)
+    result = run(args.out, force=args.force, skip_youtube=args.sans_youtube, film=args.film,
+                 video_page=args.page_video, video_title=args.titre)
     print(f"Résultat : {result['status']} — {result.get('reason', '')}", flush=True)
     for line in result.get("skipped") or []:
         print(f"⚠ écartée : {line}", flush=True)

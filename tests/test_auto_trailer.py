@@ -97,12 +97,12 @@ def test_sous_github_actions(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary"))
-    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False, film="": {
+    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False, film="", video_page="", video_title="": {
         "status": "produit", "reason": "r", "title": "T", "video": "v.mp4",
         "caption": "Légende\n#cinema"})
     assert at.main_cli(["--auto-trailer"]) == 0
     assert out.read_text(encoding="utf-8").strip() == "produit=true"
-    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False, film="": {"status": "rien", "reason": "x"})
+    monkeypatch.setattr(at, "run", lambda out_dir, force=False, skip_youtube=False, film="", video_page="", video_title="": {"status": "rien", "reason": "x"})
     assert at.main_cli([]) == 0
     assert out.read_text(encoding="utf-8").strip().endswith("produit=false")
 
@@ -207,3 +207,20 @@ def test_film_demande_seulement(tmp_path):
         assert result["status"] == "erreur" and "Dune" in result["reason"]
     finally:
         at2.decide = original
+
+
+def test_video_donnee_a_la_main(tmp_path):
+    """Une page video hors du fil (bande-annonce choisie par l'utilisateur) :
+    produite sans rythme ni filtre de popularite."""
+    made = {}
+
+    def producer(article, out_dir, on_status=None):
+        made["article"] = article
+        video = Path(out_dir) / "v.mp4"
+        return video, video.with_suffix(".txt"), "legende"
+
+    result = at.run(tmp_path, producer=producer, fetch=lambda: [],
+                    video_page="https://www.allocine.fr/video/player_gen_cmedia=1&cserie=2.html",
+                    video_title="Une série Bande-annonce VF")
+    assert result["status"] == "produit"
+    assert made["article"].title == "Une série Bande-annonce VF"

@@ -19,6 +19,13 @@ on:
         description: "Ce film-la seulement (titre), au lieu du choix automatique"
         type: string
         default: ""
+      video-page:
+        description: "Page video AlloCine donnee a la main (hors du fil), avec video-title"
+        type: string
+        default: ""
+      video-title:
+        type: string
+        default: ""
       retention-days:
         type: number
         default: 3
@@ -96,13 +103,15 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FORCE: ${{ inputs.force && '--force' || '' }}
           FILM: ${{ inputs.film }}
+          VIDEO_PAGE: ${{ inputs.video-page }}
+          VIDEO_TITLE: ${{ inputs.video-title }}
         run: |
           cp "$GITHUB_WORKSPACE/appelant/news_publiees.json" news_publiees.json 2>/dev/null || true
           # --sans-youtube : YouTube refuse les serveurs GitHub (« Sign in to
           # confirm you're not a bot », essai du 2026-10-31) ; les videos
           # AlloCine (Dailymotion) y sont servies en 1080p.
           python gui_main.py --auto-trailer --sans-youtube --out "$RUNNER_TEMP/bande-annonce" $FORCE \
-            ${FILM:+--film "$FILM"}
+            ${FILM:+--film "$FILM"} ${VIDEO_PAGE:+--page-video "$VIDEO_PAGE" --titre "$VIDEO_TITLE"}
 
       - name: Memoire des publications
         if: steps.run.outputs.produit == 'true'

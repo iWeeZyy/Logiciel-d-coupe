@@ -181,12 +181,41 @@ def line(release: Release | None, today: date | None = None) -> str:
 # ---------------------------------------------------------------- reseau
 
 _CFILM_RE = re.compile(r"cfilm=(\d+)")
+_CSERIE_RE = re.compile(r"cserie=(\d+)")
 
 
 @dataclass
 class FilmInfo:
     release: Release | None = None
     synopsis: str = ""
+
+
+def parse_series_page(page_html: str) -> Release | None:
+    """Fiche serie AlloCine : « Nouvelle saison prévue le 25 décembre 2026
+    sur [HBO Max] » (bandeau « banner-coming-soon »)."""
+    banner = re.search(r'banner-coming-soon">(.*?)</div>', page_html or "", re.S)
+    if not banner:
+        return None
+    day = re.search(r"le\s+((?:1er|\d{1,2})\s+\w+(?:\s+\d{4})?)", unescape(banner.group(1)))
+    if not day or not _DATE_RE.search(day.group(1)):
+        return None
+    platform = re.search(r'alt="([^"]+)"', banner.group(1))
+    return Release(" ".join(day.group(1).split()),
+                   f"sur {unescape(platform.group(1)).strip()}" if platform else "")
+
+
+def parse_series_synopsis(page_html: str) -> str:
+    """Synopsis d'une fiche serie (donnees structurees, sinon le bloc
+    « Synopsis & Info » de la page), tel quel."""
+    text = parse_synopsis(page_html)
+    if text:
+        return text
+    block = re.search(r'id="synopsis-details".*?content-txt[^>]*>(.*?)</div>', page_html or "", re.S)
+    if not block:
+        return ""
+    first = re.search(r"<p[^>]*>(.*?)</p>", block.group(1), re.S)
+    raw = first.group(1) if first else block.group(1)
+    return " ".join(unescape(re.sub(r"<[^>]+>", " ", raw)).split())
 
 
 def find_film(url: str, title: str, text: str = "", timeout_s: float = 15) -> FilmInfo:
@@ -202,10 +231,18 @@ def find_film(url: str, title: str, text: str = "", timeout_s: float = 15) -> Fi
             page = fetch_page(
                 f"https://www.allocine.fr/film/fichefilm_gen_cfilm={match.group(1)}.html", timeout_s)
             info.release, info.synopsis = parse_film_page(page), parse_synopsis(page)
+        series = _CSERIE_RE.search(url or "")
+        if series and not match:
+            # Une SERIE : jamais la fiche d'un film homonyme (2026-11-04, la serie
+            # Harry Potter avait recu la date et le synopsis du film de 2001).
+            page = fetch_page(
+                f"https://www.allocine.fr/series/ficheserie_gen_cserie={series.group(1)}.html",
+                timeout_s)
+            info.release, info.synopsis = parse_series_page(page), parse_series_synopsis(page)
         if info.release is None:
             info.release = from_text(text)
         if title and not (info.release and info.synopsis):
-            for kind in ("movie", "series"):
+            for kind in (("series",) if series else ("movie", "series")):
                 found = fetch_page(
                     f"https://www.allocine.fr/rechercher/{kind}/?q={quote(title)}", timeout_s)
                 link = search_page_link(found, title)
