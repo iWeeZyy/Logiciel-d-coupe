@@ -137,6 +137,10 @@ def caption(clip_title: str, creator: str, search_name: str = "") -> str:
     from video.hook_text import clean
 
     title = clean(clip_title)            # sans les guillemets du titre Twitch
+    if sum(ch.isalnum() for ch in title) < 3:
+        # « x », « . », « j » : un titre Twitch vide de sens (2026-11-04) -> le
+        # meme texte neutre que le bandeau.
+        title = "Le clip du moment"
     who = search_name or creator
     head = f"{who} — {title}" if title else who
     return "\n\n".join([f"{head} 🔥", "Abonne-toi pour le prochain clip 👀",

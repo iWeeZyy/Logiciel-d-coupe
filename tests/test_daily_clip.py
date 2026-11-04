@@ -195,3 +195,11 @@ def test_retour_a_la_ligne_voulu_dans_le_bandeau():
     one = render_band("Date de sortie du son Numéro Vendredi 6 Novembre", 1080, 1920)
     two = render_band(text, 1080, 1920)
     assert two.height >= one.height
+
+
+def test_legende_sans_titre_vide_de_sens():
+    from radar.daily_clip import caption
+
+    assert caption("x", "Squeezie").startswith("Squeezie — Le clip du moment 🔥")
+    assert caption(".", "Squeezie").startswith("Squeezie — Le clip du moment")
+    assert caption("MDRRR", "Anyme023", "Anyme").startswith("Anyme — MDRRR")
