@@ -823,13 +823,22 @@ def _analyse_framing(
             try:
                 src_w, src_h = ffmpeg_utils.video_resolution(video_path)
                 face_h = (webcam.area * src_w / src_h) ** 0.5
-                webcam_plan = replace(webcam_plan, window_h=min(0.9, 3.5 * face_h))
+                from video.filter_graph import (MAX_WEBCAM_UPSCALE, TINY_WEBCAM_FACES,
+                                                WEBCAM_HEIGHT_FRAC)
+
+                out_w, out_h = settings.target_size()
+                window_h = min(0.9, 3.5 * face_h)
+                if out_h * WEBCAM_HEIGHT_FRAC / (window_h * src_h) > MAX_WEBCAM_UPSCALE:
+                    # Webcam minuscule : elle sera agrandie x2 au plus, sur
+                    # fond flou -- on la prend alors ENTIERE, pas serree sur
+                    # le visage, sinon elle resterait toute petite.
+                    window_h = min(0.9, TINY_WEBCAM_FACES * face_h)
+                webcam_plan = replace(webcam_plan, window_h=window_h)
+                logger.info(f"Webcam : visage {face_h:.3f} de haut, fenêtre {window_h:.3f}.")
                 # Bande du bas : le jeu SANS l'incrustation (deja en haut),
                 # quitte a zoomer un peu.
                 from editing.subject import game_window
-                from video.filter_graph import WEBCAM_HEIGHT_FRAC
 
-                out_w, out_h = settings.target_size()
                 band_aspect = out_w / (out_h * (1 - WEBCAM_HEIGHT_FRAC))
                 gx, gy, gh = game_window(webcam, src_w, src_h, band_aspect, face_h)
                 plan = FramingPlan((FramingKeyframe(t=0.0, cx=gx, cy=gy),), "static", 1.0,

@@ -203,3 +203,15 @@ def test_legende_sans_titre_vide_de_sens():
     assert caption("x", "Squeezie").startswith("Squeezie — Le clip du moment 🔥")
     assert caption(".", "Squeezie").startswith("Squeezie — Le clip du moment")
     assert caption("MDRRR", "Anyme023", "Anyme").startswith("Anyme — MDRRR")
+
+
+def test_pas_de_virgule_en_fin_de_bandeau():
+    """Phrase prononcee coupee au milieu : « LES GARS, CHANTEZ MINI, MINI, »
+    (Squeezie, 2026-11-04). La virgule finale est retiree, pas celles du
+    milieu, ni un point d'exclamation ou d'interrogation."""
+    from video.hook_text import clean
+
+    assert clean("Les gars, chantez mini, mini,") == "Les gars, chantez mini, mini"
+    assert clean("Attends :") == "Attends"
+    assert clean("T'as vu ça ?") == "T'as vu ça ?"
+    assert clean("HOLD ON !") == "HOLD ON !"

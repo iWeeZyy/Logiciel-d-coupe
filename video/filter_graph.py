@@ -192,6 +192,11 @@ WEBCAM_HEIGHT_FRAC = 0.35
 # est agrandie x2 seulement, centree sur un fond flou fait de la meme image
 # (choix de l'utilisateur) ; une webcam normale reste en pleine largeur.
 MAX_WEBCAM_UPSCALE = 2.0
+# Fenetre d'une webcam minuscule, en hauteurs de visage : l'incrustation
+# entiere (5,25 = 215 px pour 214 reels chez Squeezie), au lieu des 3,5 qui
+# serrent sur le visage -- une fois plafonnee a x2, une fenetre serree
+# restait toute petite au milieu du fond flou.
+TINY_WEBCAM_FACES = 5.25
 
 # Flou du fond. Assez fort pour qu'on ne lise plus l'image, assez faible pour
 # que les couleurs et le mouvement restent -- c'est ce qui fait que le cadre

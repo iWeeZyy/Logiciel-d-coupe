@@ -61,7 +61,9 @@ def clean(text: str) -> str:
     # a l'infinitif est toujours la preposition (titre Twitch tape sans accent).
     text = re.sub(r"(?i)\b(a)( [a-zàâçéèêëîïôûùüÿœ]+(?:er|ir|re|oir))\b",
                   lambda m: ("À" if m.group(1) == "A" else "à") + m.group(2), text)
-    return text.strip(' "«»“”').strip()
+    # Virgule ou deux-points en fin de bandeau : une phrase coupee au milieu
+    # (« LES GARS, CHANTEZ MINI, MINI, », 2026-11-04).
+    return text.strip(' "«»“”').strip().rstrip(",;:").rstrip()
 
 
 def trim_tail(text: str, min_words: int = 3) -> str:
