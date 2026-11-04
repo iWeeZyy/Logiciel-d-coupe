@@ -123,6 +123,33 @@ class TestModePortraitWebcamGameplay:
         assert f"scale=1080:{webcam_h}" in produced
         assert f"scale=1080:{gameplay_h}" in produced
 
+    def _small_plan(self, window_h):
+        from editing.framing import FramingKeyframe, FramingPlan
+
+        return FramingPlan(keyframes=(FramingKeyframe(t=0.0, cx=0.1, cy=0.4),),
+                           mode="static", confidence=0.9, window_h=window_h)
+
+    def test_une_webcam_minuscule_est_agrandie_deux_fois_au_plus(self):
+        """344x214 dans du 1080p (Squeezie) : x3,1 pour remplir la largeur,
+        pixelise. Plafonne a x2, centree sur un fond flou d'elle-meme."""
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._small_plan(214 / 1080))
+        assert "boxblur" in produced
+        assert "overlay=(W-w)/2:(H-h)/2" in produced
+        import re
+        crop = re.search(r"\[wcsrc\]crop=(\d+):(\d+)", produced)
+        cw, ch = int(crop.group(1)), int(crop.group(2))
+        fg = re.search(r"\[wcfgsrc\]scale=(\d+):(\d+)", produced)
+        assert int(fg.group(1)) <= 2 * cw and int(fg.group(2)) <= 2 * ch
+        assert int(fg.group(1)) % 2 == 0 and int(fg.group(2)) % 2 == 0
+        assert "vstack=inputs=2" in produced
+
+    def test_une_webcam_normale_reste_en_pleine_largeur(self):
+        produced = chain(target_size=PORTRAIT_SIZE, fit=FIT_SPLIT_WEBCAM,
+                         webcam_plan=self._small_plan(0.5))
+        assert "boxblur" not in produced
+        assert "overlay" not in produced
+
     def test_aucun_zoom_dynamique_en_mode_split(self):
         """Le zoom vise UNE fenetre ; hors de propos des qu'il y en a deux
         independantes."""

@@ -187,6 +187,11 @@ FIT_MODES = (FIT_CROP, FIT_WHOLE, FIT_SPLIT_WEBCAM)
 # le meme resultat visuel : un visage bien lisible sans reduire le jeu, qui
 # reste l'attraction principale du clip, a une bande trop etroite.
 WEBCAM_HEIGHT_FRAC = 0.35
+# Une webcam MINUSCULE dans le live (344x214 chez Squeezie, 2026-11-04) devait
+# etre agrandie x3,1 pour remplir la largeur : pixelisee. Au-dela de x2, elle
+# est agrandie x2 seulement, centree sur un fond flou fait de la meme image
+# (choix de l'utilisateur) ; une webcam normale reste en pleine largeur.
+MAX_WEBCAM_UPSCALE = 2.0
 
 # Flou du fond. Assez fort pour qu'on ne lise plus l'image, assez faible pour
 # que les couleurs et le mouvement restent -- c'est ce qui fait que le cadre
@@ -391,20 +396,36 @@ def _split_webcam_chain(
     webcam_aspect = out_w / webcam_h
     gameplay_aspect = out_w / gameplay_h
 
-    webcam_crop, webcam_cw, _ = _crop_stage(webcam_plan, None, edit_list, src_w, src_h, webcam_aspect)
+    webcam_crop, webcam_cw, webcam_ch = _crop_stage(webcam_plan, None, edit_list, src_w, src_h,
+                                                    webcam_aspect)
     gameplay_crop, gameplay_cw, _ = _crop_stage(
         gameplay_plan, face_hint, edit_list, src_w, src_h, gameplay_aspect)
 
-    webcam_sharpen = _sharpen(out_w / webcam_cw if webcam_cw else 0)
     gameplay_sharpen = _sharpen(out_w / gameplay_cw if gameplay_cw else 0)
-
-    top = ",".join(p for p in (webcam_crop, _scale(out_w, webcam_h), webcam_sharpen) if p)
     bottom = ",".join(p for p in (gameplay_crop, _scale(out_w, gameplay_h), gameplay_sharpen) if p)
+
+    upscale = out_w / webcam_cw if webcam_cw else 0
+    if upscale > MAX_WEBCAM_UPSCALE and webcam_ch:
+        # Webcam minuscule : x2 au plus, centree sur un fond flou d'elle-meme.
+        fg_w = _even(round(webcam_cw * MAX_WEBCAM_UPSCALE))
+        fg_h = _even(round(webcam_ch * MAX_WEBCAM_UPSCALE))
+        fg = ",".join(p for p in (_scale(fg_w, fg_h), _sharpen(MAX_WEBCAM_UPSCALE)) if p)
+        top_graph = (
+            f"[wcsrc]{webcam_crop},split=2[wcbgsrc][wcfgsrc];"
+            f"[wcbgsrc]{_scale(out_w, webcam_h, flags=None)},"
+            f"boxblur=luma_radius=30:luma_power=2,eq=brightness=-0.15[wcbg];"
+            f"[wcfgsrc]{fg}[wcfg];"
+            f"[wcbg][wcfg]overlay=(W-w)/2:(H-h)/2[wctop];"
+        )
+    else:
+        top = ",".join(p for p in (webcam_crop, _scale(out_w, webcam_h),
+                                   _sharpen(upscale)) if p)
+        top_graph = f"[wcsrc]{top}[wctop];"
 
     return (
         "split=2[wcsrc][gpsrc];"
-        f"[wcsrc]{top}[wctop];"
-        f"[gpsrc]{bottom}[gpbottom];"
+        + top_graph
+        + f"[gpsrc]{bottom}[gpbottom];"
         "[wctop][gpbottom]vstack=inputs=2"
     )
 
