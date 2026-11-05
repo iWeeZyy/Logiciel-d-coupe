@@ -203,15 +203,20 @@ CANDIDATE_TOPS = [t / 100 for t in range(15, 78, 2)]  # hauts possibles du bande
 # Medaillon « Follow » de l'intro, a droite : de 26,5 % a ~46 % du haut
 # pendant ses premieres secondes (video/intro_overlay.py).
 INTRO_ZONE = (0.255, 0.465)
+# ... et sa largeur : medaillon et phrase « Les clips que tu n'as pas vus en
+# live » commencent a ~71 % de la largeur (mesure sur un rendu, 2026-11-05).
+INTRO_ZONE_X = 0.70
 INTRO_SECONDS = 7.0             # repli si la duree de l'intro ne se lit pas
 MIN_FACE_H = 0.035              # visage plus petit : decor, pas une personne a l'ecran
 
 
-def render_band(text: str, out_w: int, out_h: int):
+def render_band(text: str, out_w: int, out_h: int, right_limit: int | None = None):
     """Design « bandeau » choisi par l'utilisateur (design E, 2026-11-01) :
     bande noire translucide sur toute la largeur, filets roses en haut et en
     bas, texte blanc gras. Le badge neon se pose au-dessus (apply). Renvoie
-    l'image RGBA (largeur out_w) ou None."""
+    l'image RGBA (largeur out_w) ou None. `right_limit` : le texte reste a
+    gauche de ce x (le medaillon de l'intro, pose par-dessus au meme niveau,
+    ne doit pas le toucher) ; la bande, elle, garde toute la largeur."""
     text = "\n".join(" ".join(line.split()) for line in (text or "").splitlines() if line.strip())
     if not text:
         return None
@@ -232,9 +237,12 @@ def render_band(text: str, out_w: int, out_h: int):
 
     title_font = font("BarlowCondensed-ExtraBoldItalic.ttf", 68)
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    margin = round(70 * scale)
+    right = min(out_w, right_limit) if right_limit else out_w
     lines = []
     for paragraph in text.upper().split("\n"):        # retours a la ligne voulus
-        lines += wrap_text(probe, paragraph, title_font, out_w - round(140 * scale),
+        lines += wrap_text(probe, paragraph, title_font,
+                           (out_w - 2 * margin) if right == out_w else (right - 2 * margin),
                            max_lines=MAX_LINES)
     if len(lines) > MAX_LINES:
         lines = lines[:MAX_LINES]
@@ -250,8 +258,11 @@ def render_band(text: str, out_w: int, out_h: int):
     draw.rectangle([0, top + band_h - rule, out_w, top + band_h], fill=PINK + (255,))
     y = top + pad
     for line in lines:
-        draw.text(((out_w - draw.textlength(line, font=title_font)) / 2, y), line,
-                  font=title_font, fill=(255, 255, 255))
+        width = draw.textlength(line, font=title_font)
+        x = (out_w - width) / 2
+        if right < out_w:
+            x = max(margin, min(x, right - margin - width))
+        draw.text((x, y), line, font=title_font, fill=(255, 255, 255))
         y += line_h
     return image
 
@@ -392,6 +403,14 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
         top = choose_top(faces, total_h / out_h, preferred, avoid=tuple(avoid),
                          avoid_weight=min(0.3, intro_s / max(duration, 1.0)))
         y = (int(round(top * out_h)) + head_h) // 2 * 2       # haut de la ligne du badge
+        band_top = (y + band_offset) / out_h
+        if (band is not None and intro_s > 0 and band_top < INTRO_ZONE[1]
+                and INTRO_ZONE[0] < band_top + band.height / out_h):
+            # Bandeau au niveau du medaillon de l'intro : le texte reste a sa
+            # gauche (« LE CLIP DU MOMENT » touchait « Les clips que tu… »).
+            narrow = render_band(text, out_w, out_h, right_limit=round(INTRO_ZONE_X * out_w))
+            if narrow is not None and narrow.height == band.height:
+                band = narrow
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
             out = Path(tmp) / "avec_texte.mp4"
             inputs = ["-i", str(video_path)]

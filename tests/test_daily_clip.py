@@ -228,3 +228,17 @@ def test_un_titre_twitch_vide_de_sens_ne_fait_ni_bandeau_ni_legende():
         assert not meaningless_title(ok), ok
     assert choose_text([], preferred="ya r", fallback="Le clip du moment") == "Le clip du moment"
     assert caption("ya r", "kamet0", "Kameto").startswith("Kameto — Le clip du moment")
+
+
+def test_le_texte_du_bandeau_reste_a_gauche_du_medaillon_de_l_intro():
+    import numpy as np
+
+    from video.hook_text import INTRO_ZONE_X, render_band
+
+    limit = round(INTRO_ZONE_X * 1080)
+    band = render_band("Le clip du moment", 1080, 1920, right_limit=limit)
+    a = np.asarray(band)
+    white = (a[..., 0] > 240) & (a[..., 1] > 240) & (a[..., 2] > 240) & (a[..., 3] > 200)
+    cols = np.where(white.any(axis=0))[0]
+    assert cols.max() < limit
+    assert render_band("Le clip du moment", 1080, 1920).height == band.height
