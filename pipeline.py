@@ -848,24 +848,33 @@ def _analyse_framing(
                                    window_h=gh if gh < 0.999 else 0.0)
                 # Webcam collee a un cote : le jeu ENTIER, de son bord reel au
                 # bord oppose, sur fond flou (demande de l'utilisateur,
-                # 2026-11-05) -- seulement si son bord est vraiment mesure.
+                # 2026-11-05) -- seulement si ce bord est vraiment mesure
+                # (saut de couleur ET jeu qui bouge au-dela, video/motion.py).
                 from editing.subject import side_game_box
-                from video.motion import floating_webcam_rect, webcam_rect as measure_webcam
+                from video.motion import (floating_webcam_rect, webcam_side_edge,
+                                          webcam_rect as measure_webcam)
 
-                # Les quatre bords d'abord ; sinon le bord vertical et un seul
-                # bord horizontal (webcam prolongee jusqu'au bord de l'ecran).
-                measured = (floating_webcam_rect(video_path, candidate.start, candidate.end,
-                                                 webcam.cx, webcam.cy, face_h)
-                            or measure_webcam(video_path, candidate.start, candidate.end,
-                                              webcam.cx, webcam.cy, face_h))
-                game_box = side_game_box(measured, src_w, src_h, band_aspect)
+                edge = webcam_side_edge(video_path, candidate.start, candidate.end,
+                                        webcam.cx, webcam.cy, face_h)
+                side_rect = None
+                if edge is not None:
+                    side_rect = (0.0, 0.0, edge, 1.0) if webcam.cx < 0.5 else (edge, 0.0, 1.0, 1.0)
+                game_box = side_game_box(side_rect, src_w, src_h, band_aspect)
                 if game_box is not None:
                     logger.info(f"Jeu entier à côté de la webcam "
                                 f"({', '.join(f'{v:.2f}' for v in game_box)}).")
                     plan = FramingPlan((FramingKeyframe(t=0.0, cx=0.5, cy=0.5),), "static", 1.0,
                                        ("webcam sur le côté : jeu entier",), box=game_box)
-                    # Bande du haut : la webcam mesuree, seule -- sans le
-                    # bout de jeu ni le decor autour, deja montres en bas.
+                    # Bande du haut : la webcam seule -- son bord cote jeu est
+                    # celui mesure ci-dessus ; haut et bas viennent des bords
+                    # horizontaux, s'ils sont trouves.
+                    measured = (floating_webcam_rect(video_path, candidate.start, candidate.end,
+                                                     webcam.cx, webcam.cy, face_h)
+                                or measure_webcam(video_path, candidate.start, candidate.end,
+                                                  webcam.cx, webcam.cy, face_h))
+                    if measured is not None:
+                        measured = ((0.0, measured[1], edge, measured[3]) if webcam.cx < 0.5
+                                    else (edge, measured[1], 1.0, measured[3]))
                     real_h = _webcam_height(measured, src_h, src_w)
                     if real_h:
                         cy = _webcam_center_y(measured, real_h)

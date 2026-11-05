@@ -265,3 +265,72 @@ def floating_webcam_rect(video_path: str, start: float, end: float, cx: float, c
     rect = (left / W, top / H, right / W, bottom / H)
     inside = rect[0] < cx < rect[2] and rect[1] < cy < rect[3]
     return rect if inside and plausible_webcam(rect, W, H) else None
+
+
+SIDE_EDGE_MIN = 25.0       # saut de couleur median minimal d'un bord candidat
+SIDE_MOTION_RATIO = 3.0    # cote jeu : au moins 3x plus de changement que cote webcam
+SIDE_MOTION_MIN = 15.0     # ... et un vrai changement (un jeu bouge)
+
+
+def side_edge_index(edge_scores, inside_motion, outside_motion):
+    """Indice du bord d'incrustation parmi des colonnes rangees du visage
+    vers l'exterieur (pure). Un bord candidat (saut de couleur franc) n'est
+    retenu que si l'image change nettement plus au-dela (le jeu) qu'en deca
+    (la piece du streamer, presque fixe) : un coin de mur ou une veste
+    claire dans la webcam ont un saut tout aussi franc, mais du decor des
+    deux cotes (Kamet0, 2026-11-05 : bord pris a 300 px au lieu de 408).
+    None si aucun."""
+    if not edge_scores:
+        return None
+    limit = max(SIDE_EDGE_MIN, EDGE_REL * max(edge_scores))
+    for i, score in enumerate(edge_scores):
+        if score < limit:
+            continue
+        inside, outside = inside_motion[i], outside_motion[i]
+        if outside >= SIDE_MOTION_MIN and outside >= SIDE_MOTION_RATIO * max(inside, 1.0):
+            return i
+    return None
+
+
+def webcam_side_edge(video_path: str, start: float, end: float, cx: float, cy: float,
+                     face_h: float, samples: int = 10):
+    """Bord VERTICAL de l'incrustation webcam tourne vers le jeu (fraction
+    de la largeur) : a droite du visage pour une webcam a gauche, a gauche
+    sinon. Cherche depuis le visage vers le centre de l'image, sur les lignes
+    du visage. None si non trouve -- le cadrage habituel s'applique."""
+    try:
+        import numpy as np
+
+        frames = _color_frames(video_path, start, end, samples=samples)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Bord de la webcam non mesuré : {e}")
+        return None
+    if len(frames) < 2:
+        return None
+    stack = np.stack(frames)
+    H, W = stack.shape[1:3]
+    ry0, ry1 = max(1, int((cy - face_h) * H)), min(H - 1, int((cy + face_h) * H))
+    if ry1 - ry0 < 4:
+        return None
+    rows = stack[:, ry0:ry1]
+    motion = np.abs(np.diff(rows, axis=0)).max(-1).mean(axis=(0, 1))   # par colonne
+    face_w = face_h * H / W
+    left = cx < 0.5
+    xs = (list(range(max(3, int((cx + 0.6 * face_w) * W)), int(0.5 * W))) if left
+          else list(range(min(W - 4, int((cx - 0.6 * face_w) * W)), int(0.5 * W), -1)))
+    if not xs:
+        return None
+    scores = [float(np.median([np.median(_jump(g[:, x + 1], g[:, x - 1])) for g in rows]))
+              for x in xs]
+    band = 10
+
+    def mean(a, b):
+        a, b = max(0, a), min(W, b)
+        return float(motion[a:b].mean()) if b > a else 0.0
+
+    inside = [mean(x - band - 2, x - 2) if left else mean(x + 2, x + band + 2) for x in xs]
+    outside = [mean(x + 2, x + band + 2) if left else mean(x - band - 2, x - 2) for x in xs]
+    i = side_edge_index(scores, inside, outside)
+    if i is None:
+        return None
+    return (xs[i] + 1) / W if left else xs[i] / W

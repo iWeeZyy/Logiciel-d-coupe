@@ -89,3 +89,28 @@ def test_sans_jeu_entier_aucune_zone_ajoutee():
     from pipeline import _hook_avoid_zones
 
     assert _hook_avoid_zones(None, None, 1080, 1920, 1920, 1080) == ()
+
+
+def test_le_bord_retenu_est_celui_ou_le_jeu_bouge_au_dela():
+    """Dobby (Kamet0, 2026-11-05) : coin de mur (fort saut, decor des deux
+    cotes), veste (la personne bouge en deca), puis le vrai bord (jeu au-dela)."""
+    from video.motion import side_edge_index
+
+    scores = [45, 90, 58]
+    inside = [35.2, 10.8, 3.3]
+    outside = [15.6, 4.3, 28.6]
+    assert side_edge_index(scores, inside, outside) == 2
+
+
+def test_un_contour_faible_devant_le_jeu_ne_suffit_pas():
+    """Squeezie : a 282 px le jeu ne bouge qu'a peine plus (10,7 contre 5,3)."""
+    from video.motion import side_edge_index
+
+    assert side_edge_index([60, 61], [5.3, 8.0], [10.7, 52.7]) == 1
+
+
+def test_rien_ne_bouge_au_dela_aucun_bord():
+    from video.motion import side_edge_index
+
+    assert side_edge_index([80, 70], [3.0, 3.0], [4.0, 5.0]) is None
+    assert side_edge_index([], [], []) is None
