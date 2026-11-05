@@ -305,7 +305,7 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
           preferred: float = TOP_PERCENT / 100, intro=None, cancel_token=None,
           badge_label: str | None = None, number: int | None = None,
           avoid_intro_s: float = 0.0, headline: tuple[str, str] | None = None,
-          follow_arrow: bool = False) -> bool:
+          follow_arrow: bool = False, avoid_zones=()) -> bool:
     """Pose le bandeau sur un clip DEJA rendu, et au-dessus a gauche, si `tag`
     est donne, le badge neon anime « REPLAY » + « <STREAMER> EN LIVE »
     (video/neon_badge.py ; `badge_label` remplace ce texte de droite). Les
@@ -372,6 +372,9 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
         # proportion de sa duree, comme un visage present le meme temps.
         intro_s = _intro_seconds(intro) if intro is not None else float(avoid_intro_s or 0)
         avoid = [INTRO_ZONE] if intro_s > 0 else []
+        # Zones de l'image a ne pas couvrir tout le clip (le jeu entier pose
+        # sur fond flou) : (haut, bas[, poids]) en fractions.
+        avoid.extend(tuple(z) for z in avoid_zones)
         arrow = follow_arrow and (out_w, out_h) == (1080, 1920)
         if arrow:
             from video import follow_arrow as fa

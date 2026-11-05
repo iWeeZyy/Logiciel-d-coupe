@@ -366,6 +366,20 @@ def _delire_filters(plan) -> list:
     return filters
 
 
+def split_game_zone(out_w: int, out_h: int, src_w: int, src_h: int, box) -> tuple[float, float]:
+    """(haut, bas) en fractions de la hauteur de sortie de l'image du JEU
+    entier posee sur fond flou dans la bande du bas (voir `box` du plan de
+    jeu) : le bandeau ne doit pas la recouvrir, il irait sur l'action.
+    Fonction pure."""
+    webcam_h = _even(round(out_h * WEBCAM_HEIGHT_FRAC))
+    gameplay_h = out_h - webcam_h
+    x0, y0, x1, y1 = box
+    bw, bh = max(1.0, (x1 - x0) * src_w), max(1.0, (y1 - y0) * src_h)
+    img_h = bh * min(out_w / bw, gameplay_h / bh)
+    top = webcam_h + (gameplay_h - img_h) / 2
+    return top / out_h, (top + img_h) / out_h
+
+
 def _split_webcam_chain(
     edit_list: EditList, webcam_plan: FramingPlan, gameplay_plan: FramingPlan | None,
     face_hint, src_w: int, src_h: int, out_w: int, out_h: int,
@@ -406,11 +420,45 @@ def _split_webcam_chain(
     gameplay_crop, gameplay_cw, _ = _crop_stage(
         gameplay_plan, face_hint, edit_list, src_w, src_h, gameplay_aspect)
 
-    gameplay_sharpen = _sharpen(out_w / gameplay_cw if gameplay_cw else 0)
-    bottom = ",".join(p for p in (gameplay_crop, _scale(out_w, gameplay_h), gameplay_sharpen) if p)
+    box = getattr(gameplay_plan, "box", None) if gameplay_plan is not None else None
+    if box is not None and src_w > 0 and src_h > 0:
+        # Le jeu ENTIER, du bord de la webcam au bord oppose, pose sur un fond
+        # flou de lui-meme : rien de l'action n'est coupe (demande de
+        # l'utilisateur, 2026-11-05 -- un clip de Kamet0 coupait le combat).
+        x0, y0, x1, y1 = box
+        bw = _even(max(2, round((x1 - x0) * src_w)))
+        bh = _even(max(2, round((y1 - y0) * src_h)))
+        bx = _even(int(max(0, min(x0 * src_w, src_w - bw))))
+        by = _even(int(max(0, min(y0 * src_h, src_h - bh))))
+        tenue = min(out_w / bw, gameplay_h / bh)
+        bottom = (f"crop={bw}:{bh}:{bx}:{by},"
+                  + landscape_fill_chain(out_w, gameplay_h, FILL_BLUR, _sharpen(tenue)))
+    else:
+        gameplay_sharpen = _sharpen(out_w / gameplay_cw if gameplay_cw else 0)
+        bottom = ",".join(p for p in (gameplay_crop, _scale(out_w, gameplay_h), gameplay_sharpen)
+                          if p)
 
     upscale = out_w / webcam_cw if webcam_cw else 0
-    if upscale > MAX_WEBCAM_UPSCALE and webcam_ch:
+    wbox = getattr(webcam_plan, "box", None)
+    if wbox is not None and src_w > 0 and src_h > 0:
+        # La webcam MESUREE, entiere (sans rogner ses cotes a l'aspect de la
+        # bande), agrandie x2 au plus, sur un fond flou d'elle-meme.
+        x0, y0, x1, y1 = wbox
+        bw = _even(max(2, round((x1 - x0) * src_w)))
+        bh = _even(max(2, round((y1 - y0) * src_h)))
+        bx = _even(int(max(0, min(x0 * src_w, src_w - bw))))
+        by = _even(int(max(0, min(y0 * src_h, src_h - bh))))
+        factor = min(out_w / bw, webcam_h / bh, MAX_WEBCAM_UPSCALE)
+        fg = ",".join(p for p in (_scale(_even(round(bw * factor)), _even(round(bh * factor))),
+                                  _sharpen(factor)) if p)
+        top_graph = (
+            f"[wcsrc]crop={bw}:{bh}:{bx}:{by},split=2[wcbgsrc][wcfgsrc];"
+            f"[wcbgsrc]{_scale(out_w, webcam_h, flags=None)},"
+            f"boxblur=luma_radius=30:luma_power=2,eq=brightness=-0.15[wcbg];"
+            f"[wcfgsrc]{fg}[wcfg];"
+            f"[wcbg][wcfg]overlay=(W-w)/2:(H-h)/2[wctop];"
+        )
+    elif upscale > MAX_WEBCAM_UPSCALE and webcam_ch:
         # Webcam minuscule : x2 au plus, centree sur un fond flou d'elle-meme.
         fg_w = _even(round(webcam_cw * MAX_WEBCAM_UPSCALE))
         fg_h = _even(round(webcam_ch * MAX_WEBCAM_UPSCALE))

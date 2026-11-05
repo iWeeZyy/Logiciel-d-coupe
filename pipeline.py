@@ -450,7 +450,9 @@ def run(
                         avoid_intro_s=float(hook_cfg.get("avoid_intro_s") or 0),
                         headline=(tuple(hook_cfg["headline"])
                                   if hook_cfg.get("headline") else None),
-                        follow_arrow=bool(hook_cfg.get("follow_arrow")))
+                        follow_arrow=bool(hook_cfg.get("follow_arrow")),
+                        avoid_zones=_hook_avoid_zones(framing_plan, webcam_plan,
+                                                      out_w, out_h, src_w, src_h))
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
                 # incomplet/corrompu, on le supprime plutot que de laisser un
@@ -844,6 +846,31 @@ def _analyse_framing(
                 plan = FramingPlan((FramingKeyframe(t=0.0, cx=gx, cy=gy),), "static", 1.0,
                                    ("webcam dans un coin : jeu sans l'incrustation",),
                                    window_h=gh if gh < 0.999 else 0.0)
+                # Webcam collee a un cote : le jeu ENTIER, de son bord reel au
+                # bord oppose, sur fond flou (demande de l'utilisateur,
+                # 2026-11-05) -- seulement si son bord est vraiment mesure.
+                from editing.subject import side_game_box
+                from video.motion import floating_webcam_rect, webcam_rect as measure_webcam
+
+                # Les quatre bords d'abord ; sinon le bord vertical et un seul
+                # bord horizontal (webcam prolongee jusqu'au bord de l'ecran).
+                measured = (floating_webcam_rect(video_path, candidate.start, candidate.end,
+                                                 webcam.cx, webcam.cy, face_h)
+                            or measure_webcam(video_path, candidate.start, candidate.end,
+                                              webcam.cx, webcam.cy, face_h))
+                game_box = side_game_box(measured, src_w, src_h, band_aspect)
+                if game_box is not None:
+                    logger.info(f"Jeu entier à côté de la webcam "
+                                f"({', '.join(f'{v:.2f}' for v in game_box)}).")
+                    plan = FramingPlan((FramingKeyframe(t=0.0, cx=0.5, cy=0.5),), "static", 1.0,
+                                       ("webcam sur le côté : jeu entier",), box=game_box)
+                    # Bande du haut : la webcam mesuree, seule -- sans le
+                    # bout de jeu ni le decor autour, deja montres en bas.
+                    real_h = _webcam_height(measured, src_h, src_w)
+                    if real_h:
+                        cy = _webcam_center_y(measured, real_h)
+                        webcam_plan = replace(webcam_plan, box=(measured[0], cy - real_h / 2,
+                                                                measured[2], cy + real_h / 2))
                 # Fond FIXE (affiche, tweet, site commente) : pas de jeu a
                 # montrer en bas -- recentrage sur la webcam (demande de
                 # l'utilisateur, 2026-10-31).
@@ -868,6 +895,42 @@ def _analyse_framing(
                 pass
 
     return face_hint, plan, webcam_plan
+
+
+def _webcam_height(rect, src_h: int, src_w: int) -> float:
+    """Hauteur (fraction de la source) de la webcam mesuree, plafonnee a une
+    camera 16:9 de sa largeur : `webcam_rect` prolonge une webcam du bas
+    jusqu'au bord de l'ecran (habillage dessous compris). 0 si inexploitable."""
+    if rect is None:
+        return 0.0
+    x0, y0, x1, y1 = rect
+    h = y1 - y0
+    h16_9 = (x1 - x0) * src_w * 10 / 16 / src_h
+    h = min(h, h16_9) if h16_9 > 0 else h
+    return h if 0.02 < h < 0.9 else 0.0
+
+
+def _hook_avoid_zones(framing_plan, webcam_plan, out_w, out_h, src_w, src_h):
+    """Webcam en haut et jeu ENTIER sur fond flou en bas : le bandeau ne
+    couvre pas l'image du jeu (poids 1 : pire que le medaillon d'intro, qui
+    ne dure que quelques secondes) -- il va dans le flou au-dessus."""
+    box = getattr(framing_plan, "box", None)
+    if webcam_plan is None or box is None or not src_w or not src_h:
+        return ()
+    from video.filter_graph import split_game_zone
+
+    return ((*split_game_zone(out_w, out_h, src_w, src_h, box), 1.0),)
+
+
+def _webcam_center_y(rect, real_h: float) -> float:
+    """Centre vertical de la webcam mesuree : un rectangle prolonge jusqu'au
+    bas (ou au haut) de l'ecran n'a de vrai que son AUTRE bord."""
+    _, y0, _, y1 = rect
+    if y1 >= 0.99 and y0 > 0.01:
+        return y0 + real_h / 2
+    if y0 <= 0.01 and y1 < 0.99:
+        return y1 - real_h / 2
+    return (y0 + y1) / 2
 
 
 def _floating_webcam_plan(video_path: str, candidate, samples) -> Optional[FramingPlan]:

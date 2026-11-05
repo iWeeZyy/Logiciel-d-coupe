@@ -88,6 +88,18 @@ def nearest_edge(scores: list[float]) -> int | None:
     return next((i for i, v in enumerate(scores) if v >= limit), None)
 
 
+def _jump(a, b):
+    """Saut entre deux lignes/colonnes de pixels : le plus fort des trois
+    canaux couleur (BGR), pas la luminance seule. Le bord d'une webcam ou une
+    chaise sombre touche un jeu sombre d'une autre teinte ne se voit qu'en
+    couleur (Kamet0, 2026-11-05 : 91 en couleur, ~25 en luminance). Sur un
+    bord gris, c'est le meme saut qu'en luminance : seuils inchanges."""
+    import numpy as np
+
+    d = np.abs(a - b)
+    return d.max(axis=-1) if d.ndim > 1 else d
+
+
 def webcam_rect(video_path: str, start: float, end: float, cx: float, cy: float,
                 face_h: float, samples: int = 6):
     """Rectangle reel de l'incrustation webcam (x0, y0, x1, y1 en fractions),
@@ -106,14 +118,14 @@ def webcam_rect(video_path: str, start: float, end: float, cx: float, cy: float,
             ok, frame = cap.read()
             if ok:
                 h = max(4, int(640 * frame.shape[0] / frame.shape[1]))
-                frames.append(cv2.cvtColor(cv2.resize(frame, (640, h)), cv2.COLOR_BGR2GRAY).astype("float32"))
+                frames.append(cv2.resize(frame, (640, h)).astype("float32"))
         cap.release()
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Bords de la webcam non mesurés : {e}")
         return None
     if not frames:
         return None
-    H, W = frames[0].shape
+    H, W = frames[0].shape[:2]
     left, top = cx < 0.5, cy < 0.5
     face_w = face_h * H / W
     ry0, ry1 = max(1, int((cy - face_h) * H)), min(H - 1, int((cy + face_h) * H))
@@ -121,7 +133,7 @@ def webcam_rect(video_path: str, start: float, end: float, cx: float, cy: float,
         return None
 
     def vscore(x):
-        return float(np.median([np.median(np.abs(g[ry0:ry1, x + 1] - g[ry0:ry1, x - 1])) for g in frames]))
+        return float(np.median([np.median(_jump(g[ry0:ry1, x + 1], g[ry0:ry1, x - 1])) for g in frames]))
 
     xs = (list(range(max(1, int((cx + 0.6 * face_w) * W)), int(0.5 * W))) if left
           else list(range(min(W - 2, int((cx - 0.6 * face_w) * W)), int(0.5 * W), -1)))
@@ -134,7 +146,7 @@ def webcam_rect(video_path: str, start: float, end: float, cx: float, cy: float,
         return None
 
     def hscore(y):
-        return float(np.median([np.median(np.abs(g[y + 1, x0 + 2:x1 - 2] - g[y - 1, x0 + 2:x1 - 2])) for g in frames]))
+        return float(np.median([np.median(_jump(g[y + 1, x0 + 2:x1 - 2], g[y - 1, x0 + 2:x1 - 2])) for g in frames]))
 
     ys = (list(range(max(1, int((cy + face_h) * H)), int(0.6 * H))) if top
           else list(range(min(H - 2, int((cy - face_h) * H)), int(0.4 * H), -1)))
@@ -162,7 +174,7 @@ BORDER_SNAP = 0.35   # pas de bord trouve de ce cote : le bord de l'ecran, s'il 
 LIVE_MIN = 1.0       # une webcam en direct bouge un peu (une photo fixe : ~0)
 
 
-def _gray_frames(video_path: str, start: float, end: float, samples: int = 6, width: int = 640):
+def _color_frames(video_path: str, start: float, end: float, samples: int = 6, width: int = 640):
     import cv2
 
     cap = cv2.VideoCapture(video_path)
@@ -174,8 +186,8 @@ def _gray_frames(video_path: str, start: float, end: float, samples: int = 6, wi
             ok, frame = cap.read()
             if ok:
                 h = max(4, int(width * frame.shape[0] / frame.shape[1]))
-                frames.append(cv2.cvtColor(cv2.resize(frame, (width, h)),
-                                           cv2.COLOR_BGR2GRAY).astype("float32"))
+                # En couleur : voir _jump.
+                frames.append(cv2.resize(frame, (width, h)).astype("float32"))
     finally:
         cap.release()
     return frames
@@ -190,20 +202,20 @@ def floating_webcam_rect(video_path: str, start: float, end: float, cx: float, c
     try:
         import numpy as np
 
-        frames = _gray_frames(video_path, start, end)
+        frames = _color_frames(video_path, start, end)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Bords de la webcam non mesurés : {e}")
         return None
     if not frames:
         return None
-    H, W = frames[0].shape
+    H, W = frames[0].shape[:2]
     face_w = face_h * H / W
     ry0, ry1 = max(1, int((cy - face_h) * H)), min(H - 1, int((cy + face_h) * H))
     if ry1 <= ry0:
         return None
 
     def vscore(x):
-        return float(np.median([np.median(np.abs(g[ry0:ry1, x + 1] - g[ry0:ry1, x - 1]))
+        return float(np.median([np.median(_jump(g[ry0:ry1, x + 1], g[ry0:ry1, x - 1]))
                                 for g in frames]))
 
     def search(positions, score, border, distance):
@@ -221,7 +233,7 @@ def floating_webcam_rect(video_path: str, start: float, end: float, cx: float, c
     cx0, cx1 = left + 2, right - 2
 
     def hscore(y):
-        return float(np.median([np.median(np.abs(g[y + 1, cx0:cx1] - g[y - 1, cx0:cx1]))
+        return float(np.median([np.median(_jump(g[y + 1, cx0:cx1], g[y - 1, cx0:cx1]))
                                 for g in frames]))
 
     # Depuis le menton / le haut du crane : le bas d'une webcam serree tombe

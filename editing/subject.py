@@ -395,3 +395,32 @@ def game_window(webcam: FaceTrack, src_w: int, src_h: int, band_aspect: float,
         return 0.5, 0.5, h
     hh, cx, cy = max(options)
     return cx, cy, hh
+
+
+# Liseré de l'incrustation laissé hors du jeu (fraction de la largeur).
+SIDE_GAME_INSET = 0.004
+
+
+def side_game_box(rect, src_w: int, src_h: int, band_aspect: float):
+    """La bande du bas du mode webcam+jeu = TOUT le jeu, du bord reel de la
+    webcam jusqu'au bord oppose de l'ecran, sur toute la hauteur (demande de
+    l'utilisateur, 2026-11-05 : une fenetre a l'aspect de la bande, centree
+    a cote de la webcam, coupait l'action d'un clip de Kamet0). Fonction pure.
+
+    `rect` : la webcam mesuree (x0, y0, x1, y1 en fractions), collee au bord
+    gauche ou droit. Renvoie la zone (x0, y0, x1, y1) a poser entiere sur
+    fond flou, ou None (webcam pas sur un cote, ou zone assez etroite pour
+    remplir la bande sans rien couper : le cadrage habituel suffit)."""
+    if rect is None or src_w <= 0 or src_h <= 0:
+        return None
+    x0, _, x1, _ = rect
+    if x0 <= 0.02 and x1 < 0.5:
+        box = (min(1.0, x1 + SIDE_GAME_INSET), 0.0, 1.0, 1.0)
+    elif x1 >= 0.98 and x0 > 0.5:
+        box = (0.0, 0.0, max(0.0, x0 - SIDE_GAME_INSET), 1.0)
+    else:
+        return None
+    width_px = (box[2] - box[0]) * src_w
+    if width_px <= band_aspect * src_h:
+        return None
+    return box
