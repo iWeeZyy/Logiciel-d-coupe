@@ -134,12 +134,12 @@ def caption(clip_title: str, creator: str, search_name: str = "") -> str:
     le titre du clip, une promesse precise (le prochain clip) et les hashtags
     (#clip #twitch #stream #<createur> [#<nom cherche>] #drole)."""
     from video.compilation import hashtags
-    from video.hook_text import clean
+    from video.hook_text import clean, meaningless_title
 
     title = clean(clip_title)            # sans les guillemets du titre Twitch
-    if sum(ch.isalnum() for ch in title) < 3:
-        # « x », « . », « j » : un titre Twitch vide de sens (2026-11-04) -> le
-        # meme texte neutre que le bandeau.
+    if meaningless_title(title):
+        # « x », « . », « ya r » : un titre Twitch vide de sens (2026-11-04,
+        # 2026-11-05) -> le meme texte neutre que le bandeau.
         title = "Le clip du moment"
     who = search_name or creator
     head = f"{who} — {title}" if title else who

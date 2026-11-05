@@ -134,6 +134,15 @@ def garbled(text: str) -> bool:
     return bool(re.search(r"(\w)\1{3,}", text or ""))
 
 
+def meaningless_title(text: str) -> bool:
+    """Titre Twitch vide de sens : moins de 4 lettres ou chiffres en tout, ou
+    aucun mot d'au moins 3 (« x », « jsp », « ya r » -- 2026-11-05 : « YA R »
+    en bandeau ne disait rien). « HOLD ON », « wssh », « fromage » passent.
+    Fonction pure."""
+    words = ["".join(ch for ch in w if ch.isalnum()) for w in (text or "").split()]
+    return sum(map(len, words)) < 4 or not any(len(w) >= 3 for w in words)
+
+
 def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
                 fallback: str = "") -> str:
     """La phrase a afficher : une QUESTION reellement posee dans le clip
@@ -151,7 +160,7 @@ def choose_text(titles, max_words: int = MAX_WORDS, preferred: str = "",
             by_kind[kind] = " ".join(str(text).split())
     preferred = clean(preferred)
     # Titre Twitch : ecrit par un humain, 2 mots suffisent (« HOLD ON »).
-    if len(preferred.split()) < 2:
+    if len(preferred.split()) < 2 or meaningless_title(preferred):
         preferred = ""
     # « curiosite » sans point d'interrogation = une phrase volontairement
     # coupee par le module de titres (editing/metadata.py) : pas pour le

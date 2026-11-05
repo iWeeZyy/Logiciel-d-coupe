@@ -215,3 +215,16 @@ def test_pas_de_virgule_en_fin_de_bandeau():
     assert clean("Attends :") == "Attends"
     assert clean("T'as vu ça ?") == "T'as vu ça ?"
     assert clean("HOLD ON !") == "HOLD ON !"
+
+
+def test_un_titre_twitch_vide_de_sens_ne_fait_ni_bandeau_ni_legende():
+    """« ya r » (Kamet0, 2026-11-05) : « YA R » en bandeau ne disait rien."""
+    from radar.daily_clip import caption
+    from video.hook_text import choose_text, meaningless_title
+
+    for junk in ("ya r", "x", "jsp", "3 6 9", "."):
+        assert meaningless_title(junk), junk
+    for ok in ("HOLD ON", "wssh", "fromage", "MORT ENCORE"):
+        assert not meaningless_title(ok), ok
+    assert choose_text([], preferred="ya r", fallback="Le clip du moment") == "Le clip du moment"
+    assert caption("ya r", "kamet0", "Kameto").startswith("Kameto — Le clip du moment")
