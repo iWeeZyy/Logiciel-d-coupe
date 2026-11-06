@@ -65,6 +65,9 @@ jobs:
           path: app
 
       - name: ffmpeg (libass), polices, bibliotheques Qt
+        # Les polices Microsoft viennent de SourceForge, qui pend parfois :
+        # sans limite, un run est reste bloque 40 min (2026-11-06).
+        timeout-minutes: 15
         run: |
           echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
             | sudo debconf-set-selections
