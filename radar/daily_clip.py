@@ -110,6 +110,9 @@ def choose(opportunities, memory: list[dict]) -> object | None:
                default=None)
 
 
+PERIOD_DAYS = {"3j": 3, "7j": 7}
+
+
 def views(opportunity) -> int:
     return opportunity.view_count if opportunity is not None and opportunity.view_count else 0
 
@@ -156,8 +159,12 @@ def file_name(creator: str) -> str:
 
 def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None = None,
         config_dir=None, adapter=None, producer=None, today: date | None = None,
-        now: datetime | None = None, on_status=logger.info):
-    """Produit le clip du jour. Renvoie (Report, [chemins produits])."""
+        now: datetime | None = None, on_status=logger.info, streamer: str | None = None):
+    """Produit le clip du jour. Renvoie (Report, [chemins produits]).
+
+    `streamer` (login Twitch) : un clip de CE streamer seulement, a la
+    demande (« envoie un clip d'Anyme », 2026-11-06) -- il doit etre dans la
+    liste autorisee, et la recherche s'etend alors jusqu'a 7 jours."""
     from editing.production import default_production
     from radar.creators import CreatorManager
     from radar.store import RadarStore
@@ -176,6 +183,12 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
     report.notes += warnings
     allowed, refused = check_streamers(config.get("streamers"), authorizations)
     report.refused += refused
+    if streamer:
+        wanted = streamer.strip().lower()
+        allowed = [a for a in allowed if a.login.lower() == wanted]
+        if not allowed:
+            report.errors.append(f"{streamer} : pas dans la liste des streamers autorisés.")
+            return report, []
     if not allowed:
         return report, []
 
@@ -207,7 +220,7 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
     def pool(days):
         return [o for o in candidates(store, None, days, now=now) if o.creator_key in by_key]
 
-    for period in ("24h", "3j"):
+    for period in (("24h", "3j", "7j") if streamer else ("24h", "3j")):
         on_status(f"Rafraîchissement du Radar ({period})…")
         scan = engine.scan(platforms=["twitch"], period=period, max_results=max_results,
                            reference=now)
@@ -215,11 +228,12 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         if period == "24h":
             chosen = pick(choose(pool(FRESH_HOURS / 24), known), choose(pool(1), known))
         else:
-            chosen = best_of(chosen, choose(pool(3), known))
+            chosen = best_of(chosen, choose(pool(PERIOD_DAYS[period]), known))
         if chosen is not None and views(chosen) >= MIN_VIEWS:
             break
     if chosen is None:
-        report.notes.append("Aucun nouveau clip ces 3 derniers jours.")
+        report.notes.append("Aucun nouveau clip ces 7 derniers jours." if streamer
+                            else "Aucun nouveau clip ces 3 derniers jours.")
         return report, []
 
     auth, creator = by_key[chosen.creator_key]
@@ -280,13 +294,16 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--memory", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=Path("clip_du_jour"))
     parser.add_argument("--work-dir", type=Path, default=None)
+    parser.add_argument("--streamer", default="",
+                        help="login Twitch : un clip de ce streamer seulement")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
     try:
         config = load_config(args.config)
         report, files = run(config, args.out, args.work_dir or args.out.parent / "_travail_clip",
                             memory_path=args.memory,
-                            config_dir=(args.config or default_config_path()).parent)
+                            config_dir=(args.config or default_config_path()).parent,
+                            streamer=args.streamer or None)
     except Exception as e:  # noqa: BLE001
         logger.error(f"Clip du jour : {e}")
         print(f"::error::{e}" if os.environ.get("GITHUB_ACTIONS") == "true" else str(e))

@@ -242,3 +242,19 @@ def test_le_texte_du_bandeau_reste_a_gauche_du_medaillon_de_l_intro():
     cols = np.where(white.any(axis=0))[0]
     assert cols.max() < limit
     assert render_band("Le clip du moment", 1080, 1920).height == band.height
+
+
+def test_un_clip_d_un_streamer_choisi(tmp_path):
+    """« Envoie un clip d'Anyme » (2026-11-06) : un clip de CE streamer, meme
+    s'il est moins vu qu'un autre ; jamais un streamer hors de la liste."""
+    calls = []
+    report, files = daily_clip.run(_config(), tmp_path / "o", tmp_path / "w",
+                                   adapter=_FakeTwitch(), producer=_producer(calls),
+                                   today=TODAY, now=NOW, streamer="Maigre")
+    assert [o.content_id for o in calls] == ["maigre-seul"]        # 10 vues, pas Anyme
+    assert files[0].name == "Clip_Maigre.mp4"
+    report, files = daily_clip.run(_config(), tmp_path / "o2", tmp_path / "w2",
+                                   adapter=_FakeTwitch(), producer=_producer(calls),
+                                   today=TODAY, now=NOW, streamer="inconnu")
+    assert not files and len(calls) == 1
+    assert any("pas dans la liste" in e for e in report.errors)
