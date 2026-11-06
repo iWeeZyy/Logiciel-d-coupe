@@ -114,3 +114,45 @@ def test_rien_ne_bouge_au_dela_aucun_bord():
 
     assert side_edge_index([80, 70], [3.0, 3.0], [4.0, 5.0]) is None
     assert side_edge_index([], [], []) is None
+
+
+def _fake_overlay(monkeypatch, edge=None, rect=None, floating=None, motion=10.0):
+    import video.motion as motion_mod
+    from video import ffmpeg_utils
+
+    monkeypatch.setattr(ffmpeg_utils, "video_resolution", lambda p: (1920, 1080))
+    monkeypatch.setattr(motion_mod, "webcam_side_edge", lambda *a, **k: edge)
+    monkeypatch.setattr(motion_mod, "webcam_rect", lambda *a, **k: rect)
+    monkeypatch.setattr(motion_mod, "floating_webcam_rect", lambda *a, **k: floating)
+    monkeypatch.setattr(motion_mod, "background_motion", lambda *a, **k: motion)
+
+
+def _face():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(cx=0.21, cy=0.36, area=0.005)
+
+
+def test_un_visage_dans_un_coin_sans_incrustation_n_est_pas_une_webcam(monkeypatch):
+    """Une seule camera IRL, quatre personnes sur un canape (Kamet0,
+    2026-11-06) : aucun bord, une scene qui bouge -- pas de mode webcam+jeu."""
+    from types import SimpleNamespace
+
+    from pipeline import _overlay_seen
+
+    _fake_overlay(monkeypatch)
+    assert not _overlay_seen("v.mp4", SimpleNamespace(start=0.0, end=10.0), _face())
+
+
+def test_un_bord_mesure_ou_un_fond_fixe_confirment_la_webcam(monkeypatch):
+    from types import SimpleNamespace
+
+    from pipeline import _overlay_seen
+
+    clip = SimpleNamespace(start=0.0, end=10.0)
+    _fake_overlay(monkeypatch, edge=0.21)
+    assert _overlay_seen("v.mp4", clip, _face())
+    _fake_overlay(monkeypatch, rect=(0.0, 0.5, 0.2, 1.0))
+    assert _overlay_seen("v.mp4", clip, _face())
+    _fake_overlay(monkeypatch, motion=0.1)                 # ecran de chargement fixe
+    assert _overlay_seen("v.mp4", clip, _face())

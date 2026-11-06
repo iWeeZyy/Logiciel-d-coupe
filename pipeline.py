@@ -791,6 +791,12 @@ def _analyse_framing(
         from editing.subject import corner_webcam
 
         webcam = corner_webcam(samples)
+        if webcam is not None and not _overlay_seen(video_path, candidate, webcam):
+            # Un visage dans un coin SANS incrustation (une seule camera IRL,
+            # plusieurs personnes sur un canape -- Kamet0, 2026-11-06) : le
+            # decouper en « webcam » coupait la scene en deux.
+            logger.info("Visage dans un coin mais aucune incrustation webcam : cadrage habituel.")
+            webcam = None
         if webcam is not None:
             logger.info("Webcam dans un coin : « Webcam en haut, jeu en bas ».")
             split_webcam = True
@@ -917,6 +923,31 @@ def _webcam_height(rect, src_h: int, src_w: int) -> float:
     h16_9 = (x1 - x0) * src_w * 10 / 16 / src_h
     h = min(h, h16_9) if h16_9 > 0 else h
     return h if 0.02 < h < 0.9 else 0.0
+
+
+def _overlay_seen(video_path: str, candidate, webcam) -> bool:
+    """Une VRAIE incrustation webcam autour de ce visage : un bord mesure
+    (cote jeu, ou les bords d'un rectangle), ou un fond fixe autour (page,
+    ecran de chargement -- la webcam seule est alors montree). Sans aucun des
+    deux, c'est un visage de la scene elle-meme. Une mesure impossible (pas
+    de dimensions, erreur de lecture) ne retire rien : True."""
+    try:
+        from editing.subject import corner_box, webcam_box
+        from video.motion import (background_motion, floating_webcam_rect, is_static,
+                                  webcam_rect, webcam_side_edge)
+
+        src_w, src_h = ffmpeg_utils.video_resolution(video_path)
+        face_h = (webcam.area * src_w / src_h) ** 0.5
+        args = (video_path, candidate.start, candidate.end, webcam.cx, webcam.cy, face_h)
+        if (webcam_side_edge(*args) is not None or webcam_rect(*args) is not None
+                or floating_webcam_rect(*args) is not None):
+            return True
+        estimate = webcam_box(webcam, src_w, src_h, face_h)
+        motion = background_motion(video_path, candidate.start, candidate.end,
+                                   exclude=corner_box(webcam, estimate))
+        return bool(is_static(motion))
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def _hook_avoid_zones(framing_plan, webcam_plan, out_w, out_h, src_w, src_h):
