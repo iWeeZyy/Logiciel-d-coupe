@@ -258,3 +258,20 @@ def test_un_clip_d_un_streamer_choisi(tmp_path):
                                    today=TODAY, now=NOW, streamer="inconnu")
     assert not files and len(calls) == 1
     assert any("pas dans la liste" in e for e in report.errors)
+
+
+def test_badge_avec_le_nom_tel_qu_on_le_tape(tmp_path):
+    """« ANYME023 EN LIVE » -> « ANYME EN LIVE » (2026-11-06) : le badge prend le
+    meme nom que la legende."""
+    seen = []
+
+    def produce(opportunity, production, token, on_status, *, projects_dir, clips_dir):
+        seen.append(production["editing_overrides"]["hook_text"]["tag"])
+        path = Path(projects_dir) / "c.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"mp4")
+        return str(path)
+
+    daily_clip.run(_config(search_names={"anyme023": "Anyme"}), tmp_path / "o", tmp_path / "w",
+                   adapter=_FakeTwitch(), producer=produce, today=TODAY, now=NOW)
+    assert seen == ["Anyme"]

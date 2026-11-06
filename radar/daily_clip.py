@@ -245,7 +245,11 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
     if current:
         # Pastille « ● <STREAMER> EN LIVE » au-dessus du bandeau (design E).
         block = dict(current) if isinstance(current, dict) else {"enabled": True}
-        block["tag"] = creator.label
+        # Le nom tel qu'on le tape (radar/naming : « Anyme », pas « Anyme023 »,
+        # 2026-11-06) -- le meme que dans la legende.
+        from radar.naming import search_name as _search_name
+
+        block["tag"] = _search_name(config, auth.login, creator.label)
         # Rien de solide a citer : un texte vrai sur ce clip, pas une phrase
         # amputee (constate le 2026-11-01 : « Saint -Hurigol et le »). Neutre : avec
         # deux clips par jour, le second n'est pas « le plus vu du jour ».
