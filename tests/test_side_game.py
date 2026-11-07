@@ -156,3 +156,14 @@ def test_un_bord_mesure_ou_un_fond_fixe_confirment_la_webcam(monkeypatch):
     assert _overlay_seen("v.mp4", clip, _face())
     _fake_overlay(monkeypatch, motion=0.1)                 # ecran de chargement fixe
     assert _overlay_seen("v.mp4", clip, _face())
+
+
+def test_image_entiere_le_bandeau_va_dans_le_flou():
+    """Mode « entier » (un match diffuse, KC-T1, 2026-11-07) : l'image 16:9
+    occupe 34-66 % de la hauteur, le bandeau ne doit pas la couvrir."""
+    from pipeline import _hook_avoid_zones
+
+    zones = _hook_avoid_zones(None, None, 1080, 1920, 1920, 1080, whole=True)
+    (lo, hi, weight), = zones
+    assert abs(lo - 0.342) < 0.01 and abs(hi - 0.658) < 0.01 and weight == 1.0
+    assert _hook_avoid_zones(None, None, 1080, 1920, 1920, 1080) == ()

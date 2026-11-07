@@ -66,7 +66,7 @@ from video import ffmpeg_utils
 from video.audio_extractor import extract_audio
 from video.clip_builder import build_clip
 from video.cropper import compute_crop_rect, face_center_in_output
-from video.filter_graph import FIT_SPLIT_WEBCAM
+from video.filter_graph import FIT_SPLIT_WEBCAM, FIT_WHOLE
 from video.face_detector import crop_hint_from_track, detect_face_track
 from video.thumbnailer import generate_thumbnails
 
@@ -452,7 +452,9 @@ def run(
                                   if hook_cfg.get("headline") else None),
                         follow_arrow=bool(hook_cfg.get("follow_arrow")),
                         avoid_zones=_hook_avoid_zones(framing_plan, webcam_plan,
-                                                      out_w, out_h, src_w, src_h))
+                                                      out_w, out_h, src_w, src_h,
+                                                      whole=(webcam_plan is None and
+                                                             settings.fit_mode == FIT_WHOLE)))
             except CancelledError:
                 # ffmpeg a ete tue en plein encodage -- le fichier de sortie est
                 # incomplet/corrompu, on le supprime plutot que de laisser un
@@ -950,10 +952,17 @@ def _overlay_seen(video_path: str, candidate, webcam) -> bool:
         return True
 
 
-def _hook_avoid_zones(framing_plan, webcam_plan, out_w, out_h, src_w, src_h):
+def _hook_avoid_zones(framing_plan, webcam_plan, out_w, out_h, src_w, src_h, whole=False):
     """Webcam en haut et jeu ENTIER sur fond flou en bas : le bandeau ne
     couvre pas l'image du jeu (poids 1 : pire que le medaillon d'intro, qui
-    ne dure que quelques secondes) -- il va dans le flou au-dessus."""
+    ne dure que quelques secondes) -- il va dans le flou au-dessus. Meme
+    chose pour l'image entiere posee sur fond flou (`whole`, mode « entier » :
+    un match diffuse, 2026-11-07) : le bandeau va dans le flou dessous."""
+    if whole and src_w and src_h and out_h > out_w:
+        img_h = out_w * src_h / src_w
+        if img_h < out_h:
+            top = (out_h - img_h) / 2 / out_h
+            return ((top, 1 - top, 1.0),)
     box = getattr(framing_plan, "box", None)
     if webcam_plan is None or box is None or not src_w or not src_h:
         return ()
