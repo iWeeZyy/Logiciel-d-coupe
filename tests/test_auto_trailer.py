@@ -233,3 +233,19 @@ def test_fichier_allocine_direct_en_secours():
             '"hd":"https:\\/\\/fr.vid.web.acsta.net\\/nmedia\\/33\\/20640980_hd_013.mp4?source=www"')
     assert allocine_direct_mp4(page) == "https://fr.vid.web.acsta.net/nmedia/33/20640980_hd_013.mp4"
     assert allocine_direct_mp4("<p>rien</p>") == ""
+
+
+def test_legende_synopsis_espaces_et_source_propre():
+    """Hope (2026-11-07) : « coupées.Au poste » -> « coupées. Au poste », et
+    la legende ne dit jamais « (au lieu de … ) »."""
+    import inspect
+
+    from news_story import auto_trailer
+    from news_story.caption import build_caption
+
+    text = build_caption("Hope Bande-annonce VOST", synopsis="Les communications sont coupées."
+                         "Au poste de police, ils se démènent. Le S.W.A.T. arrive.",
+                         source_label="AlloCiné", theme="trailers")
+    assert "coupées. Au poste" in text and "S.W.A.T." in text
+    assert 'source_label="AlloCiné"' in inspect.getsource(auto_trailer)
+    assert "(au lieu de" not in inspect.getsource(auto_trailer).split("source_label=")[1][:40]

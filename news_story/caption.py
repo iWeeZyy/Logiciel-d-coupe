@@ -18,6 +18,10 @@ from news_story.title_shortener import _normalize, _strip_html
 # Retirer une balise HTML laisse parfois un espace orphelin avant un point ou
 # une virgule (« est <b>finalisée</b>. » -> « est finalisée . »).
 _SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,)])")
+# Paragraphes d'une fiche colles en une ligne : « coupées.Au poste » (synopsis
+# AlloCine de Hope, 2026-11-07). Un point apres un mot en minuscules, suivi
+# d'une majuscule, recoit son espace ; un sigle (« S.W.A.T. ») n'est pas touche.
+_MISSING_SPACE_AFTER_SENTENCE = re.compile(r"([a-zà-ÿ]{2}[.!?…])([A-ZÀ-Ý])")
 
 # Lignes de description YouTube qui ne parlent pas du film : liens, comptes
 # sociaux, appels a s'abonner. Retirees ligne entiere (le reste demeure un
@@ -45,7 +49,7 @@ def build_caption(title: str, summary: str = "", source_label: str = "",
     `synopsis` : synopsis du film (fiche AlloCine, bandes-annonces) ; il
     remplace la description de la video, souvent promotionnelle."""
     title = " ".join((title or "").split())
-    synopsis = " ".join((synopsis or "").split())
+    synopsis = _MISSING_SPACE_AFTER_SENTENCE.sub(r"\1 \2", " ".join((synopsis or "").split()))
     if synopsis:
         summary = f"📖 Synopsis : {synopsis}"
     summary = _SPACE_BEFORE_PUNCT.sub(r"\1", _strip_html(drop_promo_lines(summary or "")))

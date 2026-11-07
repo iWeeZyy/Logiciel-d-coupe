@@ -138,8 +138,12 @@ def popular_only(articles, today: date, lookup, skip_youtube: bool = False) -> l
             if not url:
                 continue
             version = " VOST" if _is_vo(article) else " VF"
+            # La legende dit « Source : AlloCiné » ; la chaine remplacee va au
+            # journal, pas sous la video (« au lieu de Universal Pictures
+            # France » publie tel quel, 2026-11-07).
+            logger.info(f"Vidéo AlloCiné au lieu de {article.source_label} : {info.label}")
             article = replace(article, url=url, title=f"{info.label} Bande-annonce{version}",
-                              source_label=f"AlloCiné (au lieu de {article.source_label})")
+                              source_label="AlloCiné")
         kept.append((popularity.popularity_key(info), article))
     kept.sort(key=lambda pair: pair[0])
     return [article for _key, article in kept]
