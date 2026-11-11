@@ -64,22 +64,15 @@ jobs:
           ref: ${{ inputs.app-ref }}
           path: app
 
+      - name: Polices des sous-titres (cache)
+        uses: actions/cache@v4
+        with:
+          path: ~/.fonts/msttcorefonts
+          key: msttcorefonts-arial-v1
+
       - name: ffmpeg (libass) et polices des sous-titres
-        # Les polices Microsoft viennent de SourceForge, qui pend parfois :
-        # sans limite, un run est reste bloque 40 min (2026-11-06).
-        timeout-minutes: 15
-        run: |
-          # Les styles de sous-titres utilisent Arial / Arial Black : sans elles,
-          # libass prendrait une police de repli et le rendu changerait.
-          echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
-            | sudo debconf-set-selections
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fontconfig ttf-mscorefonts-installer > /dev/null
-          sudo fc-cache -f > /dev/null
-          ffmpeg -hide_banner -filters | grep -E " (subtitles|ass) " \
-            || { echo "::error::ffmpeg sans libass"; exit 1; }
-          fc-list | grep -qi "Arial Black" \
-            || echo "::warning::Police Arial Black absente : sous-titres en police de repli"
+        timeout-minutes: 10
+        run: bash app/.github/scripts/install_media.sh
 
       - uses: actions/setup-python@v5
         with:
