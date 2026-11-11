@@ -9,8 +9,20 @@
 # Usage : install_media.sh [paquets apt supplementaires...]
 set -euo pipefail
 
-sudo apt-get update -qq
-sudo apt-get install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null
+# Le miroir Ubuntu d'Azure des runners est devenu injoignable (« Temporary
+# failure resolving azure.archive.ubuntu.com », 2026-11-11, trois runs a la
+# suite) : le miroir officiel passe en premier, Azure reste en second.
+if [ -f /etc/apt/apt-mirrors.txt ]; then
+  # Les autres gardent leur ordre, chacun recule d'un rang.
+  { printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\n'
+    awk -F'priority:' 'NF > 1 {printf "%spriority:%d\n", $1, $2 + 1; next} {print}' \
+      /etc/apt/apt-mirrors.txt
+  } | sudo tee /etc/apt/apt-mirrors.txt.new > /dev/null
+  sudo mv /etc/apt/apt-mirrors.txt.new /etc/apt/apt-mirrors.txt
+fi
+apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20)
+timeout 300 sudo apt-get "${apt_opts[@]}" update -qq
+timeout 420 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null
 
 dest="$HOME/.fonts/msttcorefonts"
 mkdir -p "$dest"
