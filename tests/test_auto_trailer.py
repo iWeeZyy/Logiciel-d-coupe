@@ -249,3 +249,15 @@ def test_legende_synopsis_espaces_et_source_propre():
     assert "coupées. Au poste" in text and "S.W.A.T." in text
     assert 'source_label="AlloCiné"' in inspect.getsource(auto_trailer)
     assert "(au lieu de" not in inspect.getsource(auto_trailer).split("source_label=")[1][:40]
+
+
+def test_titre_de_bande_annonce_nettoye():
+    """« Wild Horse Nine Bande-annonce (3) VO STFR » (2026-11-11)."""
+    from news_story.caption import build_caption, clean_trailer_title
+
+    assert clean_trailer_title("Wild Horse Nine Bande-annonce (3) VO STFR") == \
+        "Wild Horse Nine Bande-annonce VOST"
+    assert clean_trailer_title("Hope Bande-annonce VOST") == "Hope Bande-annonce VOST"
+    assert clean_trailer_title("Dune Bande-annonce VF") == "Dune Bande-annonce VF"
+    text = build_caption("Wild Horse Nine Bande-annonce (3) VO STFR", theme="trailers")
+    assert text.startswith("🎞️ Wild Horse Nine Bande-annonce VOST")

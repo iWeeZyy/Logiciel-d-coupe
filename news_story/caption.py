@@ -22,6 +22,16 @@ _SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,)])")
 # AlloCine de Hope, 2026-11-07). Un point apres un mot en minuscules, suivi
 # d'une majuscule, recoit son espace ; un sigle (« S.W.A.T. ») n'est pas touche.
 _MISSING_SPACE_AFTER_SENTENCE = re.compile(r"([a-zà-ÿ]{2}[.!?…])([A-ZÀ-Ý])")
+# Titre de bande-annonce tel que liste par AlloCine : « Wild Horse Nine
+# Bande-annonce (3) VO STFR » (2026-11-11) -> numero de la video retire,
+# « VO STFR » / « VOSTFR » ecrit « VOST » comme les autres.
+_TRAILER_NUMBER = re.compile(r"(Bande-annonce)\s*\(\d+\)", re.IGNORECASE)
+_VOSTFR = re.compile(r"\bVO\s*ST\s*FR\b|\bVOSTFR\b", re.IGNORECASE)
+
+
+def clean_trailer_title(title: str) -> str:
+    title = _TRAILER_NUMBER.sub(r"\1", title or "")
+    return " ".join(_VOSTFR.sub("VOST", title).split())
 
 # Lignes de description YouTube qui ne parlent pas du film : liens, comptes
 # sociaux, appels a s'abonner. Retirees ligne entiere (le reste demeure un
@@ -49,6 +59,8 @@ def build_caption(title: str, summary: str = "", source_label: str = "",
     `synopsis` : synopsis du film (fiche AlloCine, bandes-annonces) ; il
     remplace la description de la video, souvent promotionnelle."""
     title = " ".join((title or "").split())
+    if theme == "trailers":
+        title = clean_trailer_title(title)
     synopsis = _MISSING_SPACE_AFTER_SENTENCE.sub(r"\1 \2", " ".join((synopsis or "").split()))
     if synopsis:
         summary = f"📖 Synopsis : {synopsis}"
