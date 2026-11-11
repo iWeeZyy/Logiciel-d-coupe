@@ -129,10 +129,24 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$MEMORY_PATH"
-          git commit -m "Clip du jour : memoire mise a jour" || exit 0
-          git pull --rebase -q || true
-          git push
+          # Fusion, pas rebase : le top et le clip du jour peuvent ecrire la
+          # memoire en meme temps (conflit du 2026-11-11, memoire perdue).
+          cp "$MEMORY_PATH" "$RUNNER_TEMP/memoire_locale.json"
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          for attempt in 1 2 3 4; do
+            git fetch -q origin "$branch"
+            git reset -q --hard "origin/$branch"
+            git show "origin/$branch:$MEMORY_PATH" > "$RUNNER_TEMP/memoire_distante.json" \
+              2>/dev/null || echo '{}' > "$RUNNER_TEMP/memoire_distante.json"
+            python "$GITHUB_WORKSPACE/app/radar/memory_merge.py" \
+              "$RUNNER_TEMP/memoire_distante.json" "$RUNNER_TEMP/memoire_locale.json" "$MEMORY_PATH"
+            git add "$MEMORY_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -q -m "Clip du jour : memoire mise a jour"
+            git push -q origin "HEAD:$branch" && exit 0
+            sleep $((attempt * 5))
+          done
+          exit 1
 
       - name: Clip en artefact
         if: steps.run.outputs.produit == 'true'

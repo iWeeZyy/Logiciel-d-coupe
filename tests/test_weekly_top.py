@@ -110,7 +110,8 @@ class _FakeTwitch:
 def _builder(calls):
     def build(kept, production, out_dir, *, name, parts, **kw):
         calls.append({"ids": [o.content_id for o in kept], "name": name, "parts": parts,
-                      "production": production, "intro": kw["intro"]})
+                      "production": production, "intro": kw["intro"],
+                      "streamer": kw.get("streamer")})
         path = Path(out_dir) / f"{name}.mp4"
         path.write_bytes(b"mp4")
         return [(str(path), 75.0)]
@@ -569,3 +570,13 @@ def test_bandeau_dans_la_zone_de_la_grille():
     top = choose_top(faces, 0.12, 0.11, avoid=())
     assert GRID_SAFE[0] <= top and top + 0.12 <= GRID_SAFE[1]
     assert choose_top([[]], 0.12, 0.05, avoid=()) >= GRID_SAFE[0]
+
+
+def test_badge_et_titre_du_top_avec_le_nom_tel_qu_on_le_tape(tmp_path):
+    """« DES CLIPS D'ANYME023 » -> « D'ANYME » (2026-11-11) : le badge et le
+    titre ephemere prennent le nom de search_names, comme le titre du fichier."""
+    calls = []
+    weekly_top.run(_config(search_names={"anyme023": "Anyme"}, only="anyme023"),
+                   tmp_path / "out", tmp_path / "work", adapter=_FakeTwitch(),
+                   builder=_builder(calls), today=TODAY, now=NOW)
+    assert calls and calls[0]["streamer"] == "Anyme"
