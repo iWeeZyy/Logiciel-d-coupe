@@ -417,3 +417,26 @@ def test_webcam_flottante_choisie_seulement_si_presque_toujours_la():
     assert floating_webcam(rare) is None
     grand = [sample(i, [(0.5, 0.4, 0.05)]) for i in range(20)]   # plein ecran
     assert floating_webcam(grand) is None
+
+
+class TestVisagePerduBrievement:
+    """Kamet0 (2026-11-12) : seul face camera, il baisse la tete 1,5 s -- le
+    cadrage basculait sur l'image entiere minuscule sur fond flou."""
+
+    @staticmethod
+    def _seul(lost):
+        return [FaceSample(t=t / 2, faces=() if t / 2 in lost else (_box(0.5),),
+                           mouth_activity=() if t / 2 in lost else (0.0,)) for t in range(40)]
+
+    def test_perte_breve_garde_le_cadrage(self):
+        from editing.framing import wide_intervals
+
+        samples = self._seul({8.0, 8.5, 9.0})              # 1,5 s sans visage
+        assert wide_intervals(samples, [], [(0.0, 20.0)], crop_width_frac=0.32) == ()
+
+    def test_absence_durable_reste_en_plan_large(self):
+        from editing.framing import wide_intervals
+
+        samples = self._seul({t / 2 for t in range(10, 20)})   # 5 s sans visage
+        wide = wide_intervals(samples, [], [(0.0, 20.0)], crop_width_frac=0.32)
+        assert len(wide) == 1 and wide[0][0] <= 5.0 and wide[0][1] >= 9.5

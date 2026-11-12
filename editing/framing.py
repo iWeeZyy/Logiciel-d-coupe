@@ -255,7 +255,7 @@ def group_span(samples, intervals, margin: float = 0.05) -> tuple[float, float]:
 
 def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: float,
                    min_shot_s: float = 1.0, half_step_s: float = 0.25,
-                   min_tight_s: float = 2.0):
+                   min_tight_s: float = 2.0, min_lost_s: float = 3.0):
     """Moments en plan large (fonction pure, temps SOURCE).
 
     Demande de l'utilisateur : cadrer la personne qui parle, et quand
@@ -266,7 +266,13 @@ def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: fl
     qu'aucune parole ne l'entoure (`speech_spans`, mots de la transcription),
     ou qu'aucun locuteur n'est identifie. Les plans de moins de `min_shot_s`
     (larges comme serres) sont absorbes : un cadre qui clignote est pire
-    qu'un cadre imparfait."""
+    qu'un cadre imparfait.
+
+    Visage perdu moins de `min_lost_s` (tete baissee, penche hors du champ) :
+    le cadrage en cours est garde. Sans ca, une personne seule qui baisse la
+    tete une seconde et demie faisait surgir l'image entiere, minuscule, sur
+    fond flou, au milieu d'un gros plan (Kamet0, 2026-11-12). Seule une
+    absence de visage DURABLE (scene, capture d'ecran) passe en plan large."""
     from editing.speaker import speaker_at
 
     def speaking(t: float) -> bool:
@@ -288,13 +294,27 @@ def wide_intervals(samples, speaker_decisions, speech_spans, crop_width_frac: fl
                 # les silences ou si on ne sait pas qui parle.
                 wide = (len(faces) > 2 or not speaking(sample.t)
                         or speaker_at(speaker_decisions or [], sample.t) is None)
-        flags.append((sample.t, wide))
+        flags.append((sample.t, wide, not faces))
     if not flags:
         return ()
 
+    # Pertes de visage breves : on garde le cadrage en cours (voir docstring).
+    i = 0
+    while i < len(flags):
+        j = i
+        while j < len(flags) and flags[j][1] and flags[j][2]:
+            j += 1
+        if j > i:
+            lost = flags[j - 1][0] - flags[i][0] + 2 * half_step_s
+            if lost < min_lost_s:
+                flags[i:j] = [(t, False, True) for t, _, _ in flags[i:j]]
+            i = j
+        else:
+            i += 1
+
     # Suites d'echantillons « larges » -> intervalles.
     raw, start, last = [], None, None
-    for t, wide in flags:
+    for t, wide, _ in flags:
         if wide and start is None:
             start = t
         if not wide and start is not None:
