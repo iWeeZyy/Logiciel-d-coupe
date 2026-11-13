@@ -263,13 +263,49 @@ MAX_CORNER_FACE_AREA = 0.02
 MIN_CORNER_FACE_AREA = 0.0008
 
 
+# Visage IMMOBILE et INCERTAIN : une affiche, un dessin ou une figurine au mur
+# (Kamet0, 2026-11-13 : un visage dessine detecte a 0,62 sur 39 images, qui
+# n'a pas bouge de 0,2 % de largeur, a cote du streamer a 0,95). Il faisait
+# basculer le clip en plan large « a deux personnes » la moitie du temps.
+STILL_SPREAD = 0.006
+STILL_MAX_CONFIDENCE = 0.75
+REAL_MIN_CONFIDENCE = 0.85
+
+
+def _still_images(samples, tracks, radius: float) -> list:
+    """Pistes qui sont une image fixe plutot qu'une personne : quasi aucun
+    mouvement ET confiance basse, quand une AUTRE piste est un visage sur
+    (confiance haute) qui bouge. Sans personne de reference, rien n'est
+    ecarte : mieux vaut un faux visage qu'aucun cadrage."""
+    from statistics import median, pstdev
+
+    stats = []
+    for track in tracks:
+        boxes = [b for sample in samples for b in (getattr(sample, "faces", ()) or ())
+                 if ((track.cx - b.cx) ** 2 + (track.cy - b.cy) ** 2) ** 0.5 < radius]
+        if len(boxes) < 3:
+            stats.append((track, 1.0, 1.0))
+            continue
+        spread = max(pstdev([b.cx for b in boxes]), pstdev([b.cy for b in boxes]))
+        stats.append((track, spread, median(getattr(b, "confidence", 1.0) for b in boxes)))
+    real = any(spread >= STILL_SPREAD and conf >= REAL_MIN_CONFIDENCE
+               for _, spread, conf in stats)
+    if not real:
+        return []
+    return [t for t, spread, conf in stats
+            if spread < STILL_SPREAD and conf < STILL_MAX_CONFIDENCE]
+
+
 def keep_persistent_faces(samples, min_presence: float = MIN_PERSISTENT_PRESENCE,
                           radius: float = CLUSTER_RADIUS):
     """Les memes echantillons, prives des visages passagers (voir
-    MIN_PERSISTENT_PRESENCE). Un echantillon peut se retrouver sans visage :
-    le cadrage montre alors l'image entiere."""
+    MIN_PERSISTENT_PRESENCE) et des images fixes (affiche au mur, voir
+    STILL_SPREAD). Un echantillon peut se retrouver sans visage : le cadrage
+    montre alors l'image entiere."""
     samples = list(samples)
     tracks = [t for t in build_tracks(samples, radius=radius) if t.presence >= min_presence]
+    still = _still_images(samples, tracks, radius)
+    tracks = [t for t in tracks if t not in still]
 
     def lasting(box) -> bool:
         return any(((t.cx - box.cx) ** 2 + (t.cy - box.cy) ** 2) ** 0.5 < radius for t in tracks)

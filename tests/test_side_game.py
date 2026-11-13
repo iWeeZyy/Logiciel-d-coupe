@@ -167,3 +167,38 @@ def test_image_entiere_le_bandeau_va_dans_le_flou():
     (lo, hi, weight), = zones
     assert abs(lo - 0.342) < 0.01 and abs(hi - 0.658) < 0.01 and weight == 1.0
     assert _hook_avoid_zones(None, None, 1080, 1920, 1920, 1080) == ()
+
+
+class TestAfficheAuMur:
+    """Kamet0 (2026-11-13) : un visage dessine sur une affiche, immobile et
+    detecte a 0,62, faisait passer le clip en plan large a deux."""
+
+    @staticmethod
+    def _face(cx, conf, cy=0.4):
+        from video.face_detector import FaceBox
+        return FaceBox(x=cx - 0.09, y=cy - 0.1, w=0.18, h=0.2, confidence=conf)
+
+    def _samples(self, poster_conf=0.62, real_conf=0.95, real_moves=True):
+        from video.face_detector import FaceSample
+        out = []
+        for i in range(20):
+            dx = (i % 5) * 0.015 if real_moves else 0.0
+            out.append(FaceSample(t=i / 2, faces=(self._face(0.57 + dx, real_conf),
+                                                  self._face(0.36, poster_conf)),
+                                  mouth_activity=(0.03, 0.01)))
+        return out
+
+    def test_affiche_ecartee(self):
+        from editing.subject import keep_persistent_faces
+        kept = keep_persistent_faces(self._samples())
+        assert all(len(s.faces) == 1 and s.faces[0].cx > 0.5 for s in kept)
+
+    def test_deux_vraies_personnes_gardees(self):
+        from editing.subject import keep_persistent_faces
+        kept = keep_persistent_faces(self._samples(poster_conf=0.93))
+        assert all(len(s.faces) == 2 for s in kept)
+
+    def test_sans_personne_de_reference_rien_n_est_ecarte(self):
+        from editing.subject import keep_persistent_faces
+        kept = keep_persistent_faces(self._samples(real_moves=False))
+        assert all(len(s.faces) == 2 for s in kept)
