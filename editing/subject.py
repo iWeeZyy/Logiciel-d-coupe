@@ -267,33 +267,46 @@ MIN_CORNER_FACE_AREA = 0.0008
 # (Kamet0, 2026-11-13 : un visage dessine detecte a 0,62 sur 39 images, qui
 # n'a pas bouge de 0,2 % de largeur, a cote du streamer a 0,95). Il faisait
 # basculer le clip en plan large « a deux personnes » la moitie du temps.
+# Meme defaut avec une alerte d'abonnement animee (Squeezie, 2026-11-14) :
+# visage net (0,93) mais parfaitement fixe et bouche immobile (0,009, contre
+# 0,03 a 0,07 pour une personne qui parle) -- le cadrage la suivait au lieu
+# du streamer, plus petit car assis loin de la camera.
 STILL_SPREAD = 0.006
 STILL_MAX_CONFIDENCE = 0.75
+STILL_MAX_MOUTH = 0.02
 REAL_MIN_CONFIDENCE = 0.85
 
 
 def _still_images(samples, tracks, radius: float) -> list:
     """Pistes qui sont une image fixe plutot qu'une personne : quasi aucun
-    mouvement ET confiance basse, quand une AUTRE piste est un visage sur
-    (confiance haute) qui bouge. Sans personne de reference, rien n'est
-    ecarte : mieux vaut un faux visage qu'aucun cadrage."""
+    mouvement ET (confiance basse OU bouche immobile), quand une AUTRE piste
+    est un visage sur (confiance haute) qui bouge. Sans personne de
+    reference, rien n'est ecarte : mieux vaut un faux visage qu'aucun
+    cadrage."""
     from statistics import median, pstdev
 
     stats = []
     for track in tracks:
-        boxes = [b for sample in samples for b in (getattr(sample, "faces", ()) or ())
-                 if ((track.cx - b.cx) ** 2 + (track.cy - b.cy) ** 2) ** 0.5 < radius]
+        boxes = []
+        for sample in samples:
+            faces = tuple(getattr(sample, "faces", ()) or ())
+            mouths = tuple(getattr(sample, "mouth_activity", ()) or ())
+            for i, b in enumerate(faces):
+                if ((track.cx - b.cx) ** 2 + (track.cy - b.cy) ** 2) ** 0.5 < radius:
+                    boxes.append((b, mouths[i] if i < len(mouths) else None))
         if len(boxes) < 3:
-            stats.append((track, 1.0, 1.0))
+            stats.append((track, 1.0, 1.0, 1.0))
             continue
-        spread = max(pstdev([b.cx for b in boxes]), pstdev([b.cy for b in boxes]))
-        stats.append((track, spread, median(getattr(b, "confidence", 1.0) for b in boxes)))
+        spread = max(pstdev([b.cx for b, _ in boxes]), pstdev([b.cy for b, _ in boxes]))
+        mouth = [m for _, m in boxes if m is not None]
+        stats.append((track, spread, median(getattr(b, "confidence", 1.0) for b, _ in boxes),
+                      median(mouth) if mouth else 1.0))
     real = any(spread >= STILL_SPREAD and conf >= REAL_MIN_CONFIDENCE
-               for _, spread, conf in stats)
+               for _, spread, conf, _ in stats)
     if not real:
         return []
-    return [t for t, spread, conf in stats
-            if spread < STILL_SPREAD and conf < STILL_MAX_CONFIDENCE]
+    return [t for t, spread, conf, mouth in stats
+            if spread < STILL_SPREAD and (conf < STILL_MAX_CONFIDENCE or mouth < STILL_MAX_MOUTH)]
 
 
 def keep_persistent_faces(samples, min_presence: float = MIN_PERSISTENT_PRESENCE,

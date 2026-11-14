@@ -178,13 +178,14 @@ class TestAfficheAuMur:
         from video.face_detector import FaceBox
         return FaceBox(x=cx - 0.09, y=cy - 0.1, w=0.18, h=0.2, confidence=conf)
 
-    def _samples(self, poster_conf=0.62, real_conf=0.95, real_moves=True):
+    def _samples(self, poster_conf=0.62, real_conf=0.95, real_moves=True, poster_moves=False):
         from video.face_detector import FaceSample
         out = []
         for i in range(20):
             dx = (i % 5) * 0.015 if real_moves else 0.0
+            px = (i % 3) * 0.01 if poster_moves else 0.0
             out.append(FaceSample(t=i / 2, faces=(self._face(0.57 + dx, real_conf),
-                                                  self._face(0.36, poster_conf)),
+                                                  self._face(0.36 + px, poster_conf)),
                                   mouth_activity=(0.03, 0.01)))
         return out
 
@@ -195,10 +196,31 @@ class TestAfficheAuMur:
 
     def test_deux_vraies_personnes_gardees(self):
         from editing.subject import keep_persistent_faces
-        kept = keep_persistent_faces(self._samples(poster_conf=0.93))
+        kept = keep_persistent_faces(self._samples(poster_conf=0.93, poster_moves=True))
         assert all(len(s.faces) == 2 for s in kept)
 
     def test_sans_personne_de_reference_rien_n_est_ecarte(self):
         from editing.subject import keep_persistent_faces
         kept = keep_persistent_faces(self._samples(real_moves=False))
+        assert all(len(s.faces) == 2 for s in kept)
+
+    def _alerte(self, mouth):
+        from video.face_detector import FaceSample
+        out = []
+        for i in range(20):
+            dx = (i % 5) * 0.015
+            out.append(FaceSample(t=i / 2, faces=(self._face(0.53 + dx, 0.91, cy=0.48),
+                                                  self._face(0.85, 0.93, cy=0.12)),
+                                  mouth_activity=(0.07, mouth)))
+        return out
+
+    def test_alerte_nette_mais_figee_ecartee(self):
+        # Squeezie (2026-11-14) : alerte d'abonnement, visage net mais fixe et muet.
+        from editing.subject import keep_persistent_faces
+        kept = keep_persistent_faces(self._alerte(mouth=0.009))
+        assert all(len(s.faces) == 1 and s.faces[0].cx < 0.7 for s in kept)
+
+    def test_personne_immobile_qui_parle_gardee(self):
+        from editing.subject import keep_persistent_faces
+        kept = keep_persistent_faces(self._alerte(mouth=0.06))
         assert all(len(s.faces) == 2 for s in kept)
