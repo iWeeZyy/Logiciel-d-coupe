@@ -111,7 +111,8 @@ def _builder(calls):
     def build(kept, production, out_dir, *, name, parts, **kw):
         calls.append({"ids": [o.content_id for o in kept], "name": name, "parts": parts,
                       "production": production, "intro": kw["intro"],
-                      "streamer": kw.get("streamer")})
+                      "streamer": kw.get("streamer"), "ask_next": kw.get("ask_next"),
+                      "period_label": kw.get("period_label")})
         path = Path(out_dir) / f"{name}.mp4"
         path.write_bytes(b"mp4")
         return [(str(path), 75.0)]
@@ -580,3 +581,21 @@ def test_badge_et_titre_du_top_avec_le_nom_tel_qu_on_le_tape(tmp_path):
                    tmp_path / "out", tmp_path / "work", adapter=_FakeTwitch(),
                    builder=_builder(calls), today=TODAY, now=NOW)
     assert calls and calls[0]["streamer"] == "Anyme"
+
+
+def test_top_d_une_soiree():
+    """Top demande sur une soiree (catch d'Amine, 2026-11-15) : periode
+    courte dans le titre et le titre neon, pas de question « dimanche
+    prochain »."""
+    assert weekly_top.period_label(1) == "hier soir"
+    assert weekly_top.period_label(7) == "cette semaine"
+
+
+def test_periode_courte(tmp_path):
+    calls = []
+    weekly_top.run(_config(), tmp_path / "out", tmp_path / "work", adapter=_FakeTwitch(),
+                   builder=_builder(calls), today=TODAY, now=NOW, days=2)
+    assert calls[0]["name"] == "Top 3 des moments d'Anyme023 ces 2 derniers jours"
+    assert calls[0]["period_label"] == "ces 2 derniers jours"
+    assert calls[0]["ask_next"] is False
+    assert "anyme023-vieux" not in calls[0]["ids"]

@@ -37,6 +37,16 @@ CLI_FLAG = "--weekly-top"
 DAYS = 7                       # periode du Radar la plus longue (radar/engine.py, « 7j »)
 PERIOD = "7j"
 PERIOD_LABEL = "cette semaine"
+
+
+def period_label(days: int) -> str:
+    """« cette semaine » pour le top du dimanche ; un top demande sur une
+    soiree precise (catch d'Amine, 2026-11-15) dit « hier soir »."""
+    if days == 1:
+        return "hier soir"
+    if days == DAYS:
+        return PERIOD_LABEL
+    return f"ces {days} derniers jours"
 REPORT_NAME = "rapport.txt"
 
 
@@ -202,7 +212,8 @@ def _make_engine(store, adapter=None):
 def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=None,
         adapter=None, accept_long: bool = False,
         builder=None, today: date | None = None, now: datetime | None = None,
-        on_status=logger.info, memory_path: Path | None = None) -> Report:
+        on_status=logger.info, memory_path: Path | None = None,
+        days: int = DAYS) -> Report:
     """Une compilation par streamer autorise. Ne leve que si la configuration
     est inutilisable ; l'echec d'un streamer est rapporte, les autres
     continuent (comme un scan du Radar)."""
@@ -276,13 +287,13 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
     report.errors += list(scan.errors)
 
     for auth, creator in creators:
-        kept, skipped = select(store, creator.key, DAYS, count, now=now)
+        kept, skipped = select(store, creator.key, days, count, now=now)
         for dup, original, reason in skipped:
             report.notes.append(f"{auth.login} : écarté « {dup.title} » ({reason} que "
                                 f"« {original.title} »)")
         if len(kept) < 2:
-            report.errors.append(f"{auth.login} : {len(kept)} clip(s) différent(s) cette "
-                                 "semaine, il en faut au moins 2.")
+            report.errors.append(f"{auth.login} : {len(kept)} clip(s) différent(s) "
+                                 f"{period_label(days)}, il en faut au moins 2.")
             continue
         if len(kept) < count:
             report.notes.append(f"{auth.login} : seulement {len(kept)} clips différents.")
@@ -302,7 +313,7 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
         from radar.naming import search_name
 
         name = search_name(config, auth.login, creator.label)   # « Kameto », pas « Kamet0 »
-        title = default_title(len(kept), name, PERIOD_LABEL)
+        title = default_title(len(kept), name, period_label(days))
         for i, o in enumerate(kept, 1):
             on_status(f"  {i}. {o.title} — {o.view_count} vues, {o.duration_s} s")
         try:
@@ -317,7 +328,10 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
                               # Phrase choc sous chaque numero (texte unique) et
                               # « Dimanche prochain tu veux voir quel top ? »
                               clip_titles=bool(config.get("clip_titles", True)),
-                              ask_next=bool(config.get("ask_next", True)),
+                              # Question « dimanche prochain » : seulement pour le
+                              # top de la semaine, pas pour une soiree precise.
+                              ask_next=bool(config.get("ask_next", True)) and days == DAYS,
+                              period_label=period_label(days),
                               # Badge « REPLAY DE <STREAMER> » + bandeau sur chaque clip.
                               # Le nom tel qu'on le tape (« D'ANYME », pas
                               # « D'ANYME023 », 2026-11-11), comme le titre.
@@ -329,7 +343,7 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, only=None, config_dir=No
             report.errors.append(f"{auth.login} : compilation impossible ({e})")
             continue
         captions = write_captions(written, title, creator=creator.label,
-                                  ask_next=bool(config.get("ask_next", True)),
+                                  ask_next=bool(config.get("ask_next", True)) and days == DAYS,
                                   search_name=name, count=len(kept))
         for _path, seconds in written:
             line = f"{auth.login} : vidéo de {int(seconds // 60)} min {int(seconds % 60):02d} s"
@@ -370,6 +384,8 @@ def main_cli(argv=None) -> int:
                         help="un seul streamer (essai) ; il doit etre autorise")
     parser.add_argument("--memory", type=Path, default=None,
                         help="memoire des clips publies (partagee avec le clip du jour)")
+    parser.add_argument("--jours", dest="days", type=int, default=DAYS,
+                        help="periode en jours (1 = la soiree d'hier ; 7 par defaut)")
     parser.add_argument("--accepter-duree", dest="accept_long", action="store_true",
                         help="produire meme si la compilation depasse la duree maximale")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
@@ -379,7 +395,7 @@ def main_cli(argv=None) -> int:
         config = load_config(args.config)
         report = run(config, args.out, args.work_dir or args.out.parent / "_travail",
                      only=args.only or None, accept_long=args.accept_long,
-                     memory_path=args.memory,
+                     memory_path=args.memory, days=max(1, min(DAYS, args.days)),
                      config_dir=(args.config or default_config_path()).parent)
     except Exception as e:  # noqa: BLE001 -- tache de fond : on journalise
         logger.error(f"Compilation de la semaine : {e}")

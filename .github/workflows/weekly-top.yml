@@ -32,6 +32,10 @@ on:
         description: "Memoire des clips publies dans le depot appelant (partagee avec le clip du jour) ; vide = aucune"
         type: string
         default: ""
+      days:
+        description: "Periode en jours (1 = la soiree d'hier ; 7 = la semaine)"
+        type: number
+        default: 7
       app-ref:
         description: "Version du logiciel (branche ou tag de Logiciel-d-coupe)"
         type: string
@@ -110,8 +114,9 @@ jobs:
           ONLY: ${{ inputs.only }}
           ACCEPT_LONG: ${{ inputs.accept-long }}
           MEMORY_PATH: ${{ inputs.memory-path }}
+          DAYS: ${{ inputs.days }}
         run: |
-          extra=()
+          extra=(--jours "${DAYS:-7}")
           [ "$ACCEPT_LONG" = "true" ] && extra+=(--accepter-duree)
           [ -n "$MEMORY_PATH" ] && extra+=(--memory "$GITHUB_WORKSPACE/appelant/$MEMORY_PATH")
           python gui_main.py --weekly-top \

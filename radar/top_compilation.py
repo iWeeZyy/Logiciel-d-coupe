@@ -211,7 +211,8 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
           countdown: bool = True, intro: bool = True, transitions: bool = True,
           cancel_token=None, on_status=lambda m: None, projects_dir: Path | None = None,
           clips_dir: Path | None = None, clip_titles: bool = False,
-          ask_next: bool = False, streamer: str = "") -> list:
+          ask_next: bool = False, streamer: str = "",
+          period_label: str = "cette semaine") -> list:
     """Produit chaque clip puis monte la compilation ; [(chemin, duree)] des
     parties ecrites. L'intro par clip est toujours coupee : la compilation
     la pose une seule fois au debut. `streamer` (tops de la semaine) : chaque
@@ -252,7 +253,7 @@ def build(opportunities, production: dict, out_dir, *, name: str, parts: int = 1
             if index == 1:
                 # Titre ephemere en neon au-dessus du 1er numero (2026-11-01).
                 block["headline"] = [f"TOP {total}",
-                                     f"DES CLIPS {replay_label(streamer)} CETTE SEMAINE"]
+                                     f"DES CLIPS {replay_label(streamer)} {period_label.upper()}"]
             clip_production = {**production,
                                "editing_overrides": {**overrides, "hook_text": block}}
         paths.append(produce_clip(
