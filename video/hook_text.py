@@ -244,7 +244,8 @@ def render_band(text: str, out_w: int, out_h: int, right_limit: int | None = Non
         lines += wrap_text(probe, paragraph, title_font,
                            (out_w - 2 * margin) if right == out_w else (right - 2 * margin),
                            max_lines=MAX_LINES)
-    if len(lines) > MAX_LINES:
+    truncated = len(lines) > MAX_LINES
+    if truncated:
         lines = lines[:MAX_LINES]
         lines[-1] = lines[-1].rstrip(" ,.;:!?") + "…"
     line_h = round(78 * scale)
@@ -264,7 +265,32 @@ def render_band(text: str, out_w: int, out_h: int, right_limit: int | None = Non
             x = max(margin, min(x, right - margin - width))
         draw.text((x, y), line, font=title_font, fill=(255, 255, 255))
         y += line_h
+    image.info["truncated"] = truncated
     return image
+
+
+def narrow_band_fits(band, narrow, band_top: float, out_h: int, faces) -> bool:
+    """Le bandeau resserre a gauche du medaillon de l'intro peut-il remplacer
+    le bandeau pleine largeur ? Oui s'il garde la meme hauteur. Plus haut
+    d'une ligne (Kameto, 2026-11-16 : la phrase passait de 2 a 3 lignes et
+    le medaillon en cachait la fin pendant l'intro), seulement si la phrase
+    reste entiere, si le bas reste dans la zone sure et si la bande ajoutee
+    ne recouvre aucun visage."""
+    if narrow is None or band is None or narrow.info.get("truncated"):
+        return False
+    if narrow.height == band.height:
+        return True
+    old_bottom = band_top + band.height / out_h
+    new_bottom = band_top + narrow.height / out_h
+    if new_bottom > GRID_SAFE[1]:
+        return False
+    samples = list(faces or [])
+    if not samples:
+        return True
+    hit = sum(1 for sample in samples
+              if any(h >= MIN_FACE_H and y < new_bottom and old_bottom < y + h
+                     for y, h in sample))
+    return hit / len(samples) < 0.1
 
 
 def choose_top(face_samples, height: float, preferred: float,
@@ -409,7 +435,7 @@ def apply(video_path: str, text: str, out_w: int, out_h: int, *, tag: str = "",
             # Bandeau au niveau du medaillon de l'intro : le texte reste a sa
             # gauche (« LE CLIP DU MOMENT » touchait « Les clips que tu… »).
             narrow = render_band(text, out_w, out_h, right_limit=round(INTRO_ZONE_X * out_w))
-            if narrow is not None and narrow.height == band.height:
+            if narrow_band_fits(band, narrow, band_top, out_h, faces):
                 band = narrow
         with tempfile.TemporaryDirectory(prefix="clipfarming_texte_") as tmp:
             out = Path(tmp) / "avec_texte.mp4"

@@ -275,3 +275,21 @@ def test_badge_avec_le_nom_tel_qu_on_le_tape(tmp_path):
     daily_clip.run(_config(search_names={"anyme023": "Anyme"}), tmp_path / "o", tmp_path / "w",
                    adapter=_FakeTwitch(), producer=produce, today=TODAY, now=NOW)
     assert seen == ["Anyme"]
+
+
+def test_bandeau_resserre_accepte_meme_plus_haut():
+    """Kameto (2026-11-16) : resserree a gauche du medaillon, la phrase
+    passait de 2 a 3 lignes ; le bandeau large etait garde et le medaillon
+    en cachait la fin pendant l'intro."""
+    from video.hook_text import INTRO_ZONE_X, narrow_band_fits, render_band
+
+    text = "Lui, son rêve, c'est d'aller au Canada pour les paysages"
+    wide = render_band(text, 1080, 1920)
+    narrow = render_band(text, 1080, 1920, right_limit=round(INTRO_ZONE_X * 1080))
+    assert narrow.height > wide.height and not narrow.info["truncated"]
+    assert narrow_band_fits(wide, narrow, 0.23, 1920, faces=[[(0.5, 0.2)]] * 10)
+    # Un visage juste sous le bandeau : la ligne ajoutee le couvrirait.
+    bottom = 0.23 + wide.height / 1920
+    assert not narrow_band_fits(wide, narrow, 0.23, 1920, faces=[[(bottom + 0.005, 0.1)]] * 10)
+    # Trop bas : sortirait de la zone sure.
+    assert not narrow_band_fits(wide, narrow, 0.70, 1920, faces=[])
