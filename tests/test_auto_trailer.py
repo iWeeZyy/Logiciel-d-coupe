@@ -256,8 +256,12 @@ def test_titre_de_bande_annonce_nettoye():
     from news_story.caption import build_caption, clean_trailer_title
 
     assert clean_trailer_title("Wild Horse Nine Bande-annonce (3) VO STFR") == \
-        "Wild Horse Nine Bande-annonce VOST"
-    assert clean_trailer_title("Hope Bande-annonce VOST") == "Hope Bande-annonce VOST"
-    assert clean_trailer_title("Dune Bande-annonce VF") == "Dune Bande-annonce VF"
+        "Wild Horse Nine — Bande-annonce VOST"
+    assert clean_trailer_title("Hope Bande-annonce VOST") == "Hope — Bande-annonce VOST"
+    assert clean_trailer_title("Dune Bande-annonce VF") == "Dune — Bande-annonce VF"
     text = build_caption("Wild Horse Nine Bande-annonce (3) VO STFR", theme="trailers")
-    assert text.startswith("🎞️ Wild Horse Nine Bande-annonce VOST")
+    assert text.startswith("🎞️ Wild Horse Nine — Bande-annonce VOST")
+    # Deja separe ou sans le mot : inchange.
+    assert clean_trailer_title("Scrooge — Bande-annonce VOST") == "Scrooge — Bande-annonce VOST"
+    assert clean_trailer_title("Bande-annonce VF") == "Bande-annonce VF"
+    assert clean_trailer_title("Dune") == "Dune"

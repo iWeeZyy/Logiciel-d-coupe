@@ -27,11 +27,15 @@ _MISSING_SPACE_AFTER_SENTENCE = re.compile(r"([a-zà-ÿ]{2}[.!?…])([A-ZÀ-Ý])
 # « VO STFR » / « VOSTFR » ecrit « VOST » comme les autres.
 _TRAILER_NUMBER = re.compile(r"(Bande-annonce)\s*\(\d+\)", re.IGNORECASE)
 _VOSTFR = re.compile(r"\bVO\s*ST\s*FR\b|\bVOSTFR\b", re.IGNORECASE)
+# « Scrooge Bande-annonce VOST » -> « Scrooge — Bande-annonce VOST » : le
+# titre du film ne se lit plus colle au mot (Lucas, 2026-11-14 et 11-17).
+_TITLE_THEN_TRAILER = re.compile(r"([^\s—–\-|:])\s+(Bande-annonce)\b")
 
 
 def clean_trailer_title(title: str) -> str:
     title = _TRAILER_NUMBER.sub(r"\1", title or "")
-    return " ".join(_VOSTFR.sub("VOST", title).split())
+    title = " ".join(_VOSTFR.sub("VOST", title).split())
+    return _TITLE_THEN_TRAILER.sub(r"\1 — \2", title, count=1)
 
 # Lignes de description YouTube qui ne parlent pas du film : liens, comptes
 # sociaux, appels a s'abonner. Retirees ligne entiere (le reste demeure un
