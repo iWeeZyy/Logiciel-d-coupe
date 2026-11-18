@@ -310,3 +310,13 @@ def test_filtre_par_jeu():
     assert not matches_game("Grand Theft Auto V", "GTA VI")
     assert not matches_game("Grand Theft Auto VI", "GTA V")
     assert matches_game("Grand Theft Auto VI", "gta")
+
+
+def test_titre_avec_emoji_et_point_d_exclamation():
+    """« j'me régale!⚰️ » (Terracid, 2026-11-18) : ni carre invisible ni
+    point d'exclamation colle."""
+    from video.hook_text import clean
+
+    assert clean("j'me régale!⚰️") == "j'me régale !"
+    assert clean("Joyeux anniversaire Tini !") == "Joyeux anniversaire Tini !"
+    assert clean("Quoi?!") == "Quoi ?!"

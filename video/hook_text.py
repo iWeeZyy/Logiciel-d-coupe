@@ -50,11 +50,16 @@ def clean(text: str) -> str:
 
     # Emojis et symboles : la police du logiciel ne les a pas (carre vide).
     text = "".join(ch for ch in (text or "") if unicodedata.category(ch) not in ("So", "Cs", "Co"))
+    # ... et ce qui les accompagne, invisible mais dessine en carre par la
+    # police : selecteur de variante, liant (« j'me régale!⚰️ », 2026-11-18).
+    text = re.sub("[\ufe00-\ufe0f\u200b-\u200d\u2060]", "", text)
     # Espaces en trop retires ; un retour a la ligne VOULU (titre donne a la
     # main, 2026-11-03) est garde pour le bandeau.
     text = "\n".join(" ".join(line.split()) for line in text.splitlines() if line.strip())
     text = re.sub(r"(\w) ?['’] ?(\w)", r"\1'\2", text)
     text = re.sub(r"(\d) ?- ?(\d)", r"\1-\2", text)
+    # Typographie francaise : espace avant « ! » et « ? » (« régale! »).
+    text = re.sub(r"(\w)([!?]+)", r"\1 \2", text)
     # « Saint -Hurigol » -> « Saint-Hurigol » (tiret colle par la transcription)
     text = re.sub(r"(\w) -(\w)", r"\1-\2", text)
     # « commence a chanter » -> « commence à chanter » : « a » devant un verbe
