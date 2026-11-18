@@ -293,3 +293,15 @@ def test_bandeau_resserre_accepte_meme_plus_haut():
     assert not narrow_band_fits(wide, narrow, 0.23, 1920, faces=[[(bottom + 0.005, 0.1)]] * 10)
     # Trop bas : sortirait de la zone sure.
     assert not narrow_band_fits(wide, narrow, 0.70, 1920, faces=[])
+
+
+def test_filtre_par_jeu():
+    """« Un clip de Terracid sur GTA » (2026-11-18)."""
+    from radar.daily_clip import matches_game
+
+    assert matches_game("Grand Theft Auto V", "GTA")
+    assert matches_game("Grand Theft Auto V", "grand theft")
+    assert matches_game("Pokémon", "pokemon")
+    assert not matches_game("Just Chatting", "GTA")
+    assert not matches_game("", "GTA")                 # categorie inconnue : jamais devinee
+    assert matches_game("Just Chatting", "")           # aucun filtre

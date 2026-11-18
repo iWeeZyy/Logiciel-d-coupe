@@ -112,6 +112,29 @@ def choose(opportunities, memory: list[dict]) -> object | None:
 
 PERIOD_DAYS = {"3j": 3, "7j": 7}
 
+# Raccourcis de jeu tels qu'on les dit (« un clip de Terracid sur GTA »,
+# 2026-11-18) -> le nom de categorie Twitch qui les contient.
+GAME_ALIASES = {"gta": "grand theft auto", "lol": "league of legends",
+                "wow": "world of warcraft", "cs": "counter-strike"}
+
+
+def matches_game(category: str, game: str) -> bool:
+    """La categorie Twitch du clip correspond-elle au jeu demande ? Vide =
+    aucun filtre. Comparaison sans casse ni accents, sur un morceau du nom
+    (« GTA » trouve « Grand Theft Auto V »). Un clip sans categorie connue
+    n'est jamais retenu quand un jeu est demande : on ne devine pas."""
+    import unicodedata
+
+    def norm(text: str) -> str:
+        text = unicodedata.normalize("NFKD", text or "")
+        return " ".join("".join(c for c in text if not unicodedata.combining(c)).lower().split())
+
+    wanted = norm(game)
+    if not wanted:
+        return True
+    wanted = GAME_ALIASES.get(wanted, wanted)
+    return bool(category) and wanted in norm(category)
+
 
 def views(opportunity) -> int:
     return opportunity.view_count if opportunity is not None and opportunity.view_count else 0
@@ -159,7 +182,8 @@ def file_name(creator: str) -> str:
 
 def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None = None,
         config_dir=None, adapter=None, producer=None, today: date | None = None,
-        now: datetime | None = None, on_status=logger.info, streamer: str | None = None):
+        now: datetime | None = None, on_status=logger.info, streamer: str | None = None,
+        game: str | None = None):
     """Produit le clip du jour. Renvoie (Report, [chemins produits]).
 
     `streamer` (login Twitch) : un clip de CE streamer seulement, a la
@@ -218,9 +242,10 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
     known = with_keys(memory, {auth.login.lower(): key for key, (auth, _c) in by_key.items()})
     chosen = None
     def pool(days):
-        return [o for o in candidates(store, None, days, now=now) if o.creator_key in by_key]
+        return [o for o in candidates(store, None, days, now=now)
+                if o.creator_key in by_key and matches_game(getattr(o, "category", ""), game)]
 
-    for period in (("24h", "3j", "7j") if streamer else ("24h", "3j")):
+    for period in (("24h", "3j", "7j") if streamer or game else ("24h", "3j")):
         on_status(f"Rafraîchissement du Radar ({period})…")
         scan = engine.scan(platforms=["twitch"], period=period, max_results=max_results,
                            reference=now)
@@ -232,8 +257,9 @@ def run(config: dict, out_dir: Path, work_dir: Path, *, memory_path: Path | None
         if chosen is not None and views(chosen) >= MIN_VIEWS:
             break
     if chosen is None:
-        report.notes.append("Aucun nouveau clip ces 7 derniers jours." if streamer
-                            else "Aucun nouveau clip ces 3 derniers jours.")
+        report.notes.append((f"Aucun nouveau clip sur « {game} » ces 7 derniers jours."
+                             if game else "Aucun nouveau clip ces 7 derniers jours.")
+                            if streamer or game else "Aucun nouveau clip ces 3 derniers jours.")
         return report, []
 
     auth, creator = by_key[chosen.creator_key]
@@ -300,6 +326,8 @@ def main_cli(argv=None) -> int:
     parser.add_argument("--work-dir", type=Path, default=None)
     parser.add_argument("--streamer", default="",
                         help="login Twitch : un clip de ce streamer seulement")
+    parser.add_argument("--jeu", dest="game", default="",
+                        help="un clip sur ce jeu seulement (ex. GTA)")
     args = parser.parse_args([a for a in (argv if argv is not None else sys.argv[1:])
                               if a != CLI_FLAG])
     try:
@@ -307,7 +335,7 @@ def main_cli(argv=None) -> int:
         report, files = run(config, args.out, args.work_dir or args.out.parent / "_travail_clip",
                             memory_path=args.memory,
                             config_dir=(args.config or default_config_path()).parent,
-                            streamer=args.streamer or None)
+                            streamer=args.streamer or None, game=args.game or None)
     except Exception as e:  # noqa: BLE001
         logger.error(f"Clip du jour : {e}")
         print(f"::error::{e}" if os.environ.get("GITHUB_ACTIONS") == "true" else str(e))

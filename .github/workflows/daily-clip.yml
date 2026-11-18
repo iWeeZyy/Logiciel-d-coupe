@@ -27,6 +27,10 @@ on:
         description: "Login Twitch : un clip de ce streamer seulement (vide = tous)"
         type: string
         default: ""
+      game:
+        description: "Un clip sur ce jeu seulement (ex. GTA ; vide = tous)"
+        type: string
+        default: ""
     secrets:
       TWITCH_CLIENT_ID:
         required: true
@@ -107,12 +111,13 @@ jobs:
           CONFIG_PATH: ${{ inputs.config-path }}
           MEMORY_PATH: ${{ inputs.memory-path }}
           STREAMER: ${{ inputs.streamer }}
+          GAME: ${{ inputs.game }}
         run: |
           python gui_main.py --daily-clip \
             --config "$GITHUB_WORKSPACE/appelant/$CONFIG_PATH" \
             --memory "$GITHUB_WORKSPACE/appelant/$MEMORY_PATH" \
             --out "$RUNNER_TEMP/clip" --work-dir "$RUNNER_TEMP/travail" \
-            --streamer "$STREAMER"
+            --streamer "$STREAMER" --jeu "$GAME"
 
       - name: Memoire des clips publies
         if: steps.run.outputs.produit == 'true'
