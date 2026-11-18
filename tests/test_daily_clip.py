@@ -305,3 +305,8 @@ def test_filtre_par_jeu():
     assert not matches_game("Just Chatting", "GTA")
     assert not matches_game("", "GTA")                 # categorie inconnue : jamais devinee
     assert matches_game("Just Chatting", "")           # aucun filtre
+    # Lancement de GTA VI (2026-11-19) : le bon episode, pas son voisin.
+    assert matches_game("Grand Theft Auto VI", "GTA VI")
+    assert not matches_game("Grand Theft Auto V", "GTA VI")
+    assert not matches_game("Grand Theft Auto VI", "GTA V")
+    assert matches_game("Grand Theft Auto VI", "gta")

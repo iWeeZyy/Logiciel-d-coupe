@@ -129,11 +129,15 @@ def matches_game(category: str, game: str) -> bool:
         text = unicodedata.normalize("NFKD", text or "")
         return " ".join("".join(c for c in text if not unicodedata.combining(c)).lower().split())
 
-    wanted = norm(game)
-    if not wanted:
+    words = norm(game).split()
+    if not words:
         return True
-    wanted = GAME_ALIASES.get(wanted, wanted)
-    return bool(category) and wanted in norm(category)
+    # Raccourci en tete (« GTA VI » -> « grand theft auto vi »), puis
+    # comparaison MOT A MOT : « GTA V » ne doit pas trouver « GTA VI ».
+    words = GAME_ALIASES.get(words[0], words[0]).split() + words[1:]
+    have = norm(category).split()
+    n = len(words)
+    return any(have[i:i + n] == words for i in range(len(have) - n + 1))
 
 
 def views(opportunity) -> int:
