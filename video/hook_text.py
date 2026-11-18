@@ -262,7 +262,10 @@ def render_band(text: str, out_w: int, out_h: int, right_limit: int | None = Non
         width = draw.textlength(line, font=title_font)
         x = (out_w - width) / 2
         if right < out_w:
-            x = max(margin, min(x, right - margin - width))
+            # Centre dans la place laissee a gauche du medaillon : chaque
+            # ligne centree sur toute la largeur puis repoussee donnait des
+            # lignes decalees l'une par rapport a l'autre (2026-11-18).
+            x = max(margin, margin + (right - 2 * margin - width) / 2)
         draw.text((x, y), line, font=title_font, fill=(255, 255, 255))
         y += line_h
     image.info["truncated"] = truncated

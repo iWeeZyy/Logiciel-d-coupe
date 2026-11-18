@@ -224,3 +224,18 @@ class TestAfficheAuMur:
         from editing.subject import keep_persistent_faces
         kept = keep_persistent_faces(self._alerte(mouth=0.06))
         assert all(len(s.faces) == 2 for s in kept)
+
+
+    def test_dessin_qui_flotte_un_peu_toujours_ecarte(self):
+        # Kamet0 (2026-11-18) : meme dessin, flottement 0,009, confiance 0,64, muet.
+        from video.face_detector import FaceSample
+        from editing.subject import keep_persistent_faces
+        out = []
+        for i in range(20):
+            dx = (i % 5) * 0.015
+            px = ((i % 3) - 1) * 0.011
+            out.append(FaceSample(t=i / 2, faces=(self._face(0.67 + dx, 0.95, cy=0.7),
+                                                  self._face(0.45 + px, 0.64, cy=0.44)),
+                                  mouth_activity=(0.05, 0.016)))
+        kept = keep_persistent_faces(out)
+        assert all(len(s.faces) == 1 and s.faces[0].cx > 0.6 for s in kept)

@@ -275,6 +275,10 @@ STILL_SPREAD = 0.006
 STILL_MAX_CONFIDENCE = 0.75
 STILL_MAX_MOUTH = 0.02
 REAL_MIN_CONFIDENCE = 0.85
+# Le meme dessin au mur, detecte avec un peu plus de flottement (0,009 de
+# largeur, Kamet0, 2026-11-18) : moins immobile, mais toujours incertain ET
+# muet. Les deux a la fois, jusqu'a ce flottement plus large.
+LOOSE_STILL_SPREAD = 0.015
 
 
 def _still_images(samples, tracks, radius: float) -> list:
@@ -306,7 +310,9 @@ def _still_images(samples, tracks, radius: float) -> list:
     if not real:
         return []
     return [t for t, spread, conf, mouth in stats
-            if spread < STILL_SPREAD and (conf < STILL_MAX_CONFIDENCE or mouth < STILL_MAX_MOUTH)]
+            if (spread < STILL_SPREAD and (conf < STILL_MAX_CONFIDENCE or mouth < STILL_MAX_MOUTH))
+            or (spread < LOOSE_STILL_SPREAD and conf < STILL_MAX_CONFIDENCE
+                and mouth < STILL_MAX_MOUTH)]
 
 
 def keep_persistent_faces(samples, min_presence: float = MIN_PERSISTENT_PRESENCE,
