@@ -21,8 +21,25 @@ if [ -f /etc/apt/apt-mirrors.txt ]; then
   sudo mv /etc/apt/apt-mirrors.txt.new /etc/apt/apt-mirrors.txt
 fi
 apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20)
-timeout 300 sudo apt-get "${apt_opts[@]}" update -qq
-timeout 420 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null
+# Deja present (ffmpeg avec libass, cabextract, fontconfig) et rien d'autre
+# demande : apt n'est pas touche. Sinon, installation avec les listes de
+# l'image d'abord ; mise a jour des listes seulement si elle echoue -- c'est
+# le « apt-get update » qui expirait quand les miroirs repondaient mal
+# (code 124, 2026-11-19, jour de sortie de GTA VI).
+have_media() {
+  command -v cabextract > /dev/null && command -v fc-cache > /dev/null \
+    && ffmpeg -hide_banner -filters 2> /dev/null | grep -E " (subtitles|ass) " > /dev/null
+}
+if [ "$#" -eq 0 ] && have_media; then
+  echo "ffmpeg, cabextract, fontconfig : deja installes"
+else
+  echo "apt : installation avec les listes de l'image..."
+  if ! timeout 300 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null; then
+    echo "apt : mise a jour des listes puis nouvel essai..."
+    timeout 300 sudo apt-get "${apt_opts[@]}" update -qq
+    timeout 420 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null
+  fi
+fi
 
 dest="$HOME/.fonts/msttcorefonts"
 mkdir -p "$dest"
