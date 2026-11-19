@@ -72,7 +72,9 @@ class TestCadrageVertical:
         preservee, on choisit seulement ce qu'on perd ou ce qu'on ajoute."""
         for fit in (FIT_CROP, FIT_WHOLE):
             produced = chain(target_size=PORTRAIT_SIZE, fit=fit, fill=FILL_BLUR)
-            assert "setsar" not in produced
+            # Seul setsar autorise : pixels carres en toute fin (2026-11-19).
+            assert produced.endswith(",setsar=1")
+            assert "setsar" not in produced[: -len(",setsar=1")]
             assert "scale=1080:1920," not in produced.replace(
                 "scale=1080:1920:force_original_aspect_ratio", "")
 

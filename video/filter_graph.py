@@ -514,7 +514,17 @@ def _with_wide_shots(tight: str, intervals, edit_list: EditList, src_w: int, src
             f"[vtight][vwide]overlay=0:0:enable='{enable}'")
 
 
-def build_video_chain(
+def build_video_chain(**kwargs) -> str:
+    """Chaine video complete, terminee par des pixels CARRES (setsar=1).
+
+    Sans cela, la mise en page « jeu entier a cote de la webcam » laissait
+    passer un facteur de forme de pixel faux (SAR 5572:3285, Squeezie,
+    2026-11-19) : fichier en 1080x1920, mais affiche presque carre par les
+    lecteurs -- l'image paraissait ecrasee."""
+    return _build_video_chain(**kwargs) + ",setsar=1"
+
+
+def _build_video_chain(
     *,
     edit_list: EditList,
     framing_plan: FramingPlan | None,

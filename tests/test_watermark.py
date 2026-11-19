@@ -304,7 +304,7 @@ def test_the_blur_graph_plugs_into_both_ffmpeg_forms():
     graph = simple[simple.index("-vf") + 1]
 
     assert graph.startswith("split=2[vsbg][vsfg];")
-    assert graph.rstrip().endswith("overlay=(W-w)/2:(H-h)/2")
+    assert graph.rstrip().endswith("overlay=(W-w)/2:(H-h)/2,setsar=1")
 
     montage = build_ffmpeg_args(
         video_path="in.mp4", edit_list=EditList.keeping(0.0, 10.0, removed=[(4.0, 5.0)]),
@@ -314,7 +314,7 @@ def test_the_blur_graph_plugs_into_both_ffmpeg_forms():
     complex_graph = montage[montage.index("-filter_complex") + 1]
 
     assert "[vc]split=2[vsbg][vsfg];" in complex_graph
-    assert "overlay=(W-w)/2:(H-h)/2[vout]" in complex_graph
+    assert "overlay=(W-w)/2:(H-h)/2,setsar=1[vout]" in complex_graph
 
 
 def test_the_portrait_format_never_needs_a_fill():

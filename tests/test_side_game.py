@@ -239,3 +239,14 @@ class TestAfficheAuMur:
                                   mouth_activity=(0.05, 0.016)))
         kept = keep_persistent_faces(out)
         assert all(len(s.faces) == 1 and s.faces[0].cx > 0.6 for s in kept)
+
+
+
+def test_pixels_carres_en_sortie():
+    """Squeezie (2026-11-19) : « jeu entier a cote de la webcam » sortait en
+    SAR 5572:3285 -- affiche ecrase. Toute chaine video finit par setsar=1."""
+    import inspect
+    from video import filter_graph
+
+    src = inspect.getsource(filter_graph.build_video_chain)
+    assert 'return _build_video_chain(**kwargs) + ",setsar=1"' in src
