@@ -9,16 +9,28 @@
 # Usage : install_media.sh [paquets apt supplementaires...]
 set -euo pipefail
 
-# Le miroir Ubuntu d'Azure des runners est devenu injoignable (« Temporary
-# failure resolving azure.archive.ubuntu.com », 2026-11-11, trois runs a la
-# suite) : le miroir officiel passe en premier, Azure reste en second.
+# Miroirs Ubuntu : un jour Azure ne se resout plus (2026-11-11), un autre le
+# miroir officiel expire (2026-11-19) -- chaque run les essaie et met en
+# premier celui qui repond le plus vite (InRelease en moins de 10 s).
 if [ -f /etc/apt/apt-mirrors.txt ]; then
-  # Les autres gardent leur ordre, chacun recule d'un rang.
-  { printf 'http://archive.ubuntu.com/ubuntu/\tpriority:1\n'
-    awk -F'priority:' 'NF > 1 {printf "%spriority:%d\n", $1, $2 + 1; next} {print}' \
-      /etc/apt/apt-mirrors.txt
-  } | sudo tee /etc/apt/apt-mirrors.txt.new > /dev/null
-  sudo mv /etc/apt/apt-mirrors.txt.new /etc/apt/apt-mirrors.txt
+  codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+  best=""
+  for m in http://azure.archive.ubuntu.com/ubuntu/ http://archive.ubuntu.com/ubuntu/ \
+           http://fr.archive.ubuntu.com/ubuntu/ http://mirrors.edge.kernel.org/ubuntu/; do
+    t=$(curl -s -o /dev/null -w '%{time_total}' --max-time 10 "${m}dists/${codename}/InRelease" || echo fail)
+    echo "Miroir ${m} : ${t}"
+    if [ -z "$best" ] && [ "$t" != "fail" ]; then best="$m"; fi
+  done
+  if [ -n "$best" ]; then
+    { printf '%s\tpriority:1\n' "$best"
+      { grep -v -F "$best" /etc/apt/apt-mirrors.txt || true; } \
+        | awk -F'priority:' 'NF > 1 {printf "%spriority:%d\n", $1, $2 + 1; next} {print}'
+    } | sudo tee /etc/apt/apt-mirrors.txt.new > /dev/null
+    sudo mv /etc/apt/apt-mirrors.txt.new /etc/apt/apt-mirrors.txt
+    echo "Miroir retenu : $best"
+  else
+    echo "::warning::aucun miroir Ubuntu ne repond en 10 s"
+  fi
 fi
 apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20)
 # Deja present (ffmpeg avec libass, cabextract, fontconfig) et rien d'autre
