@@ -94,4 +94,4 @@ class TestMontage:
         args = ffmpeg_args("in.mp4", "ov.png", "out.mp4", (0, 622, 1080, 608),
                            sprites=[("a0_%03d.png", 30, 46, 200)])
         graph = args[args.index("-filter_complex") + 1]
-        assert "[2:v]overlay=46:200:shortest=1,format=yuv420p[v]" in graph
+        assert "[2:v]overlay=46:200:shortest=1,setsar=1,format=yuv420p[v]" in graph

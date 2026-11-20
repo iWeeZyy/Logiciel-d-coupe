@@ -515,14 +515,14 @@ def ffmpeg_args(video_path: str, overlay_path: str, out_path: str,
         graph += f"{texted}[an{k}];"
         texted = f"[an{k}][{first + k}:v]overlay={sx}:{sy}:shortest=1"
     if intro is None:
-        graph += f"{texted},{subtitles}format=yuv420p[v]"
+        graph += f"{texted},{subtitles}setsar=1,format=yuv420p[v]"
     else:
         ix, iy = intro_position(box)
         # eof_action=pass : une fois l'intro finie, la bande-annonce seule.
         graph += (intro_video
                   + f"{texted}[texted];"
                   + f"[texted][intro]overlay={ix}:{iy}:eof_action=pass[withintro];"
-                  + f"[withintro][itext]overlay=0:0:eof_action=pass,{subtitles}format=yuv420p[v];"
+                  + f"[withintro][itext]overlay=0:0:eof_action=pass,{subtitles}setsar=1,format=yuv420p[v];"
                   + intro_audio)
         audio_map = ["-map", "[a]"]
     return [

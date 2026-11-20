@@ -121,6 +121,28 @@ class TestFfmpeg:
         assert "audio" in probe.stdout
 
 
+    def test_pixels_carres_en_sortie(self):
+        # Une source a pixels non carres (SAR 10239:10240 constate sur une
+        # bande-annonce AlloCine) donnait une sortie 1080x1920 deformee.
+        args = ffmpeg_args("in.mp4", "overlay.png", "out.mp4", (0, 738, 1080, 608))
+        graph = args[args.index("-filter_complex") + 1]
+        assert "setsar=1,format=yuv420p[v]" in graph
+
+    @pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+                        reason="ffmpeg absent")
+    def test_source_a_pixels_non_carres(self, tmp_path):
+        src = tmp_path / "src.mp4"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+                        "testsrc=size=640x360:rate=25:duration=2", "-f", "lavfi", "-i",
+                        "sine=frequency=440:duration=2", "-shortest", "-vf", "setsar=10239/10240",
+                        "-c:v", "libx264", "-c:a", "aac", str(src)], check=True)
+        out = compose_video(src, tmp_path / "out.mp4", title="Un film", label="ACTUALITÉ")
+        probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                "stream=sample_aspect_ratio,display_aspect_ratio", "-of", "csv=p=0",
+                                str(out)], capture_output=True, text=True, check=True)
+        assert probe.stdout.strip() == "1:1,9:16"
+
+
 class TestChapo:
     def test_le_chapo_est_tire_du_resume(self):
         from news_story.story_composer import default_subtitle

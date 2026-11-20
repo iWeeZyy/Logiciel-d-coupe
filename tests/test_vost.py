@@ -71,7 +71,7 @@ class TestIncrustation:
 
         args = ffmpeg_args("in.mp4", "ov.png", "out.mp4", (0, 600, 1080, 608), "s.ass")
         graph = args[args.index("-filter_complex") + 1]
-        assert graph.endswith("overlay=0:0,subtitles='s.ass',format=yuv420p[v]")
+        assert graph.endswith("overlay=0:0,subtitles='s.ass',setsar=1,format=yuv420p[v]")
         plain = ffmpeg_args("in.mp4", "ov.png", "out.mp4", (0, 600, 1080, 608))
         assert "subtitles" not in plain[plain.index("-filter_complex") + 1]
 
