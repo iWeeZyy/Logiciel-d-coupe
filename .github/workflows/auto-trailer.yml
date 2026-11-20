@@ -71,7 +71,7 @@ jobs:
           key: msttcorefonts-arial-v1
 
       - name: ffmpeg (libass), polices, bibliotheques Qt
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: bash app/.github/scripts/install_media.sh libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
 
       - uses: actions/setup-python@v5

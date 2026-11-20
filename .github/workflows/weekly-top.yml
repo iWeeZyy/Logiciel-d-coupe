@@ -75,7 +75,7 @@ jobs:
           key: msttcorefonts-arial-v1
 
       - name: ffmpeg (libass) et polices des sous-titres
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: bash app/.github/scripts/install_media.sh
 
       - uses: actions/setup-python@v5

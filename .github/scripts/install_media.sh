@@ -12,24 +12,30 @@ set -euo pipefail
 # Miroirs Ubuntu : un jour Azure ne se resout plus (2026-11-11), un autre le
 # miroir officiel expire (2026-11-19) -- chaque run les essaie et met en
 # premier celui qui repond le plus vite (InRelease en moins de 10 s).
+# Un miroir peut aussi repondre au test puis caler sur les paquets
+# (Azure, 2026-11-20 : installation bloquee 5 min) : si l'installation
+# echoue, le miroir suivant qui a repondu passe en premier.
+mirrors_ok=()
+set_first_mirror() {
+  { printf '%s\tpriority:1\n' "$1"
+    { grep -v -F "$1" /etc/apt/apt-mirrors.txt || true; } \
+      | awk -F'priority:' 'NF > 1 {printf "%spriority:%d\n", $1, $2 + 1; next} {print}'
+  } | sudo tee /etc/apt/apt-mirrors.txt.new > /dev/null
+  sudo mv /etc/apt/apt-mirrors.txt.new /etc/apt/apt-mirrors.txt
+  echo "Miroir retenu : $1"
+}
 if [ -f /etc/apt/apt-mirrors.txt ]; then
   codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
-  best=""
   for m in http://azure.archive.ubuntu.com/ubuntu/ http://archive.ubuntu.com/ubuntu/ \
            http://fr.archive.ubuntu.com/ubuntu/ http://mirrors.edge.kernel.org/ubuntu/; do
-    t=$(curl -s -o /dev/null -w '%{time_total}' --max-time 10 "${m}dists/${codename}/InRelease" || echo fail)
+    t=$(curl -s -o /dev/null -w '%{time_total}' --max-time 8 "${m}dists/${codename}/InRelease" || echo fail)
     echo "Miroir ${m} : ${t}"
-    if [ -z "$best" ] && [ "$t" != "fail" ]; then best="$m"; fi
+    if [ "$t" != "fail" ]; then mirrors_ok+=("$m"); fi
   done
-  if [ -n "$best" ]; then
-    { printf '%s\tpriority:1\n' "$best"
-      { grep -v -F "$best" /etc/apt/apt-mirrors.txt || true; } \
-        | awk -F'priority:' 'NF > 1 {printf "%spriority:%d\n", $1, $2 + 1; next} {print}'
-    } | sudo tee /etc/apt/apt-mirrors.txt.new > /dev/null
-    sudo mv /etc/apt/apt-mirrors.txt.new /etc/apt/apt-mirrors.txt
-    echo "Miroir retenu : $best"
+  if [ "${#mirrors_ok[@]}" -gt 0 ]; then
+    set_first_mirror "${mirrors_ok[0]}"
   else
-    echo "::warning::aucun miroir Ubuntu ne repond en 10 s"
+    echo "::warning::aucun miroir Ubuntu ne repond en 8 s"
   fi
 fi
 apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=20)
@@ -46,10 +52,12 @@ if [ "$#" -eq 0 ] && have_media; then
   echo "ffmpeg, cabextract, fontconfig : deja installes"
 else
   echo "apt : installation avec les listes de l'image..."
-  if ! timeout 300 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null; then
+  # Delais cumules (150 + 180 + 240 s) sous la limite de 15 min de l'etape.
+  if ! timeout 150 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null; then
+    if [ "${#mirrors_ok[@]}" -gt 1 ]; then set_first_mirror "${mirrors_ok[1]}"; fi
     echo "apt : mise a jour des listes puis nouvel essai..."
-    timeout 300 sudo apt-get "${apt_opts[@]}" update -qq
-    timeout 420 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null
+    timeout 180 sudo apt-get "${apt_opts[@]}" update -qq
+    timeout 240 sudo apt-get "${apt_opts[@]}" install -y -qq ffmpeg fontconfig cabextract "$@" > /dev/null
   fi
 fi
 
