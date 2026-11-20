@@ -296,17 +296,28 @@ def test_bandeau_resserre_accepte_meme_plus_haut():
 
 
 def test_bandeau_resserre_coupe_refuse():
-    """Mastu (2026-11-20) : resserree, la phrase tenait sur 4 lignes ; la
-    3e finissait par « … » mais le bandeau etait marque entier et garde a
-    la place du bandeau large, qui l'affichait en entier."""
+    """Mastu (2026-11-20) : une phrase coupee (« … ») etait marquee entiere
+    et le bandeau resserre gardait la place du bandeau large."""
+    from video.hook_text import INTRO_ZONE_X, narrow_band_fits, render_band
+
+    text = ("Tu arriveras bien après moi, malheureusement pour toi, "
+            "et ça je te le dis depuis le début mon gars")
+    wide = render_band(text, 1080, 1920)
+    narrow = render_band(text, 1080, 1920, right_limit=round(INTRO_ZONE_X * 1080))
+    assert narrow.info["truncated"]
+    assert not narrow_band_fits(wide, narrow, 0.23, 1920, faces=[])
+
+
+def test_bandeau_resserre_quatre_lignes():
+    """Mastu (2026-11-20) : resserree, la phrase prend 4 lignes ; refusee,
+    le bandeau large restait et le medaillon cachait « POUR TOI ! »."""
     from video.hook_text import INTRO_ZONE_X, narrow_band_fits, render_band
 
     text = "Tu arriveras bien après moi, malheureusement pour toi !"
     wide = render_band(text, 1080, 1920)
     narrow = render_band(text, 1080, 1920, right_limit=round(INTRO_ZONE_X * 1080))
-    assert not wide.info["truncated"]
-    assert narrow.info["truncated"]
-    assert not narrow_band_fits(wide, narrow, 0.23, 1920, faces=[])
+    assert not wide.info["truncated"] and not narrow.info["truncated"]
+    assert narrow_band_fits(wide, narrow, 0.30, 1920, faces=[[(0.1, 0.15)]] * 10)
 
 
 def test_filtre_par_jeu():

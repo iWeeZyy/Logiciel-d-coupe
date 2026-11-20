@@ -28,6 +28,10 @@ TOP_PERCENT = 15.0          # haut de la zone visible dans la grille du profil (
 MAX_WIDTH_PERCENT = 86.0
 MAX_WORDS = 12
 MAX_LINES = 3
+# Resserre a gauche du medaillon de l'intro : une ligne de plus permise
+# (Mastu, 2026-11-20 : 4 lignes resserrees, sinon le medaillon cachait la
+# fin de la phrase pendant l'intro) ; narrow_band_fits juge la hauteur.
+NARROW_MAX_LINES = MAX_LINES + 1
 
 
 @dataclass(frozen=True)
@@ -252,9 +256,10 @@ def render_band(text: str, out_w: int, out_h: int, right_limit: int | None = Non
         lines += wrap_text(probe, paragraph, title_font,
                            (out_w - 2 * margin) if right == out_w else (right - 2 * margin),
                            max_lines=len(paragraph.split()) + 1)
-    truncated = len(lines) > MAX_LINES
+    max_lines = MAX_LINES if right == out_w else NARROW_MAX_LINES
+    truncated = len(lines) > max_lines
     if truncated:
-        lines = lines[:MAX_LINES]
+        lines = lines[:max_lines]
         lines[-1] = lines[-1].rstrip(" ,.;:!?") + "…"
     line_h = round(78 * scale)
     pad, rule = round(26 * scale), max(3, round(8 * scale))
