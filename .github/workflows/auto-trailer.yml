@@ -114,17 +114,6 @@ jobs:
           python gui_main.py --auto-trailer --sans-youtube --out "$RUNNER_TEMP/bande-annonce" $FORCE \
             ${FILM:+--film "$FILM"} ${VIDEO_PAGE:+--page-video "$VIDEO_PAGE" --titre "$VIDEO_TITLE"}
 
-      - name: Memoire des publications
-        if: steps.run.outputs.produit == 'true'
-        working-directory: appelant
-        run: |
-          cp "$GITHUB_WORKSPACE/app/news_publiees.json" news_publiees.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add news_publiees.json
-          git commit -m "Bande-annonce publiee : memoire mise a jour" || exit 0
-          git push
-
       - name: Bande-annonce en artefact
         if: steps.run.outputs.produit == 'true'
         uses: actions/upload-artifact@v4
@@ -134,3 +123,26 @@ jobs:
             ${{ runner.temp }}/bande-annonce/*.mp4
             ${{ runner.temp }}/bande-annonce/*.txt
           retention-days: ${{ inputs.retention-days }}
+
+      - name: Memoire des publications
+        if: steps.run.outputs.produit == 'true'
+        working-directory: appelant
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Le clip du jour pousse dans le meme depot : un « git push » seul
+          # etait refuse (2026-11-20, run en echec apres le rendu). Seul ce
+          # workflow ecrit news_publiees.json : on repart de l'etat distant,
+          # on y pose la memoire du run, et on reessaie.
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          for attempt in 1 2 3 4; do
+            git fetch -q origin "$branch"
+            git reset -q --hard "origin/$branch"
+            cp "$GITHUB_WORKSPACE/app/news_publiees.json" news_publiees.json
+            git add news_publiees.json
+            git diff --cached --quiet && exit 0
+            git commit -q -m "Bande-annonce publiee : memoire mise a jour"
+            git push -q origin "HEAD:$branch" && exit 0
+            sleep $((attempt * 5))
+          done
+          exit 1
