@@ -246,9 +246,12 @@ def render_band(text: str, out_w: int, out_h: int, right_limit: int | None = Non
     right = min(out_w, right_limit) if right_limit else out_w
     lines = []
     for paragraph in text.upper().split("\n"):        # retours a la ligne voulus
+        # Sans limite ici : wrap_text coupait deja a MAX_LINES (avec « … »),
+        # si bien que `truncated` restait faux et qu'un bandeau resserre
+        # coupe etait garde (Mastu, 2026-11-20 : « … MALHEUREUSEMENT POUR… »).
         lines += wrap_text(probe, paragraph, title_font,
                            (out_w - 2 * margin) if right == out_w else (right - 2 * margin),
-                           max_lines=MAX_LINES)
+                           max_lines=len(paragraph.split()) + 1)
     truncated = len(lines) > MAX_LINES
     if truncated:
         lines = lines[:MAX_LINES]
