@@ -143,11 +143,25 @@ def garbled(text: str) -> bool:
     return bool(re.search(r"(\w)\1{3,}", text or ""))
 
 
+# Decoupage automatique d'une VOD par Twitch (« kamet0 - Highlight af7749
+# Part 12 », 2026-11-21) : un nom de fichier, pas un titre ecrit par un
+# spectateur.
+_AUTO_HIGHLIGHT = re.compile(r"^\S+\s+-\s+highlight\s+[0-9a-f]{6}\s+part\s+\d+$", re.I)
+
+
+def auto_highlight_title(text: str) -> bool:
+    """Titre genere par Twitch pour un decoupage automatique de VOD.
+    Fonction pure."""
+    return bool(_AUTO_HIGHLIGHT.match(" ".join((text or "").split())))
+
+
 def meaningless_title(text: str) -> bool:
     """Titre Twitch vide de sens : moins de 4 lettres ou chiffres en tout, ou
     aucun mot d'au moins 3 (« x », « jsp », « ya r » -- 2026-11-05 : « YA R »
-    en bandeau ne disait rien). « HOLD ON », « wssh », « fromage » passent.
-    Fonction pure."""
+    en bandeau ne disait rien), ou titre automatique de decoupage de VOD.
+    « HOLD ON », « wssh », « fromage » passent. Fonction pure."""
+    if auto_highlight_title(text):
+        return True
     words = ["".join(ch for ch in w if ch.isalnum()) for w in (text or "").split()]
     return sum(map(len, words)) < 4 or not any(len(w) >= 3 for w in words)
 

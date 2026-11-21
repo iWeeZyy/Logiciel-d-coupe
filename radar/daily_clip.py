@@ -101,10 +101,15 @@ def choose(opportunities, memory: list[dict]) -> object | None:
     ni le meme moment clippe une seconde fois (radar/compilation_pick
     .same_moment). Les directs et ce qui n'est pas un clip sont ignores."""
     from radar.compilation_pick import same_moment
+    from video.hook_text import auto_highlight_title
 
     done = [_as_clip(e) for e in memory]
+    # Les decoupages automatiques de VOD (« … - Highlight af7749 Part 12 ») ne
+    # sont pas des moments choisis par les spectateurs : 2026-11-21, une
+    # minute de webcam sans jeu, puis une scene de club de strip-tease.
     candidates = [o for o in opportunities
                   if getattr(o, "kind", "") == "clip" and not getattr(o, "is_live", False)
+                  and not auto_highlight_title(getattr(o, "title", ""))
                   and not any(same_moment(o, d) for d in done)]
     return max(candidates, key=lambda o: o.view_count if o.view_count is not None else -1,
                default=None)

@@ -111,6 +111,30 @@ def test_clip_deja_passe_dans_un_top_jamais_repris():
     assert dc.choose([hold_on, other], memory) is other
 
 
+def test_decoupage_automatique_de_vod_ecarte():
+    """2026-11-21 : « kamet0 - Highlight af7749 Part 12 » (une minute de
+    webcam, sans jeu) et « wankilstudio - Highlight 5ff446 Part 02 » (club de
+    strip-tease) choisis comme clips du soir, titre technique en bandeau."""
+    from types import SimpleNamespace as O
+
+    from radar import daily_clip as dc
+    from video.hook_text import auto_highlight_title, choose_text, meaningless_title
+
+    auto = O(kind="clip", is_live=False, content_id="A", creator_key="twitch:1",
+             title="kamet0 - Highlight af7749 Part 12", view_count=900, duration_s=60,
+             published_at="", extra={})
+    real = O(kind="clip", is_live=False, content_id="B", creator_key="twitch:1",
+             title="Il est parti en courant", view_count=300, duration_s=30,
+             published_at="", extra={})
+    assert dc.choose([auto, real], []) is real
+    assert dc.choose([auto], []) is None
+    assert auto_highlight_title("wankilstudio - Highlight 5ff446 Part 02")
+    assert not auto_highlight_title("Highlight du jour")
+    assert meaningless_title("kamet0 - Highlight af7749 Part 12")
+    assert choose_text([], preferred="kamet0 - Highlight af7749 Part 12",
+                       fallback="Le clip du moment") == "Le clip du moment"
+
+
 def test_top_ecrit_ses_clips_dans_la_memoire(tmp_path):
     from types import SimpleNamespace as O
 
