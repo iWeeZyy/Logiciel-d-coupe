@@ -135,6 +135,20 @@ def test_decoupage_automatique_de_vod_ecarte():
                        fallback="Le clip du moment") == "Le clip du moment"
 
 
+def test_titre_du_live_jamais_en_bandeau():
+    """chowh1 (2026-11-23) : le clip portait le titre du live, commandes de
+    chat comprises, et il s'affichait tel quel en bandeau et en legende."""
+    from radar import daily_clip as dc
+    from video.hook_text import choose_text, meaningless_title, stream_title
+
+    title = "[DROP]🌴 GTA EN MODE PMU🌴 !giveaway !vpn !holy"
+    assert stream_title(title) and meaningless_title(title)
+    assert stream_title("GTA RP !discord")
+    assert not stream_title("Il a dit non !") and not stream_title("HOLD ON")
+    assert choose_text([], preferred=title, fallback="Le clip du moment") == "Le clip du moment"
+    assert "giveaway" not in dc.caption(title, "chowh1")
+
+
 def test_top_ecrit_ses_clips_dans_la_memoire(tmp_path):
     from types import SimpleNamespace as O
 

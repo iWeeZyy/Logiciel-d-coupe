@@ -149,6 +149,20 @@ def garbled(text: str) -> bool:
 _AUTO_HIGHLIGHT = re.compile(r"^\S+\s+-\s+highlight\s+[0-9a-f]{6}\s+part\s+\d+$", re.I)
 
 
+# Titre du live repris tel quel par le clip (chowh1, 2026-11-23 : « [DROP]
+# GTA EN MODE PMU !giveaway !vpn !holy ») : commandes de chat « !mot » ou
+# etiquette entre crochets en tete -- pas un titre ecrit pour le clip.
+_CHAT_COMMAND = re.compile(r"(?:^|\s)![a-z0-9_]+", re.I)
+_LEADING_TAG = re.compile(r"^\s*\[[^\]]+\]")
+
+
+def stream_title(text: str) -> bool:
+    """Titre du live (commandes de chat, etiquette [DROP]…) plutot qu'un
+    titre de clip. Fonction pure."""
+    text = text or ""
+    return bool(_CHAT_COMMAND.search(text) or _LEADING_TAG.match(text))
+
+
 def auto_highlight_title(text: str) -> bool:
     """Titre genere par Twitch pour un decoupage automatique de VOD.
     Fonction pure."""
@@ -160,7 +174,7 @@ def meaningless_title(text: str) -> bool:
     aucun mot d'au moins 3 (« x », « jsp », « ya r » -- 2026-11-05 : « YA R »
     en bandeau ne disait rien), ou titre automatique de decoupage de VOD.
     « HOLD ON », « wssh », « fromage » passent. Fonction pure."""
-    if auto_highlight_title(text):
+    if auto_highlight_title(text) or stream_title(text):
         return True
     words = ["".join(ch for ch in w if ch.isalnum()) for w in (text or "").split()]
     return sum(map(len, words)) < 4 or not any(len(w) >= 3 for w in words)
