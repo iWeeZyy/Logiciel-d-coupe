@@ -92,6 +92,25 @@ def test_publication_marque_toutes_les_versions_du_film(tmp_path, monkeypatch):
     assert not published.published_on(FEED[0].url, done)
 
 
+def test_video_retiree_du_site_rien_pas_erreur(tmp_path, monkeypatch):
+    """2026-11-23 : « Eldorado », fiche et lecteur AlloCine en 404 ; le run
+    echouait et aurait echoue chaque jour tant que l'entree restait dans le
+    fil. Une vraie erreur de montage, elle, reste une erreur."""
+    from news_story import published
+
+    monkeypatch.setattr(published, "FILE", tmp_path / "news_publiees.json")
+    result = at.run(tmp_path / "out", today=TODAY, fetch=lambda: FEED,
+                    producer=lambda article, out_dir, on_status=None: None, lookup=None)
+    assert result["status"] == "rien" and "introuvable" in result["reason"]
+
+    def boom(article, out_dir, on_status=None):
+        raise RuntimeError("ffmpeg en echec")
+
+    result = at.run(tmp_path / "out", today=TODAY, fetch=lambda: FEED, producer=boom,
+                    lookup=None)
+    assert result["status"] == "erreur"
+
+
 def test_sous_github_actions(tmp_path, monkeypatch):
     out = tmp_path / "gh_output"
     monkeypatch.setenv("GITHUB_ACTIONS", "true")

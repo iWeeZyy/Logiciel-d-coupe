@@ -315,7 +315,7 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
     on_status(decision.reason)
     if decision.article is None:
         return {"status": "rien", "reason": decision.reason}
-    errors = []
+    errors, missing = [], []
     for article in decision.candidates:
         on_status(f"Bande-annonce : {article.title} ({article.source_label}, "
                   f"{article.published_at or 'date inconnue'})")
@@ -327,6 +327,7 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
             continue
         if made is None:
             errors.append(f"{article.title} : pas de vidéo trouvée")
+            missing.append(article.title)
             continue
         video, _text_path, caption = made
         # Les autres versions du meme film (VF/VOST, autre chaine) : deja
@@ -335,6 +336,13 @@ def run(out_dir: Path, *, force: bool = False, today: date | None = None,
         published.mark(same)
         return {"status": "produit", "reason": decision.reason, "title": article.title,
                 "video": str(video), "caption": caption, "skipped": errors}
+    if errors and len(missing) == len(errors):
+        # Seulement des videos retirees du site (2026-11-23 : « Eldorado », fiche
+        # et lecteur AlloCine en 404) : rien a faire aujourd'hui, pas un echec
+        # du logiciel -- sinon le run echouait chaque jour tant que l'entree
+        # restait dans le fil.
+        return {"status": "rien", "reason": "Vidéo introuvable sur le site : "
+                                            + " ; ".join(missing)}
     return {"status": "erreur", "reason": "Aucune bande-annonce n'a pu être faite : "
                                           + " ; ".join(errors)}
 
